@@ -47,3 +47,10 @@ path = "fuzz_targets/decode_bundles.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "decode_stage3_objects"
+path = "fuzz_targets/decode_stage3_objects.rs"
+test = false
+doc = false
+bench = false

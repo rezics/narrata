@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
 use narrata_core::{
-    CommitId, ExecutionId, InputId, InputPayloadDigest, ObjectId, TimelineArchiveManifestId,
-    TimelineCatalogEventId,
+    CommitId, CompoundSaveManifestId, ExecutionId, InputId, InputPayloadDigest, ObjectId,
+    TimelineArchiveManifestId, TimelineCatalogEventId,
 };
 use thiserror::Error;
 
 use crate::{
-    CatalogRefKey, CheckedObject, RefKey, TimelineArchiveRefKey, TimelineCoverage,
-    TimelineOperationId,
+    CatalogRefKey, CheckedObject, CompoundSaveRefKey, EffectClaim, EffectClaimResult,
+    EffectLedgerEntry, EffectOutcomeRecord, EffectStoreError, LeaseId, LedgerFence, RefKey,
+    TimelineArchiveRefKey, TimelineCoverage, TimelineOperationId,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -54,6 +55,12 @@ pub struct TimelineArchiveRefValue {
     pub manifest: TimelineArchiveManifestId,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompoundSaveRefValue {
+    pub revision: RefRevision,
+    pub manifest: CompoundSaveManifestId,
+}
+
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("Ref CAS conflict for {key}: expected {expected:?}, actual {actual:?}")]
 pub struct RefConflict {
@@ -79,6 +86,15 @@ pub struct ArchiveConflict {
     pub expected: Option<RefRevision>,
     pub actual: Option<TimelineArchiveRefValue>,
     pub proposed: Option<TimelineArchiveManifestId>,
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("Compound Save CAS conflict for {key}: expected {expected:?}, actual {actual:?}")]
+pub struct CompoundSaveConflict {
+    pub key: String,
+    pub expected: Option<RefRevision>,
+    pub actual: Option<CompoundSaveRefValue>,
+    pub proposed: Option<CompoundSaveManifestId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -117,6 +133,8 @@ pub enum FaultPoint {
     GcMark,
     GcSweep,
     BundleImportRef,
+    LedgerClaim,
+    LedgerOutcome,
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -136,6 +154,8 @@ pub enum StoreError {
     #[error(transparent)]
     ArchiveConflict(Box<ArchiveConflict>),
     #[error(transparent)]
+    CompoundSaveConflict(Box<CompoundSaveConflict>),
+    #[error(transparent)]
     InputConflict(Box<InputIdConflict>),
     #[error("Ref revision overflow")]
     RevisionOverflow,
@@ -151,6 +171,8 @@ pub enum StoreError {
     CorruptStore(String),
     #[error("injected transaction fault at {0:?}")]
     InjectedFault(FaultPoint),
+    #[error(transparent)]
+    Effect(Box<EffectStoreError>),
 }
 
 impl From<RefConflict> for StoreError {
@@ -171,9 +193,21 @@ impl From<ArchiveConflict> for StoreError {
     }
 }
 
+impl From<CompoundSaveConflict> for StoreError {
+    fn from(value: CompoundSaveConflict) -> Self {
+        Self::CompoundSaveConflict(Box::new(value))
+    }
+}
+
 impl From<InputIdConflict> for StoreError {
     fn from(value: InputIdConflict) -> Self {
         Self::InputConflict(Box::new(value))
+    }
+}
+
+impl From<EffectStoreError> for StoreError {
+    fn from(value: EffectStoreError) -> Self {
+        Self::Effect(Box::new(value))
     }
 }
 
@@ -200,6 +234,13 @@ pub struct ArchiveMutation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompoundSaveMutation {
+    pub key: CompoundSaveRefKey,
+    pub expected: Option<RefRevision>,
+    pub next: Option<CompoundSaveManifestId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pin {
     pub owner: String,
     pub object: ObjectId,
@@ -212,6 +253,7 @@ pub struct CommitTransaction {
     pub refs: Vec<RefMutation>,
     pub catalogs: Vec<CatalogMutation>,
     pub archives: Vec<ArchiveMutation>,
+    pub compound_saves: Vec<CompoundSaveMutation>,
     pub inputs: Vec<InputRecord>,
     pub pins: Vec<Pin>,
     pub remove_pins: Vec<(String, ObjectId)>,
@@ -225,6 +267,7 @@ pub struct CommitOutcome {
     pub refs: BTreeMap<RefKey, Option<RefValue>>,
     pub catalogs: BTreeMap<CatalogRefKey, Option<CatalogHeadRefValue>>,
     pub archives: BTreeMap<TimelineArchiveRefKey, Option<TimelineArchiveRefValue>>,
+    pub compound_saves: BTreeMap<CompoundSaveRefKey, Option<CompoundSaveRefValue>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -281,12 +324,45 @@ pub trait SaveStore {
     fn list_timeline_archives(
         &self,
     ) -> Result<Vec<(TimelineArchiveRefKey, TimelineArchiveRefValue)>, StoreError>;
+    fn read_compound_save(
+        &self,
+        key: &CompoundSaveRefKey,
+    ) -> Result<Option<CompoundSaveRefValue>, StoreError>;
+    fn list_compound_saves(
+        &self,
+    ) -> Result<Vec<(CompoundSaveRefKey, CompoundSaveRefValue)>, StoreError>;
     fn read_input(
         &self,
         execution: ExecutionId,
         input: InputId,
     ) -> Result<Option<InputRecord>, StoreError>;
     fn list_pins(&self) -> Result<Vec<Pin>, StoreError>;
+    fn read_effect(
+        &self,
+        execution: ExecutionId,
+        effect: narrata_core::EffectId,
+    ) -> Result<Option<EffectLedgerEntry>, StoreError>;
+    fn list_effects(&self, execution: ExecutionId) -> Result<Vec<EffectLedgerEntry>, StoreError>;
+    fn current_ledger_fence(&self, execution: ExecutionId) -> Result<LedgerFence, StoreError>;
+    fn claim_effect(&mut self, claim: EffectClaim) -> Result<EffectClaimResult, StoreError>;
+    fn renew_effect_lease(
+        &mut self,
+        execution: ExecutionId,
+        effect: narrata_core::EffectId,
+        lease: LeaseId,
+        now: u64,
+        expires_at: u64,
+    ) -> Result<EffectLedgerEntry, StoreError>;
+    fn record_effect_outcome(
+        &mut self,
+        record: EffectOutcomeRecord,
+    ) -> Result<EffectLedgerEntry, StoreError>;
+    fn mark_effect_compensated(
+        &mut self,
+        execution: ExecutionId,
+        original: narrata_core::EffectId,
+        by_effect: narrata_core::EffectId,
+    ) -> Result<EffectLedgerEntry, StoreError>;
     fn commit(&mut self, transaction: CommitTransaction) -> Result<CommitOutcome, StoreError>;
     fn collect(&mut self, policy: RetentionPolicy) -> Result<GcReport, StoreError>;
     fn integrity_scan(&self) -> Result<Vec<IntegrityIssue>, StoreError>;
@@ -340,6 +416,25 @@ pub(crate) fn check_expected_archive(
         Ok(())
     } else {
         Err(ArchiveConflict {
+            key: key.storage_key(),
+            expected,
+            actual,
+            proposed,
+        }
+        .into())
+    }
+}
+
+pub(crate) fn check_expected_compound_save(
+    key: &CompoundSaveRefKey,
+    expected: Option<RefRevision>,
+    actual: Option<CompoundSaveRefValue>,
+    proposed: Option<CompoundSaveManifestId>,
+) -> Result<(), StoreError> {
+    if actual.map(|value| value.revision) == expected {
+        Ok(())
+    } else {
+        Err(CompoundSaveConflict {
             key: key.storage_key(),
             expected,
             actual,

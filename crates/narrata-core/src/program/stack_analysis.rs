@@ -213,6 +213,40 @@ fn apply(
             require_empty(stack, path)?;
             Ok(choices.iter().map(|choice| choice.target).collect())
         }
+        OpV0::Effect { capability, next } => {
+            let declaration = program.capability(capability).ok_or_else(|| {
+                Diagnostic::new(
+                    DiagnosticClass::Validation,
+                    KIND_MISMATCH,
+                    path.clone(),
+                    "Effect capability is not declared",
+                )
+            })?;
+            let request = declaration.request_schema.static_kind().ok_or_else(|| {
+                Diagnostic::new(
+                    DiagnosticClass::Validation,
+                    KIND_MISMATCH,
+                    path.clone(),
+                    "Effect request schema has no static Value kind",
+                )
+            })?;
+            let response = declaration.response_schema.static_kind().ok_or_else(|| {
+                Diagnostic::new(
+                    DiagnosticClass::Validation,
+                    KIND_MISMATCH,
+                    path.clone(),
+                    "Effect response schema has no static Value kind",
+                )
+            })?;
+            pop_kind(stack, request, path.clone())?;
+            require_empty(stack, path)?;
+            stack.push(response);
+            Ok(vec![*next])
+        }
+        OpV0::ReconcileScene { next, .. } => {
+            require_empty(stack, path)?;
+            Ok(vec![*next])
+        }
         OpV0::Finish { value } => {
             let expected = match value {
                 ReturnModeV0::None => None,

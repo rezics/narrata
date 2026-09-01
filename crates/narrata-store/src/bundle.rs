@@ -9,10 +9,10 @@ use thiserror::Error;
 use crate::{
     ArchiveMutation, ArchivedBookmark, ArchivedBranchRef, ArchivedSaveRef, ArchivedSessionView,
     BranchId, CatalogMutation, CatalogRefKey, CheckedObject, CheckpointBundleManifestV1,
-    CommitCauseV1, CommitTransaction, CommitV1, ManifestError, ObjectDescriptor, RefKey,
-    RefMutation, RefName, RefRevision, SaveStore, StoreError, TimelineArchiveManifestV1,
-    TimelineArchiveRefKey, TimelineCatalogEventKind, TimelineCatalogEventV1, TimelineCoverage,
-    TimelineSession, TransitionReceiptV1,
+    CommitCauseV1, CommitTransaction, CommitV1, CompoundSaveManifestV1, HostTimelineManifestV1,
+    ManifestError, ObjectDescriptor, RefKey, RefMutation, RefName, RefRevision, SaveStore,
+    StoreError, TimelineArchiveManifestV1, TimelineArchiveRefKey, TimelineCatalogEventKind,
+    TimelineCatalogEventV1, TimelineCoverage, TimelineSession, TransitionReceiptV1,
     manifest::{CHECKPOINT_MANIFEST_SCHEMA_V1, TIMELINE_ARCHIVE_MANIFEST_SCHEMA_V1},
 };
 
@@ -760,7 +760,26 @@ fn edges(
             values.push(object_id(manifest.coverage.baseline().as_bytes()));
             values.extend(manifest.host_timeline);
         }
-        ObjectKind::Program | ObjectKind::Snapshot | ObjectKind::Receipt | ObjectKind::Value => {}
+        ObjectKind::CompoundSaveManifest => {
+            let manifest = CompoundSaveManifestV1::decode(object.payload())
+                .map_err(|_| BundleError::Timeline("invalid Compound Save"))?;
+            values.push(object_id(manifest.narrative.as_bytes()));
+        }
+        ObjectKind::HostTimelineManifest => {
+            let manifest = HostTimelineManifestV1::decode(object.payload())
+                .map_err(|_| BundleError::Timeline("invalid Host Timeline"))?;
+            values.extend(
+                manifest
+                    .entries
+                    .iter()
+                    .map(|entry| object_id(entry.narrative.as_bytes())),
+            );
+        }
+        ObjectKind::Program
+        | ObjectKind::Snapshot
+        | ObjectKind::Receipt
+        | ObjectKind::Value
+        | ObjectKind::EffectResponse => {}
     }
     Ok(values)
 }

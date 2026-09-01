@@ -29,6 +29,7 @@ pub struct ProgramLimits {
     pub max_globals: u64,
     pub max_locals_per_flow: u64,
     pub max_choices_per_instruction: u64,
+    pub max_capabilities: u64,
 }
 
 impl Default for ProgramLimits {
@@ -40,6 +41,7 @@ impl Default for ProgramLimits {
             max_globals: 65_536,
             max_locals_per_flow: 65_536,
             max_choices_per_instruction: 4_096,
+            max_capabilities: 1_024,
         }
     }
 }

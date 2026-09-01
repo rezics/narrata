@@ -1,14 +1,16 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use narrata_core::{
-    CheckedProgram, CommitId, ExecutionId, ObjectId, ProgramArtifactId, ReceiptId, SnapshotId,
-    TimelineArchiveManifestId, TimelineCatalogEventId,
+    CapabilityId, CheckedProgram, CommitId, DiagnosticId, EffectId, EffectResponseV0, ExecutionId,
+    HostCapabilities, InputId, NegotiatedCapabilities, ObjectId, ProgramArtifactId, ReceiptId,
+    ReconcileScene, SnapshotId, TimelineArchiveManifestId, TimelineCatalogEventId,
     codec::ObjectKind,
     limits::{MacrostepLimits, ProgramLoadLimits, SnapshotLoadLimits},
+    negotiate_capabilities,
     program::{encode_program_artifact, load_program},
     runtime::{
         CheckedRuntimeInput, DraftResult, RuntimeFault, RuntimeStateV0, SliceBudget, SliceOutcome,
-        TransitionStartError, begin_transition, new_execution,
+        TransitionStartError, begin_transition_with_parent_commit, new_execution,
     },
     snapshot::{export_snapshot, restore_snapshot},
 };
@@ -18,11 +20,15 @@ use thiserror::Error;
 use crate::{
     ArchiveMutation, ArchiveRefName, ArchivedBookmark, ArchivedBranchRef, ArchivedRefSnapshot,
     ArchivedSaveRef, BranchId, CATALOG_EVENT_SCHEMA_V1, CatalogHeadRefValue, CatalogMutation,
-    CatalogRefKey, CheckedObject, CommitCauseV1, CommitTransaction, CommitV1, InputIdConflict,
-    InputRecord, NameError, RefKey, RefMutation, RefName, RefRevision, RefValue, SaveStore,
-    StoreError, TimelineArchiveBundle, TimelineArchiveRefKey, TimelineCatalogEventKind,
-    TimelineCatalogEventV1, TimelineCoverage, TimelineOperationId, TimelineRecordingMode,
-    TransitionReceiptV1,
+    CatalogRefKey, CheckedObject, CommitCauseV1, CommitTransaction, CommitV1,
+    CompoundSaveManifestV1, CompoundSaveMutation, CompoundSaveRefKey, CompoundSaveRefValue,
+    EFFECT_RESPONSE_SCHEMA_V1, EffectClaim, EffectClaimResult, EffectLedgerEntry, EffectOutcome,
+    EffectOutcomeRecord, EffectStoreError, FederatedSaveVerifier, HostSnapshotRef,
+    HostSnapshotVerifier, HostTimelineManifestV1, InputIdConflict, InputRecord, LeaseId,
+    LedgerStatus, NameError, RecordedEffectResponseV1, RefKey, RefMutation, RefName, RefRevision,
+    RefValue, SaveStore, StoreError, TimelineArchiveBundle, TimelineArchiveRefKey,
+    TimelineCatalogEventKind, TimelineCatalogEventV1, TimelineCoverage, TimelineOperationId,
+    TimelineRecordingMode, TransitionReceiptV1,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,6 +58,35 @@ pub struct CommittedRunResult {
     pub reused: bool,
     pub state: Arc<RuntimeStateV0>,
     pub result: DraftResult,
+    pub reconcile_scene: ReconcileScene,
+}
+
+#[derive(Clone, Debug)]
+pub struct ValidatedCompoundSave {
+    key: CompoundSaveRefKey,
+    revision: RefRevision,
+    manifest: CompoundSaveManifestV1,
+    loaded: LoadedCommit,
+}
+
+impl ValidatedCompoundSave {
+    pub fn host_snapshot(&self) -> &HostSnapshotRef {
+        &self.manifest.host
+    }
+
+    pub fn narrative(&self) -> CommitId {
+        self.manifest.narrative
+    }
+
+    pub fn content_lock(&self) -> narrata_core::ContentLockId {
+        self.manifest.content_lock
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FederatedRestoreAvailability {
+    Joint(HostSnapshotRef),
+    NarrativeOnly,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -100,6 +135,30 @@ pub enum CoordinatorError {
     NotComplete,
     #[error("requested Ref is missing")]
     MissingRef,
+    #[error("capability negotiation failed: {0}")]
+    CapabilityNegotiation(String),
+    #[error("optional capability {0} was reached but is not available")]
+    CapabilityUnavailable(CapabilityId),
+    #[error("Runtime is awaiting a committed Effect")]
+    AwaitingEffect,
+    #[error("recorded Effect response must be caught up before other Input")]
+    CatchUpRequired,
+    #[error("Effect has an unknown external outcome and requires host or operator resolution")]
+    UnknownOutcome,
+    #[error("Effect response is not durably recorded in the ledger")]
+    EffectNotRecorded,
+    #[error("rewind/load is blocked by external Barrier {capability} {effect} before {target}")]
+    BlockedByExternalBarrier {
+        capability: CapabilityId,
+        effect: EffectId,
+        target: CommitId,
+    },
+    #[error("Host Snapshot validation failed: {0}")]
+    HostSnapshot(String),
+    #[error("Content Lock validation failed: {0}")]
+    ContentLock(String),
+    #[error("validated Compound Save changed before activation")]
+    CompoundSaveChanged,
 }
 
 pub struct SessionCoordinator<S> {
@@ -114,12 +173,13 @@ pub struct SessionCoordinator<S> {
     recording: TimelineRecordingMode,
     timeline: TimelineSession,
     state: Arc<RuntimeStateV0>,
+    capabilities: NegotiatedCapabilities,
 }
 
 impl<S: SaveStore> SessionCoordinator<S> {
     #[allow(clippy::too_many_arguments)]
     pub fn create(
-        mut store: S,
+        store: S,
         program: Arc<CheckedProgram>,
         execution: ExecutionId,
         session_name: RefName,
@@ -127,6 +187,34 @@ impl<S: SaveStore> SessionCoordinator<S> {
         recording: InitialRecordingMode,
         observed_at: u64,
     ) -> Result<Self, CoordinatorError> {
+        Self::create_with_capabilities(
+            store,
+            program,
+            execution,
+            session_name,
+            branch,
+            recording,
+            observed_at,
+            &HostCapabilities::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_with_capabilities(
+        mut store: S,
+        program: Arc<CheckedProgram>,
+        execution: ExecutionId,
+        session_name: RefName,
+        branch: BranchId,
+        recording: InitialRecordingMode,
+        observed_at: u64,
+        host: &HostCapabilities,
+    ) -> Result<Self, CoordinatorError> {
+        let capabilities = negotiate_capabilities(&program.artifact().capabilities, host)
+            .map_err(|errors| CoordinatorError::CapabilityNegotiation(format!("{errors:?}")))?;
+        if store.current_ledger_fence(execution)? != crate::LedgerFence::zero() {
+            return Err(CoordinatorError::IncompatibleCommit);
+        }
         let state = Arc::new(
             new_execution(&program, execution)
                 .map_err(|error| CoordinatorError::Init(error.to_string()))?,
@@ -224,6 +312,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
                 cursor: commit_id,
             },
             state,
+            capabilities,
         })
     }
 
@@ -235,6 +324,26 @@ impl<S: SaveStore> SessionCoordinator<S> {
         session_name: RefName,
         selected_branch: BranchId,
     ) -> Result<Self, CoordinatorError> {
+        Self::open_with_capabilities(
+            store,
+            program,
+            execution,
+            session_name,
+            selected_branch,
+            &HostCapabilities::default(),
+        )
+    }
+
+    pub fn open_with_capabilities(
+        store: S,
+        program: Arc<CheckedProgram>,
+        execution: ExecutionId,
+        session_name: RefName,
+        selected_branch: BranchId,
+        host: &HostCapabilities,
+    ) -> Result<Self, CoordinatorError> {
+        let capabilities = negotiate_capabilities(&program.artifact().capabilities, host)
+            .map_err(|errors| CoordinatorError::CapabilityNegotiation(format!("{errors:?}")))?;
         let branch_key = RefKey::branch(execution, selected_branch)?;
         let session_key = RefKey::active(session_name)?;
         let branch_value = store
@@ -273,6 +382,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
                 cursor: active_value.commit,
             },
             state: Arc::new(loaded.state),
+            capabilities,
         })
     }
 
@@ -296,6 +406,249 @@ impl<S: SaveStore> SessionCoordinator<S> {
         &self.state
     }
 
+    pub const fn scene_resume_support(&self) -> narrata_core::SceneResumeCapabilities {
+        self.capabilities.scene_resume()
+    }
+
+    pub fn claim_pending_effect(
+        &mut self,
+        lease: LeaseId,
+        now: u64,
+        expires_at: u64,
+    ) -> Result<EffectClaimResult, CoordinatorError> {
+        let pending = self
+            .state
+            .pending_effect()
+            .ok_or(CoordinatorError::AwaitingEffect)?;
+        let request = &pending.request;
+        Ok(self.store.claim_effect(EffectClaim {
+            execution: self.execution,
+            effect: request.id,
+            request_digest: request.request_digest,
+            capability: request.capability.clone(),
+            capability_version: request.capability_version,
+            origin_commit: self.timeline.cursor,
+            delivery: request.delivery,
+            rewind: request.rewind.clone(),
+            lease,
+            now,
+            expires_at,
+        })?)
+    }
+
+    pub fn renew_pending_effect(
+        &mut self,
+        lease: LeaseId,
+        now: u64,
+        expires_at: u64,
+    ) -> Result<EffectLedgerEntry, CoordinatorError> {
+        let effect = self
+            .state
+            .pending_effect()
+            .map(|pending| pending.request.id)
+            .ok_or(CoordinatorError::AwaitingEffect)?;
+        Ok(self
+            .store
+            .renew_effect_lease(self.execution, effect, lease, now, expires_at)?)
+    }
+
+    pub fn mark_effect_compensated(
+        &mut self,
+        original: EffectId,
+        by_effect: EffectId,
+    ) -> Result<EffectLedgerEntry, CoordinatorError> {
+        Ok(self
+            .store
+            .mark_effect_compensated(self.execution, original, by_effect)?)
+    }
+
+    pub fn complete_pending_effect(
+        &mut self,
+        lease: LeaseId,
+        payload: narrata_core::Value,
+        observed_at: u64,
+    ) -> Result<EffectLedgerEntry, CoordinatorError> {
+        self.record_pending_response(lease, payload, observed_at, false)
+    }
+
+    pub fn reject_pending_effect(
+        &mut self,
+        lease: LeaseId,
+        payload: narrata_core::Value,
+        observed_at: u64,
+    ) -> Result<EffectLedgerEntry, CoordinatorError> {
+        self.record_pending_response(lease, payload, observed_at, true)
+    }
+
+    pub fn record_pending_retryable_failure(
+        &mut self,
+        lease: LeaseId,
+        diagnostic: DiagnosticId,
+        observed_at: u64,
+    ) -> Result<EffectLedgerEntry, CoordinatorError> {
+        self.record_pending_nonresponse(
+            lease,
+            EffectOutcome::RetryableFailure(diagnostic),
+            observed_at,
+        )
+    }
+
+    pub fn record_pending_unknown_outcome(
+        &mut self,
+        lease: LeaseId,
+        diagnostic: DiagnosticId,
+        observed_at: u64,
+    ) -> Result<EffectLedgerEntry, CoordinatorError> {
+        self.record_pending_nonresponse(
+            lease,
+            EffectOutcome::UnknownOutcome(diagnostic),
+            observed_at,
+        )
+    }
+
+    pub fn resume_recorded_effect(
+        &mut self,
+        request_id: InputId,
+        limits: MacrostepLimits,
+        observed_at: u64,
+    ) -> Result<CommittedRunResult, CoordinatorError> {
+        let input = self.recorded_effect_input(request_id)?;
+        self.dispatch(input, limits, observed_at)
+    }
+
+    pub fn recover_pending_effect(
+        &mut self,
+        limits: MacrostepLimits,
+        observed_at: u64,
+    ) -> Result<Option<CommittedRunResult>, CoordinatorError> {
+        let Some(pending) = self.state.pending_effect() else {
+            return Ok(None);
+        };
+        let entry = self.store.read_effect(self.execution, pending.request.id)?;
+        match entry.map(|entry| entry.status) {
+            Some(LedgerStatus::Completed { .. })
+            | Some(LedgerStatus::Rejected { .. })
+            | Some(LedgerStatus::Compensated { .. }) => {
+                let request_id = recovery_input_id(pending.request.id);
+                self.resume_recorded_effect(request_id, limits, observed_at)
+                    .map(Some)
+            }
+            Some(LedgerStatus::UnknownOutcome { .. }) => Err(CoordinatorError::UnknownOutcome),
+            Some(LedgerStatus::Claimed { .. })
+            | Some(LedgerStatus::RetryableFailure { .. })
+            | None => Ok(None),
+        }
+    }
+
+    fn record_pending_response(
+        &mut self,
+        lease: LeaseId,
+        payload: narrata_core::Value,
+        observed_at: u64,
+        rejected: bool,
+    ) -> Result<EffectLedgerEntry, CoordinatorError> {
+        let pending = self
+            .state
+            .pending_effect()
+            .ok_or(CoordinatorError::AwaitingEffect)?;
+        let declaration = self
+            .program
+            .capability(&pending.request.capability)
+            .ok_or_else(|| {
+                CoordinatorError::CapabilityUnavailable(pending.request.capability.clone())
+            })?;
+        if !declaration.response_schema.accepts(&payload) {
+            return Err(CoordinatorError::Store(StoreError::from(
+                EffectStoreError::InvalidResponse("response schema mismatch".to_owned()),
+            )));
+        }
+        let response = RecordedEffectResponseV1 {
+            effect: pending.request.id,
+            request_digest: pending.request.request_digest,
+            capability: pending.request.capability.clone(),
+            capability_version: pending.request.capability_version,
+            payload,
+        };
+        let outcome = if rejected {
+            EffectOutcome::Rejected(response)
+        } else {
+            EffectOutcome::Completed(response)
+        };
+        self.record_pending_nonresponse(lease, outcome, observed_at)
+    }
+
+    fn record_pending_nonresponse(
+        &mut self,
+        lease: LeaseId,
+        outcome: EffectOutcome,
+        observed_at: u64,
+    ) -> Result<EffectLedgerEntry, CoordinatorError> {
+        let pending = self
+            .state
+            .pending_effect()
+            .ok_or(CoordinatorError::AwaitingEffect)?;
+        Ok(self.store.record_effect_outcome(EffectOutcomeRecord {
+            execution: self.execution,
+            effect: pending.request.id,
+            request_digest: pending.request.request_digest,
+            lease,
+            outcome,
+            observed_at,
+        })?)
+    }
+
+    fn recorded_effect_input(
+        &self,
+        request_id: InputId,
+    ) -> Result<CheckedRuntimeInput, CoordinatorError> {
+        let pending = self
+            .state
+            .pending_effect()
+            .ok_or(CoordinatorError::AwaitingEffect)?;
+        let entry = self
+            .store
+            .read_effect(self.execution, pending.request.id)?
+            .ok_or(CoordinatorError::EffectNotRecorded)?;
+        if entry.request_digest != pending.request.request_digest
+            || entry.origin_commit != self.timeline.cursor
+        {
+            return Err(CoordinatorError::EffectNotRecorded);
+        }
+        let response_id = match entry.status {
+            LedgerStatus::Completed { response, .. }
+            | LedgerStatus::Rejected { response, .. }
+            | LedgerStatus::Compensated { response, .. } => response,
+            LedgerStatus::UnknownOutcome { .. } => return Err(CoordinatorError::UnknownOutcome),
+            LedgerStatus::Claimed { .. } | LedgerStatus::RetryableFailure { .. } => {
+                return Err(CoordinatorError::EffectNotRecorded);
+            }
+        };
+        let object = self
+            .store
+            .get_object(response_id)?
+            .ok_or(StoreError::MissingObject(response_id))?;
+        if object.kind() != ObjectKind::EffectResponse
+            || object.schema() != EFFECT_RESPONSE_SCHEMA_V1
+        {
+            return Err(StoreError::ObjectKind(response_id).into());
+        }
+        let response = RecordedEffectResponseV1::decode(object.payload())
+            .map_err(|error| CoordinatorError::Object(error.to_string()))?;
+        CheckedRuntimeInput::effect_response(
+            request_id,
+            pending,
+            &self.program,
+            EffectResponseV0 {
+                effect: response.effect,
+                request_digest: response.request_digest,
+                capability: response.capability,
+                capability_version: response.capability_version,
+                payload: response.payload,
+            },
+        )
+        .map_err(|error| CoordinatorError::Object(error.to_string()))
+    }
+
     pub fn recording(&self) -> &TimelineRecordingMode {
         &self.recording
     }
@@ -306,6 +659,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
         limits: MacrostepLimits,
         observed_at: u64,
     ) -> Result<CommittedRunResult, CoordinatorError> {
+        self.validate_effect_dispatch(&input)?;
         let input_id = input.request_id();
         let payload = input.payload_digest();
         if let Some(existing) = self.store.read_input(self.execution, input_id)? {
@@ -320,6 +674,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
                 return Err(StoreError::from(InputIdConflict { existing, proposed }).into());
             }
             let loaded = load_commit(&self.store, existing.commit, &self.program)?;
+            self.ensure_barriers_allow(&loaded)?;
             let receipt_id = match loaded.commit.cause {
                 CommitCauseV1::RuntimeTransition(id) => id,
                 CommitCauseV1::Genesis => {
@@ -365,10 +720,26 @@ impl<S: SaveStore> SessionCoordinator<S> {
                 reused: true,
                 state: self.state.clone(),
                 result,
+                reconcile_scene: ReconcileScene {
+                    target: self.state.scene.clone(),
+                },
             });
         }
 
-        let draft = run_transition(self.program.clone(), self.state.clone(), input, limits)?;
+        let draft = run_transition(
+            self.program.clone(),
+            self.state.clone(),
+            self.timeline.cursor,
+            input,
+            limits,
+        )?;
+        if let DraftResult::AwaitEffect(request) = draft.result()
+            && !self.capabilities.contains(&request.capability)
+        {
+            return Err(CoordinatorError::CapabilityUnavailable(
+                request.capability.clone(),
+            ));
+        }
         let result = draft.result().clone();
         let snapshot_bytes = export_snapshot(draft.next_state())
             .map_err(|error| CoordinatorError::Snapshot(error.to_string()))?;
@@ -383,13 +754,14 @@ impl<S: SaveStore> SessionCoordinator<S> {
         );
         let receipt_object = receipt.to_object();
         let receipt_id = ReceiptId::from_bytes(*receipt_object.id().as_bytes());
+        let ledger_fence = self.store.current_ledger_fence(self.execution)?.get();
         let commit = CommitV1 {
             parent: Some(self.timeline.cursor),
             execution: self.execution,
             program: self.program.artifact_id(),
             snapshot: snapshot_id,
             cause: CommitCauseV1::RuntimeTransition(receipt_id),
-            ledger_fence: 0,
+            ledger_fence,
             turn: draft.next_state().turn,
         };
         let commit_object = commit.to_object();
@@ -495,6 +867,9 @@ impl<S: SaveStore> SessionCoordinator<S> {
             reused: false,
             state: self.state.clone(),
             result,
+            reconcile_scene: ReconcileScene {
+                target: self.state.scene.clone(),
+            },
         })
     }
 
@@ -509,6 +884,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
             .ok_or(CoordinatorError::MissingRef)?;
         ensure_ancestor(&self.store, target, head.commit)?;
         let loaded = load_commit(&self.store, target, &self.program)?;
+        self.ensure_barriers_allow(&loaded)?;
         let outcome = self.store.commit(CommitTransaction {
             refs: vec![RefMutation {
                 key: self.session_key.clone(),
@@ -1007,6 +1383,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
             .read_ref(&RefKey::save(owner, slot))?
             .ok_or(CoordinatorError::MissingRef)?;
         let loaded = load_commit(&self.store, value.commit, &self.program)?;
+        self.ensure_barriers_allow(&loaded)?;
         let outcome = self.store.commit(CommitTransaction {
             refs: vec![RefMutation {
                 key: self.session_key.clone(),
@@ -1025,6 +1402,231 @@ impl<S: SaveStore> SessionCoordinator<S> {
         self.timeline.cursor = value.commit;
         self.state = Arc::new(loaded.state.clone());
         Ok(loaded)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn save_compound(
+        &mut self,
+        owner: RefName,
+        slot: RefName,
+        host: HostSnapshotRef,
+        content_lock: narrata_core::ContentLockId,
+        expected: Option<RefRevision>,
+        verifier: &impl FederatedSaveVerifier,
+        observed_at: u64,
+    ) -> Result<CompoundSaveRefValue, CoordinatorError> {
+        verifier
+            .verify(&host)
+            .map_err(CoordinatorError::HostSnapshot)?;
+        verifier
+            .verify_content_lock(content_lock)
+            .map_err(CoordinatorError::ContentLock)?;
+        let loaded = load_commit(&self.store, self.timeline.cursor, &self.program)?;
+        self.ensure_barriers_allow(&loaded)?;
+        let manifest = CompoundSaveManifestV1 {
+            execution: self.execution,
+            narrative: self.timeline.cursor,
+            host,
+            program: self.program.artifact_id(),
+            content_lock,
+            ledger_fence: crate::LedgerFence::from_u64(loaded.commit.ledger_fence),
+        };
+        let object = manifest.to_object();
+        let manifest_id = narrata_core::CompoundSaveManifestId::from_bytes(*object.id().as_bytes());
+        let key = CompoundSaveRefKey::new(owner, slot);
+        let outcome = self.store.commit(CommitTransaction {
+            objects: vec![object],
+            compound_saves: vec![CompoundSaveMutation {
+                key: key.clone(),
+                expected,
+                next: Some(manifest_id),
+            }],
+            observed_at,
+            ..CommitTransaction::default()
+        })?;
+        outcome
+            .compound_saves
+            .get(&key)
+            .and_then(|value| *value)
+            .ok_or(CoordinatorError::MissingRef)
+    }
+
+    pub fn validate_compound_save(
+        &self,
+        owner: RefName,
+        slot: RefName,
+        verifier: &impl FederatedSaveVerifier,
+    ) -> Result<ValidatedCompoundSave, CoordinatorError> {
+        let key = CompoundSaveRefKey::new(owner, slot);
+        let reference = self
+            .store
+            .read_compound_save(&key)?
+            .ok_or(CoordinatorError::MissingRef)?;
+        let object_id = ObjectId::from_bytes(*reference.manifest.as_bytes());
+        let object = self
+            .store
+            .get_object(object_id)?
+            .ok_or(StoreError::MissingObject(object_id))?;
+        if object.kind() != ObjectKind::CompoundSaveManifest {
+            return Err(StoreError::ObjectKind(object_id).into());
+        }
+        let manifest = CompoundSaveManifestV1::decode(object.payload())
+            .map_err(|error| CoordinatorError::Object(error.to_string()))?;
+        if manifest.execution != self.execution || manifest.program != self.program.artifact_id() {
+            return Err(CoordinatorError::IncompatibleCommit);
+        }
+        let loaded = load_commit(&self.store, manifest.narrative, &self.program)?;
+        if loaded.commit.ledger_fence != manifest.ledger_fence.get() {
+            return Err(CoordinatorError::Commit(
+                "Compound Save ledger fence mismatch".to_owned(),
+            ));
+        }
+        self.ensure_barriers_allow(&loaded)?;
+        verifier
+            .verify(&manifest.host)
+            .map_err(CoordinatorError::HostSnapshot)?;
+        verifier
+            .verify_content_lock(manifest.content_lock)
+            .map_err(CoordinatorError::ContentLock)?;
+        Ok(ValidatedCompoundSave {
+            key,
+            revision: reference.revision,
+            manifest,
+            loaded,
+        })
+    }
+
+    pub fn activate_compound_save(
+        &mut self,
+        validated: ValidatedCompoundSave,
+        observed_at: u64,
+    ) -> Result<LoadedCommit, CoordinatorError> {
+        let actual = self
+            .store
+            .read_compound_save(&validated.key)?
+            .ok_or(CoordinatorError::CompoundSaveChanged)?;
+        if actual.revision != validated.revision || actual.manifest != validated.manifest.id() {
+            return Err(CoordinatorError::CompoundSaveChanged);
+        }
+        self.ensure_barriers_allow(&validated.loaded)?;
+        let outcome = self.store.commit(CommitTransaction {
+            refs: vec![RefMutation {
+                key: self.session_key.clone(),
+                expected: Some(self.active_revision),
+                next: Some(validated.loaded.id),
+            }],
+            observed_at,
+            ..CommitTransaction::default()
+        })?;
+        self.active_revision = outcome
+            .refs
+            .get(&self.session_key)
+            .and_then(|value| *value)
+            .map(|value| value.revision)
+            .ok_or(CoordinatorError::MissingRef)?;
+        self.timeline.cursor = validated.loaded.id;
+        self.state = Arc::new(validated.loaded.state.clone());
+        Ok(validated.loaded)
+    }
+
+    pub fn validate_host_timeline(
+        &self,
+        manifest: &HostTimelineManifestV1,
+        verifier: &impl HostSnapshotVerifier,
+    ) -> Result<(), CoordinatorError> {
+        if manifest.execution() != self.execution {
+            return Err(CoordinatorError::IncompatibleCommit);
+        }
+        for entry in manifest.entries() {
+            let loaded = load_commit(&self.store, entry.narrative, &self.program)?;
+            if loaded.commit.ledger_fence != entry.ledger_fence.get() {
+                return Err(CoordinatorError::Commit(
+                    "Host Timeline ledger fence mismatch".to_owned(),
+                ));
+            }
+            verifier
+                .verify(&entry.host)
+                .map_err(CoordinatorError::HostSnapshot)?;
+        }
+        Ok(())
+    }
+
+    pub fn federated_restore_availability(
+        &self,
+        manifest: &HostTimelineManifestV1,
+        narrative: CommitId,
+    ) -> FederatedRestoreAvailability {
+        manifest
+            .entry(narrative)
+            .map_or(FederatedRestoreAvailability::NarrativeOnly, |entry| {
+                FederatedRestoreAvailability::Joint(entry.host.clone())
+            })
+    }
+
+    pub fn inspect_commit_simulation(
+        &self,
+        target: CommitId,
+    ) -> Result<LoadedCommit, CoordinatorError> {
+        load_commit(&self.store, target, &self.program)
+    }
+
+    fn validate_effect_dispatch(
+        &self,
+        input: &CheckedRuntimeInput,
+    ) -> Result<(), CoordinatorError> {
+        let Some(pending) = self.state.pending_effect() else {
+            return Ok(());
+        };
+        match input.as_v0() {
+            narrata_core::runtime::RuntimeInputV0::EffectResponse { .. } => {
+                let expected = self.recorded_effect_input(input.request_id())?;
+                if &expected == input {
+                    Ok(())
+                } else {
+                    Err(CoordinatorError::EffectNotRecorded)
+                }
+            }
+            _ => match self.store.read_effect(self.execution, pending.request.id)? {
+                Some(entry)
+                    if matches!(
+                        entry.status,
+                        LedgerStatus::Completed { .. }
+                            | LedgerStatus::Rejected { .. }
+                            | LedgerStatus::Compensated { .. }
+                    ) =>
+                {
+                    Err(CoordinatorError::CatchUpRequired)
+                }
+                Some(entry) if matches!(entry.status, LedgerStatus::UnknownOutcome { .. }) => {
+                    Err(CoordinatorError::UnknownOutcome)
+                }
+                _ => Err(CoordinatorError::AwaitingEffect),
+            },
+        }
+    }
+
+    fn ensure_barriers_allow(&self, target: &LoadedCommit) -> Result<(), CoordinatorError> {
+        for entry in self.store.list_effects(self.execution)? {
+            if entry.rewind != narrata_core::RewindPolicy::Barrier {
+                continue;
+            }
+            let fence = match entry.status {
+                LedgerStatus::Completed { fence, .. }
+                | LedgerStatus::UnknownOutcome { fence, .. } => fence,
+                LedgerStatus::Claimed { .. }
+                | LedgerStatus::Rejected { .. }
+                | LedgerStatus::RetryableFailure { .. }
+                | LedgerStatus::Compensated { .. } => continue,
+            };
+            if fence.get() > target.commit.ledger_fence {
+                return Err(CoordinatorError::BlockedByExternalBarrier {
+                    capability: entry.capability,
+                    effect: entry.effect,
+                    target: target.id,
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn enable_complete_recording(
@@ -1293,11 +1895,13 @@ fn path_from_ancestor(
 fn run_transition(
     program: Arc<CheckedProgram>,
     state: Arc<RuntimeStateV0>,
+    parent_commit: CommitId,
     input: CheckedRuntimeInput,
     limits: MacrostepLimits,
 ) -> Result<narrata_core::runtime::TransitionDraft, CoordinatorError> {
     let mut outcome =
-        begin_transition(program, state, input, limits)?.run_slice(SliceBudget::unlimited());
+        begin_transition_with_parent_commit(program, state, parent_commit, input, limits)?
+            .run_slice(SliceBudget::unlimited());
     loop {
         match outcome {
             SliceOutcome::Yielded { runner, .. } => {
@@ -1352,6 +1956,9 @@ fn result_from_state(state: &RuntimeStateV0) -> Result<DraftResult, CoordinatorE
         },
         narrata_core::runtime::RuntimeStatusV0::Finished { result, .. } => {
             Ok(DraftResult::Finished(result.clone()))
+        }
+        narrata_core::runtime::RuntimeStatusV0::AwaitingEffect { pending, .. } => {
+            Ok(DraftResult::AwaitEffect(pending.request.clone()))
         }
         narrata_core::runtime::RuntimeStatusV0::Ready { .. } => Err(CoordinatorError::Commit(
             "committed transition ended outside an interaction safe point".to_owned(),
@@ -1416,6 +2023,16 @@ fn deterministic_branch(parent: CommitId, payload: &[u8; 32]) -> BranchId {
     let mut bytes = [0; 16];
     bytes.copy_from_slice(&digest[..16]);
     BranchId::from_bytes(bytes)
+}
+
+fn recovery_input_id(effect: EffectId) -> InputId {
+    let mut hasher = Sha256::new();
+    hasher.update(b"narrata-effect-recovery-input\0");
+    hasher.update(effect.as_bytes());
+    let digest = hasher.finalize();
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    InputId::from_bytes(bytes)
 }
 
 fn deterministic_operation(domain: &[u8], source: &[u8]) -> TimelineOperationId {

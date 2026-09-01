@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use narrata_core::{
-    CheckpointBundleManifestId, CommitId, ObjectId, ReceiptId, SnapshotId,
-    TimelineArchiveManifestId, TimelineCatalogEventId,
+    CheckpointBundleManifestId, CommitId, CompoundSaveManifestId, HostTimelineManifestId, ObjectId,
+    ReceiptId, SnapshotId, TimelineArchiveManifestId, TimelineCatalogEventId,
     codec::{ObjectKind, decode_envelope, encode_envelope},
     limits::DecodeLimits,
 };
@@ -106,6 +106,16 @@ impl CheckedObject {
     pub fn timeline_manifest_id(&self) -> Option<TimelineArchiveManifestId> {
         (self.kind == ObjectKind::TimelineArchiveManifest)
             .then(|| TimelineArchiveManifestId::from_bytes(*self.id.as_bytes()))
+    }
+
+    pub fn compound_save_manifest_id(&self) -> Option<CompoundSaveManifestId> {
+        (self.kind == ObjectKind::CompoundSaveManifest)
+            .then(|| CompoundSaveManifestId::from_bytes(*self.id.as_bytes()))
+    }
+
+    pub fn host_timeline_manifest_id(&self) -> Option<HostTimelineManifestId> {
+        (self.kind == ObjectKind::HostTimelineManifest)
+            .then(|| HostTimelineManifestId::from_bytes(*self.id.as_bytes()))
     }
 }
 

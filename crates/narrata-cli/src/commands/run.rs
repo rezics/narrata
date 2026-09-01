@@ -132,6 +132,7 @@ fn status_name(state: &RuntimeStateV0) -> &'static str {
     match state.status {
         narrata_core::runtime::RuntimeStatusV0::Ready { .. } => "ready",
         narrata_core::runtime::RuntimeStatusV0::Awaiting { .. } => "awaiting",
+        narrata_core::runtime::RuntimeStatusV0::AwaitingEffect { .. } => "awaiting-effect",
         narrata_core::runtime::RuntimeStatusV0::Finished { .. } => "finished",
     }
 }

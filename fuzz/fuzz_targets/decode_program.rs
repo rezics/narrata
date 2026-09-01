@@ -5,4 +5,3 @@ use libfuzzer_sys::fuzz_target;
 fuzz_target!(|data: &[u8]| {
     let _ = narrata_core::load_program(data, &Default::default());
 });
-

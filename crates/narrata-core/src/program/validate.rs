@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, error::Error, fmt};
 
 use crate::{
+    DeliveryPolicy, RewindPolicy,
     codec::{DecodeError, digest_bytes},
     diagnostic::{
         Diagnostic, DiagnosticClass, DiagnosticPath,
@@ -83,6 +84,43 @@ pub fn validate_program(
     let mut instruction_indices = BTreeMap::new();
     let mut global_indices = BTreeMap::new();
     let mut choice_ids = BTreeMap::<ChoiceId, (FlowId, InstructionId)>::new();
+    let mut previous_capability = None;
+    for capability in &artifact.capabilities {
+        if previous_capability
+            .as_ref()
+            .is_some_and(|previous| previous >= &capability.id)
+        {
+            diagnostics.push(Diagnostic::new(
+                DiagnosticClass::Validation,
+                DUPLICATE_ID,
+                DiagnosticPath::root().field("capabilities"),
+                "capability IDs must be unique and sorted",
+            ));
+        }
+        previous_capability = Some(capability.id.clone());
+        let valid_policy = matches!(
+            (&capability.delivery, &capability.rewind),
+            (DeliveryPolicy::Reconcile, RewindPolicy::Reapply)
+                | (
+                    DeliveryPolicy::RecordedQuery,
+                    RewindPolicy::ReuseRecordedResponse
+                )
+                | (
+                    DeliveryPolicy::AtLeastOnceIdempotent | DeliveryPolicy::HostTransactional,
+                    RewindPolicy::Reapply
+                        | RewindPolicy::Barrier
+                        | RewindPolicy::Compensatable { .. }
+                )
+        );
+        if !valid_policy {
+            diagnostics.push(Diagnostic::new(
+                DiagnosticClass::Validation,
+                CONTROL_FLOW_INVALID,
+                DiagnosticPath::root().field("capabilities"),
+                "delivery and rewind policy combination is invalid",
+            ));
+        }
+    }
     for (index, global) in artifact.globals.iter().enumerate() {
         if global_indices.insert(global.id, index).is_some() {
             diagnostics.push(duplicate("globals", global.id));
@@ -235,6 +273,7 @@ fn check_counts(
     let too_many = artifact.flows.len() as u64 > limits.program.max_flows
         || artifact.constants.len() as u64 > limits.program.max_constants
         || artifact.globals.len() as u64 > limits.program.max_globals
+        || artifact.capabilities.len() as u64 > limits.program.max_capabilities
         || instruction_count > limits.program.max_instructions
         || artifact.flows.iter().any(|flow| {
             flow.parameters.len().saturating_add(flow.locals.len()) as u64
@@ -257,12 +296,12 @@ fn check_counts(
             "Program exceeds configured limits",
         ));
     }
-    if !artifact.capabilities.is_empty() || !artifact.external_content.is_empty() {
+    if !artifact.external_content.is_empty() {
         diagnostics.push(Diagnostic::new(
             DiagnosticClass::Validation,
             CONTROL_FLOW_INVALID,
             DiagnosticPath::root(),
-            "Stage 1 capability and external content declarations must be empty",
+            "external content declarations are not supported by this Program format",
         ));
     }
 }
@@ -382,6 +421,27 @@ fn validate_references(program: &CheckedProgram, diagnostics: &mut Vec<Diagnosti
                         }
                         target_ref(program, flow.id, choice.target, path.clone(), diagnostics);
                     }
+                }
+                OpV0::Effect { capability, next } => {
+                    match program.capability(capability) {
+                        Some(declaration)
+                            if declaration.request_schema.static_kind().is_some()
+                                && declaration.response_schema.static_kind().is_some() => {}
+                        Some(_) => diagnostics.push(kind_mismatch(
+                            path.clone(),
+                            "Effect request and response schemas need a static Value kind",
+                        )),
+                        None => diagnostics.push(Diagnostic::new(
+                            DiagnosticClass::Validation,
+                            MISSING_REFERENCE,
+                            path.clone(),
+                            "Effect capability is not declared",
+                        )),
+                    }
+                    target_ref(program, flow.id, *next, path, diagnostics);
+                }
+                OpV0::ReconcileScene { next, .. } => {
+                    target_ref(program, flow.id, *next, path, diagnostics);
                 }
                 OpV0::Finish { value } => {
                     if flow.id != program.artifact.entry_flow {

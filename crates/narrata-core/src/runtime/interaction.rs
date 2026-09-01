@@ -3,11 +3,24 @@ use std::sync::Arc;
 use sha2::{Digest, Sha256};
 
 use crate::{
+    CommitId,
+    effect::EffectRequestV0,
     identity::{
         ChoiceId, ExecutionId, InputPayloadDigest, InstructionId, InteractionId, StateDigest,
     },
     value::Value,
 };
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingEffectV0 {
+    pub request: EffectRequestV0,
+    pub origin_instruction: InstructionId,
+    pub origin_parent_commit: CommitId,
+    pub origin_parent_state: StateDigest,
+    pub origin_input_digest: InputPayloadDigest,
+    pub occurrence: u64,
+    pub resume_to: InstructionId,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingChoiceItemV0 {
@@ -79,6 +92,7 @@ pub struct ChoiceView {
 pub enum DraftResult {
     AwaitSay(SayView),
     AwaitChoice(ChoiceView),
+    AwaitEffect(EffectRequestV0),
     Finished(Value),
 }
 

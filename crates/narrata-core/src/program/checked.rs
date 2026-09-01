@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
+    effect::{CapabilityDeclV0, CapabilityId},
     identity::{FlowId, GlobalId, InstructionId, ProgramArtifactId},
     value::{Value, ValueKindV0},
 };
@@ -69,5 +70,12 @@ impl CheckedProgram {
 
     pub fn maximum_stack_depth(&self, flow: FlowId) -> Option<usize> {
         self.stack_limits.get(&flow).copied()
+    }
+
+    pub fn capability(&self, id: &CapabilityId) -> Option<&CapabilityDeclV0> {
+        self.artifact
+            .capabilities
+            .iter()
+            .find(|capability| &capability.id == id)
     }
 }

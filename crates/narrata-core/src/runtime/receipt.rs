@@ -10,6 +10,7 @@ pub enum ReceiptResultKindV0 {
     Say = 0,
     Choice = 1,
     Finished = 2,
+    Effect = 3,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

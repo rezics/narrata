@@ -16,6 +16,9 @@ pub enum ObjectKind {
     TimelineCatalogEvent = 6,
     CheckpointBundleManifest = 7,
     TimelineArchiveManifest = 8,
+    EffectResponse = 9,
+    CompoundSaveManifest = 10,
+    HostTimelineManifest = 11,
 }
 
 impl ObjectKind {
@@ -29,6 +32,9 @@ impl ObjectKind {
             6 => Some(Self::TimelineCatalogEvent),
             7 => Some(Self::CheckpointBundleManifest),
             8 => Some(Self::TimelineArchiveManifest),
+            9 => Some(Self::EffectResponse),
+            10 => Some(Self::CompoundSaveManifest),
+            11 => Some(Self::HostTimelineManifest),
             _ => None,
         }
     }

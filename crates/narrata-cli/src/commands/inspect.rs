@@ -57,6 +57,7 @@ pub(crate) fn snapshot(args: &[String]) -> Result<(), String> {
             narrata_core::runtime::PendingInteractionV0::Say { .. } => "awaiting-say",
             narrata_core::runtime::PendingInteractionV0::Choice { .. } => "awaiting-choice",
         },
+        narrata_core::runtime::RuntimeStatusV0::AwaitingEffect { .. } => "awaiting-effect",
         narrata_core::runtime::RuntimeStatusV0::Finished { .. } => "finished",
     };
     let value = serde_json::json!({

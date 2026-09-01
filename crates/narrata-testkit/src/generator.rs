@@ -1,11 +1,196 @@
+use std::collections::BTreeMap;
+
 use narrata_core::{
-    ChoiceId, FlowId, GlobalId, InstructionId, LocalId, ProgramId, Value, ValueKindV0,
+    ActorId, ActorState, AudioChannelId, AudioState, CameraState, CapabilityDeclV0, CapabilityId,
+    CapabilityIdError, CapabilityRequirement, CapabilityVersion, ChoiceId, DeliveryPolicy,
+    EntityId, FlowId, GlobalId, InstructionId, LayerId, LayerState, LocalId, ProgramId,
+    RewindPolicy, SceneError, SceneState, Value, ValueKindV0, ValueSchemaV0,
     program::{
         BinaryOpV0, ChoiceArmV0, ConstIndex, FlowV0, GlobalDeclV0, InstructionRecordV0,
         LocalDeclV0, OpV0, ProgramArtifactV0, ReturnModeV0, SlotRefV0, UnaryOpV0,
     },
     version::{PROGRAM_FORMAT_V0, SEMANTICS_V0},
 };
+
+pub fn scene_reconcile_v0() -> Result<ProgramArtifactV0, SceneError> {
+    let flow = FlowId::from_u128(40);
+    let layer = LayerId::from_u128(1);
+    let actor = ActorId::from_u128(1);
+    let scene = SceneState::checked(
+        vec![LayerState {
+            id: layer,
+            asset: Some(EntityId::from_u128(1)),
+            visible: true,
+            z_index: 0,
+        }],
+        [(
+            actor,
+            ActorState {
+                id: actor,
+                asset: EntityId::from_u128(2),
+                layer,
+                visible: true,
+                x_milli: 250,
+                y_milli: -100,
+            },
+        )]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>(),
+        CameraState {
+            x_milli: 5,
+            y_milli: 10,
+            zoom_milli: 1_250,
+        },
+        [(
+            AudioChannelId::from_u128(1),
+            AudioState {
+                asset: EntityId::from_u128(3),
+                playing: true,
+                looping: true,
+                position_millis: Some(500),
+            },
+        )]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>(),
+        None,
+    )?;
+    Ok(ProgramArtifactV0 {
+        format_version: PROGRAM_FORMAT_V0,
+        semantics_version: SEMANTICS_V0,
+        program_id: ProgramId::from_u128(40),
+        entry_flow: flow,
+        constants: vec![Value::from("Scene ready")],
+        globals: Vec::new(),
+        flows: vec![FlowV0 {
+            id: flow,
+            parameters: Vec::new(),
+            locals: Vec::new(),
+            return_kind: None,
+            entry: InstructionId::from_u128(1),
+            instructions: vec![
+                record(
+                    1,
+                    OpV0::ReconcileScene {
+                        target: scene,
+                        next: InstructionId::from_u128(2),
+                    },
+                ),
+                record(
+                    2,
+                    OpV0::Say {
+                        speaker: None,
+                        text: ConstIndex(0),
+                        next: InstructionId::from_u128(3),
+                    },
+                ),
+                record(
+                    3,
+                    OpV0::Finish {
+                        value: ReturnModeV0::None,
+                    },
+                ),
+            ],
+        }],
+        capabilities: Vec::new(),
+        external_content: Vec::new(),
+    })
+}
+
+pub fn recorded_query_v0() -> Result<ProgramArtifactV0, CapabilityIdError> {
+    effect_v0(
+        "host.query",
+        DeliveryPolicy::RecordedQuery,
+        RewindPolicy::ReuseRecordedResponse,
+        30,
+    )
+}
+
+pub fn barrier_command_v0() -> Result<ProgramArtifactV0, CapabilityIdError> {
+    effect_v0(
+        "host.command",
+        DeliveryPolicy::AtLeastOnceIdempotent,
+        RewindPolicy::Barrier,
+        31,
+    )
+}
+
+fn effect_v0(
+    capability: &str,
+    delivery: DeliveryPolicy,
+    rewind: RewindPolicy,
+    program: u128,
+) -> Result<ProgramArtifactV0, CapabilityIdError> {
+    let flow = FlowId::from_u128(30);
+    let result = GlobalId::from_u128(30);
+    let capability = CapabilityId::new(capability)?;
+    let version = CapabilityVersion::new(1).ok_or(CapabilityIdError::Invalid)?;
+    Ok(ProgramArtifactV0 {
+        format_version: PROGRAM_FORMAT_V0,
+        semantics_version: SEMANTICS_V0,
+        program_id: ProgramId::from_u128(program),
+        entry_flow: flow,
+        constants: vec![Value::I64(7), Value::from("Effect completed")],
+        globals: vec![GlobalDeclV0 {
+            id: result,
+            kind: ValueKindV0::I64,
+            default: Value::I64(0),
+        }],
+        flows: vec![FlowV0 {
+            id: flow,
+            parameters: Vec::new(),
+            locals: Vec::new(),
+            return_kind: None,
+            entry: InstructionId::from_u128(1),
+            instructions: vec![
+                record(
+                    1,
+                    OpV0::Const {
+                        constant: ConstIndex(0),
+                        next: InstructionId::from_u128(2),
+                    },
+                ),
+                record(
+                    2,
+                    OpV0::Effect {
+                        capability: capability.clone(),
+                        next: InstructionId::from_u128(3),
+                    },
+                ),
+                record(
+                    3,
+                    OpV0::Store {
+                        slot: SlotRefV0::Global(result),
+                        next: InstructionId::from_u128(4),
+                    },
+                ),
+                record(
+                    4,
+                    OpV0::Say {
+                        speaker: None,
+                        text: ConstIndex(1),
+                        next: InstructionId::from_u128(5),
+                    },
+                ),
+                record(
+                    5,
+                    OpV0::Finish {
+                        value: ReturnModeV0::None,
+                    },
+                ),
+            ],
+        }],
+        capabilities: vec![CapabilityDeclV0 {
+            id: capability,
+            version,
+            requirement: CapabilityRequirement::Required,
+            request_schema: ValueSchemaV0::I64,
+            response_schema: ValueSchemaV0::I64,
+            delivery,
+            rewind,
+        }],
+        external_content: Vec::new(),
+    })
+}
 
 pub fn hello_v0() -> ProgramArtifactV0 {
     let flow = FlowId::from_u128(1);

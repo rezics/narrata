@@ -225,6 +225,7 @@ impl TransitionReceiptV1 {
             0 => ReceiptResultKindV0::Say,
             1 => ReceiptResultKindV0::Choice,
             2 => ReceiptResultKindV0::Finished,
+            3 => ReceiptResultKindV0::Effect,
             _ => return Err(WireError::Schema("Receipt result kind")),
         };
         key(&mut reader, 10)?;

@@ -11,4 +11,3 @@ fuzz_target!(|data: &[u8]| {
         let _ = narrata_core::restore_snapshot(data, &program, &Default::default());
     }
 });
-

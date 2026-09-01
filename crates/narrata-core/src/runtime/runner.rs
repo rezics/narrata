@@ -3,7 +3,9 @@ use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
 
 use crate::{
+    CommitId,
     codec::digest_bytes,
+    effect::{derive_effect_id, effect_payload_digest, effect_request_digest},
     identity::{InputId, InputPayloadDigest, InstructionId, ReceiptDigest, StateDigest},
     limits::MacrostepLimits,
     program::{BinaryOpV0, CheckedProgram, OpV0, ReturnModeV0, SlotRefV0, UnaryOpV0},
@@ -11,9 +13,9 @@ use crate::{
 };
 
 use super::{
-    CheckedRuntimeInput, DraftResult, FrameStateV0, PendingChoiceItemV0, PendingInteractionV0,
-    ReceiptResultKindV0, RuntimeInputV0, RuntimeStateV0, RuntimeStatusV0, SliceBudget,
-    TraceEventV0, TransitionReceiptV0, Turn, VmStateV0, derive_interaction_id,
+    CheckedRuntimeInput, DraftResult, FrameStateV0, PendingChoiceItemV0, PendingEffectV0,
+    PendingInteractionV0, ReceiptResultKindV0, RuntimeInputV0, RuntimeStateV0, RuntimeStatusV0,
+    SliceBudget, TraceEventV0, TransitionReceiptV0, Turn, VmStateV0, derive_interaction_id,
     input_payload_digest, interaction_view,
     receipt::{ReceiptMetrics, encode_receipt_payload, receipt_v0},
 };
@@ -52,6 +54,10 @@ pub enum RuntimeFault {
     Arithmetic,
     #[error("Choice offers no visible items")]
     NoVisibleChoices,
+    #[error("Effect execution requires a persistent parent Commit identity")]
+    MissingParentCommit,
+    #[error("Effect payload does not match the negotiated capability schema")]
+    EffectSchemaMismatch,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -136,6 +142,7 @@ struct WorkingStateV0 {
 pub struct TransitionRunner {
     program: Arc<CheckedProgram>,
     parent_digest: StateDigest,
+    parent_commit: Option<CommitId>,
     input: CheckedRuntimeInput,
     input_digest: InputPayloadDigest,
     limits: MacrostepLimits,
@@ -157,6 +164,7 @@ impl TransitionRunner {
         parent: Arc<RuntimeStateV0>,
         input: CheckedRuntimeInput,
         limits: MacrostepLimits,
+        parent_commit: Option<CommitId>,
     ) -> Result<Self, TransitionStartError> {
         if parent.program_artifact_id != program.artifact_id() {
             return Err(TransitionStartError::ProgramMismatch);
@@ -172,82 +180,109 @@ impl TransitionRunner {
             .checked_add(1)
             .ok_or(TransitionStartError::TurnOverflow)?;
         let mut state = parent.as_ref().clone();
-        let ready_vm = match (&parent.status, input.as_v0()) {
-            (RuntimeStatusV0::Ready { vm }, RuntimeInputV0::Start { .. })
-                if parent.turn == Turn(0) =>
-            {
-                vm.clone()
-            }
-            (
-                RuntimeStatusV0::Awaiting {
-                    vm,
-                    pending:
-                        PendingInteractionV0::Say {
-                            interaction_id,
-                            resume_to,
-                            ..
-                        },
-                },
-                RuntimeInputV0::Advance {
-                    interaction_id: supplied,
-                    ..
-                },
-            ) if interaction_id == supplied => {
-                let mut vm = vm.clone();
-                let frame = vm
-                    .frames
-                    .last_mut()
-                    .ok_or(TransitionStartError::InvalidInput("missing active frame"))?;
-                frame.instruction = *resume_to;
-                vm
-            }
-            (
-                RuntimeStatusV0::Awaiting {
-                    vm,
-                    pending:
-                        PendingInteractionV0::Choice {
-                            interaction_id,
-                            offered,
-                            ..
-                        },
-                },
-                RuntimeInputV0::Select {
-                    interaction_id: supplied,
-                    choice_id,
-                    ..
-                },
-            ) if interaction_id == supplied => {
-                let target = offered
-                    .iter()
-                    .find(|choice| choice.id == *choice_id)
-                    .map(PendingChoiceItemV0::target_for_runtime)
-                    .ok_or(TransitionStartError::InvalidInput(
-                        "ChoiceId was not offered",
-                    ))?;
-                let mut vm = vm.clone();
-                let frame = vm
-                    .frames
-                    .last_mut()
-                    .ok_or(TransitionStartError::InvalidInput("missing active frame"))?;
-                frame.instruction = target;
-                vm
-            }
-            (RuntimeStatusV0::Finished { .. }, _) => {
-                return Err(TransitionStartError::InvalidInput(
-                    "finished execution accepts no input",
-                ));
-            }
-            _ => {
-                return Err(TransitionStartError::InvalidInput(
-                    "input kind or InteractionId does not match pending state",
-                ));
-            }
-        };
+        let ready_vm =
+            match (&parent.status, input.as_v0()) {
+                (RuntimeStatusV0::Ready { vm }, RuntimeInputV0::Start { .. })
+                    if parent.turn == Turn(0) =>
+                {
+                    vm.clone()
+                }
+                (
+                    RuntimeStatusV0::Awaiting {
+                        vm,
+                        pending:
+                            PendingInteractionV0::Say {
+                                interaction_id,
+                                resume_to,
+                                ..
+                            },
+                    },
+                    RuntimeInputV0::Advance {
+                        interaction_id: supplied,
+                        ..
+                    },
+                ) if interaction_id == supplied => {
+                    let mut vm = vm.clone();
+                    let frame = vm
+                        .frames
+                        .last_mut()
+                        .ok_or(TransitionStartError::InvalidInput("missing active frame"))?;
+                    frame.instruction = *resume_to;
+                    vm
+                }
+                (
+                    RuntimeStatusV0::AwaitingEffect { vm, pending },
+                    RuntimeInputV0::EffectResponse { response, .. },
+                ) if response.effect == pending.request.id
+                    && response.request_digest == pending.request.request_digest
+                    && response.capability == pending.request.capability
+                    && response.capability_version == pending.request.capability_version
+                    && program.capability(&pending.request.capability).is_some_and(
+                        |capability| capability.response_schema.accepts(&response.payload),
+                    ) =>
+                {
+                    let mut vm = vm.clone();
+                    let frame = vm
+                        .frames
+                        .last_mut()
+                        .ok_or(TransitionStartError::InvalidInput("missing active frame"))?;
+                    if frame.evaluation_stack.len() as u64 >= limits.runtime.max_stack_depth {
+                        return Err(TransitionStartError::InvalidInput(
+                            "Effect response exceeds stack limit",
+                        ));
+                    }
+                    frame.instruction = pending.resume_to;
+                    frame.evaluation_stack.push(response.payload.clone());
+                    vm
+                }
+                (
+                    RuntimeStatusV0::Awaiting {
+                        vm,
+                        pending:
+                            PendingInteractionV0::Choice {
+                                interaction_id,
+                                offered,
+                                ..
+                            },
+                    },
+                    RuntimeInputV0::Select {
+                        interaction_id: supplied,
+                        choice_id,
+                        ..
+                    },
+                ) if interaction_id == supplied => {
+                    let target = offered
+                        .iter()
+                        .find(|choice| choice.id == *choice_id)
+                        .map(PendingChoiceItemV0::target_for_runtime)
+                        .ok_or(TransitionStartError::InvalidInput(
+                            "ChoiceId was not offered",
+                        ))?;
+                    let mut vm = vm.clone();
+                    let frame = vm
+                        .frames
+                        .last_mut()
+                        .ok_or(TransitionStartError::InvalidInput("missing active frame"))?;
+                    frame.instruction = target;
+                    vm
+                }
+                (RuntimeStatusV0::Finished { .. }, _) => {
+                    return Err(TransitionStartError::InvalidInput(
+                        "finished execution accepts no input",
+                    ));
+                }
+                _ => {
+                    return Err(TransitionStartError::InvalidInput(
+                        "input kind or InteractionId does not match pending state",
+                    ));
+                }
+            };
         state.turn = Turn(next_turn);
         state.status = RuntimeStatusV0::Ready { vm: ready_vm };
         Ok(Self {
             program,
             parent_digest,
+            parent_commit,
             input,
             input_digest,
             limits,
@@ -390,6 +425,15 @@ impl TransitionRunner {
                 self.choice(instruction_id, prompt, &choices)?;
                 return Ok(StepOutcome::SafePoint);
             }
+            OpV0::Effect { capability, next } => {
+                self.effect(instruction_id, &capability, next)?;
+                return Ok(StepOutcome::SafePoint);
+            }
+            OpV0::ReconcileScene { target, next } => {
+                self.require_safe_stacks()?;
+                self.working.state.scene = target;
+                self.top_frame_mut()?.instruction = next;
+            }
             OpV0::Finish { value } => {
                 self.finish(value)?;
                 return Ok(StepOutcome::SafePoint);
@@ -401,18 +445,18 @@ impl TransitionRunner {
     fn ready_vm(&self) -> Result<&VmStateV0, RuntimeFault> {
         match &self.working.state.status {
             RuntimeStatusV0::Ready { vm } => Ok(vm),
-            RuntimeStatusV0::Awaiting { .. } | RuntimeStatusV0::Finished { .. } => {
-                Err(RuntimeFault::InvalidState)
-            }
+            RuntimeStatusV0::Awaiting { .. }
+            | RuntimeStatusV0::AwaitingEffect { .. }
+            | RuntimeStatusV0::Finished { .. } => Err(RuntimeFault::InvalidState),
         }
     }
 
     fn ready_vm_mut(&mut self) -> Result<&mut VmStateV0, RuntimeFault> {
         match &mut self.working.state.status {
             RuntimeStatusV0::Ready { vm } => Ok(vm),
-            RuntimeStatusV0::Awaiting { .. } | RuntimeStatusV0::Finished { .. } => {
-                Err(RuntimeFault::InvalidState)
-            }
+            RuntimeStatusV0::Awaiting { .. }
+            | RuntimeStatusV0::AwaitingEffect { .. }
+            | RuntimeStatusV0::Finished { .. } => Err(RuntimeFault::InvalidState),
         }
     }
 
@@ -668,6 +712,72 @@ impl TransitionRunner {
         Ok(())
     }
 
+    fn effect(
+        &mut self,
+        origin_instruction: InstructionId,
+        capability: &crate::CapabilityId,
+        resume_to: InstructionId,
+    ) -> Result<(), RuntimeFault> {
+        let payload = self.pop()?;
+        self.require_safe_stacks()?;
+        let declaration = self
+            .program
+            .capability(capability)
+            .cloned()
+            .ok_or(RuntimeFault::InvalidState)?;
+        if !declaration.request_schema.accepts(&payload) {
+            return Err(RuntimeFault::EffectSchemaMismatch);
+        }
+        let parent_commit = self
+            .parent_commit
+            .ok_or(RuntimeFault::MissingParentCommit)?;
+        let payload_digest = effect_payload_digest(&payload);
+        let request_digest = effect_request_digest(
+            &declaration.id,
+            declaration.version,
+            payload_digest,
+            declaration.delivery,
+            &declaration.rewind,
+        );
+        let occurrence = self.working.state.interaction_counter;
+        let id = derive_effect_id(
+            self.working.state.execution_id,
+            parent_commit,
+            self.input_digest,
+            origin_instruction,
+            occurrence,
+            request_digest,
+        );
+        self.working.state.interaction_counter = occurrence
+            .checked_add(1)
+            .ok_or(RuntimeFault::InvalidState)?;
+        let request = crate::EffectRequestV0 {
+            id,
+            execution: self.working.state.execution_id,
+            capability: declaration.id,
+            capability_version: declaration.version,
+            payload,
+            payload_digest,
+            request_digest,
+            delivery: declaration.delivery,
+            rewind: declaration.rewind,
+        };
+        let vm = self.ready_vm()?.clone();
+        self.working.state.status = RuntimeStatusV0::AwaitingEffect {
+            vm,
+            pending: PendingEffectV0 {
+                request,
+                origin_instruction,
+                origin_parent_commit: parent_commit,
+                origin_parent_state: self.parent_digest,
+                origin_input_digest: self.input_digest,
+                occurrence,
+                resume_to,
+            },
+        };
+        Ok(())
+    }
+
     fn constant_text(&self, index: crate::program::ConstIndex) -> Result<Arc<str>, RuntimeFault> {
         match self.program.constant(index) {
             Some(Value::String(text)) => Ok(text.clone()),
@@ -744,10 +854,15 @@ impl TransitionRunner {
                 let kind = match result {
                     DraftResult::AwaitSay(_) => ReceiptResultKindV0::Say,
                     DraftResult::AwaitChoice(_) => ReceiptResultKindV0::Choice,
+                    DraftResult::AwaitEffect(_) => ReceiptResultKindV0::Effect,
                     DraftResult::Finished(_) => ReceiptResultKindV0::Finished,
                 };
                 (result, kind)
             }
+            RuntimeStatusV0::AwaitingEffect { pending, .. } => (
+                DraftResult::AwaitEffect(pending.request.clone()),
+                ReceiptResultKindV0::Effect,
+            ),
             RuntimeStatusV0::Finished { result, .. } => (
                 DraftResult::Finished(result.clone()),
                 ReceiptResultKindV0::Finished,
@@ -778,6 +893,7 @@ impl TransitionRunner {
                 ReceiptResultKindV0::Say => "awaiting-say",
                 ReceiptResultKindV0::Choice => "awaiting-choice",
                 ReceiptResultKindV0::Finished => "finished",
+                ReceiptResultKindV0::Effect => "awaiting-effect",
             };
             last.state_digest = Some(next_state_digest);
             last.receipt_digest = Some(receipt_digest);

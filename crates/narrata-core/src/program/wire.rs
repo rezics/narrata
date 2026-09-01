@@ -1,7 +1,10 @@
 use crate::{
+    CapabilityId, CapabilityRequirement, CapabilityVersion, DeliveryPolicy, FieldId, RewindPolicy,
+    TypeId, ValueSchemaV0, VariantId,
     codec::{CborReader, CborWriter, DecodeError, ObjectKind, decode_envelope, encode_envelope},
     identity::{ChoiceId, FlowId, GlobalId, InstructionId, LocalId, ProgramId},
     limits::ProgramLoadLimits,
+    scene::{decode_scene, encode_scene},
     value::{Value, ValueKindV0},
     version::{ProgramFormatVersion, SemanticsVersion},
 };
@@ -56,7 +59,10 @@ pub(crate) fn encode_program_payload(artifact: &ProgramArtifactV0) -> Vec<u8> {
         encode_flow(&mut writer, flow);
     }
     writer.unsigned(7);
-    writer.array(0);
+    writer.array(artifact.capabilities.len() as u64);
+    for capability in &artifact.capabilities {
+        encode_capability(&mut writer, capability);
+    }
     writer.unsigned(8);
     writer.array(0);
     writer.into_bytes()
@@ -128,13 +134,22 @@ fn decode_program_payload(
         )?);
     }
     expect_key(&mut reader, 7)?;
-    if reader.array_len()? != 0 {
-        return Err(DecodeError::Schema("Stage 1 capabilities must be empty"));
+    let capabilities_len = bounded_array(
+        &mut reader,
+        limits.program.max_capabilities,
+        "program capabilities",
+    )?;
+    let mut capabilities = Vec::with_capacity(
+        usize::try_from(capabilities_len).map_err(|_| DecodeError::LengthOverflow)?,
+    );
+    let mut schema_nodes = 0_u64;
+    for _ in 0..capabilities_len {
+        capabilities.push(decode_capability(&mut reader, limits, &mut schema_nodes)?);
     }
     expect_key(&mut reader, 8)?;
     if reader.array_len()? != 0 {
         return Err(DecodeError::Schema(
-            "Stage 1 external content declarations must be empty",
+            "Program v0 external content declarations must be empty; use a checked resolver Effect",
         ));
     }
     reader.finish()?;
@@ -146,7 +161,7 @@ fn decode_program_payload(
         constants,
         globals,
         flows,
-        capabilities: Vec::new(),
+        capabilities,
         external_content: Vec::new(),
     })
 }
@@ -387,6 +402,18 @@ fn encode_op(writer: &mut CborWriter, op: &OpV0) {
                 writer.bytes(choice.target.as_bytes());
             }
         }
+        OpV0::Effect { capability, next } => {
+            writer.array(3);
+            writer.unsigned(12);
+            writer.text(capability.as_str());
+            writer.bytes(next.as_bytes());
+        }
+        OpV0::ReconcileScene { target, next } => {
+            writer.array(3);
+            writer.unsigned(13);
+            encode_scene(writer, target);
+            writer.bytes(next.as_bytes());
+        }
         OpV0::Finish { value } => {
             writer.array(2);
             writer.unsigned(11);
@@ -465,7 +492,183 @@ fn decode_op(reader: &mut CborReader<'_>, limits: &ProgramLoadLimits) -> Result<
         (11, 2) => Ok(OpV0::Finish {
             value: decode_return_mode(reader)?,
         }),
+        (12, 3) => Ok(OpV0::Effect {
+            capability: CapabilityId::new(reader.text(limits.decode.max_string_bytes)?)
+                .map_err(|_| DecodeError::Schema("capability ID"))?,
+            next: instruction(reader.bytes_exact::<16>()?),
+        }),
+        (13, 3) => Ok(OpV0::ReconcileScene {
+            target: decode_scene(reader, &limits.decode)?,
+            next: instruction(reader.bytes_exact::<16>()?),
+        }),
         _ => Err(DecodeError::Schema("instruction opcode or field count")),
+    }
+}
+
+fn encode_capability(writer: &mut CborWriter, capability: &CapabilityDeclV0) {
+    writer.array(7);
+    writer.text(capability.id.as_str());
+    writer.unsigned(u64::from(capability.version.get()));
+    writer.unsigned(capability.requirement as u64);
+    encode_schema(writer, &capability.request_schema);
+    encode_schema(writer, &capability.response_schema);
+    writer.unsigned(capability.delivery as u64);
+    crate::effect::encode_rewind_policy(writer, &capability.rewind);
+}
+
+fn decode_capability(
+    reader: &mut CborReader<'_>,
+    limits: &ProgramLoadLimits,
+    nodes: &mut u64,
+) -> Result<CapabilityDeclV0, DecodeError> {
+    expect_array(reader, 7, "capability declaration")?;
+    let id = CapabilityId::new(reader.text(limits.decode.max_string_bytes)?)
+        .map_err(|_| DecodeError::Schema("capability ID"))?;
+    let version = CapabilityVersion::new(read_u16(reader)?)
+        .ok_or(DecodeError::Schema("capability version"))?;
+    let requirement = CapabilityRequirement::from_u64(reader.unsigned()?)
+        .ok_or(DecodeError::Schema("capability requirement"))?;
+    let request_schema = decode_schema(reader, limits, 1, nodes)?;
+    let response_schema = decode_schema(reader, limits, 1, nodes)?;
+    let delivery = DeliveryPolicy::from_u64(reader.unsigned()?)
+        .ok_or(DecodeError::Schema("delivery policy"))?;
+    let rewind = decode_rewind_policy(reader, limits)?;
+    Ok(CapabilityDeclV0 {
+        id,
+        version,
+        requirement,
+        request_schema,
+        response_schema,
+        delivery,
+        rewind,
+    })
+}
+
+fn encode_schema(writer: &mut CborWriter, schema: &ValueSchemaV0) {
+    match schema {
+        ValueSchemaV0::Any => schema_tag(writer, 0),
+        ValueSchemaV0::Null => schema_tag(writer, 1),
+        ValueSchemaV0::Bool => schema_tag(writer, 2),
+        ValueSchemaV0::I64 => schema_tag(writer, 3),
+        ValueSchemaV0::String => schema_tag(writer, 4),
+        ValueSchemaV0::Entity => schema_tag(writer, 5),
+        ValueSchemaV0::List(item) => {
+            writer.array(2);
+            writer.unsigned(6);
+            encode_schema(writer, item);
+        }
+        ValueSchemaV0::Record(fields) => {
+            writer.array(2);
+            writer.unsigned(7);
+            writer.map(fields.len() as u64);
+            for (field, schema) in fields {
+                writer.bytes(field.as_bytes());
+                encode_schema(writer, schema);
+            }
+        }
+        ValueSchemaV0::Variant { type_id, variants } => {
+            writer.array(3);
+            writer.unsigned(8);
+            writer.bytes(type_id.as_bytes());
+            writer.map(variants.len() as u64);
+            for (variant, schema) in variants {
+                writer.bytes(variant.as_bytes());
+                encode_schema(writer, schema);
+            }
+        }
+    }
+}
+
+fn schema_tag(writer: &mut CborWriter, tag: u64) {
+    writer.array(1);
+    writer.unsigned(tag);
+}
+
+fn decode_schema(
+    reader: &mut CborReader<'_>,
+    limits: &ProgramLoadLimits,
+    depth: u32,
+    nodes: &mut u64,
+) -> Result<ValueSchemaV0, DecodeError> {
+    if depth > limits.decode.max_value_depth {
+        return Err(DecodeError::Limit("capability schema depth"));
+    }
+    *nodes = nodes.saturating_add(1);
+    if *nodes > limits.decode.max_total_value_nodes {
+        return Err(DecodeError::Limit("capability schema nodes"));
+    }
+    let length = reader.array_len()?;
+    let tag = reader.unsigned()?;
+    match (tag, length) {
+        (0, 1) => Ok(ValueSchemaV0::Any),
+        (1, 1) => Ok(ValueSchemaV0::Null),
+        (2, 1) => Ok(ValueSchemaV0::Bool),
+        (3, 1) => Ok(ValueSchemaV0::I64),
+        (4, 1) => Ok(ValueSchemaV0::String),
+        (5, 1) => Ok(ValueSchemaV0::Entity),
+        (6, 2) => Ok(ValueSchemaV0::List(Box::new(decode_schema(
+            reader,
+            limits,
+            depth.saturating_add(1),
+            nodes,
+        )?))),
+        (7, 2) => {
+            let len = bounded_array(reader, limits.decode.max_collection_items, "schema fields")?;
+            let mut fields = std::collections::BTreeMap::new();
+            let mut previous = None;
+            for _ in 0..len {
+                let raw = reader.bytes_exact::<16>()?;
+                if previous.is_some_and(|value| value >= raw) {
+                    return Err(DecodeError::NonCanonical("schema field order"));
+                }
+                previous = Some(raw);
+                fields.insert(
+                    FieldId::from_bytes(raw),
+                    decode_schema(reader, limits, depth.saturating_add(1), nodes)?,
+                );
+            }
+            Ok(ValueSchemaV0::Record(fields))
+        }
+        (8, 3) => {
+            let type_id = TypeId::from_bytes(reader.bytes_exact::<16>()?);
+            let len = bounded_array(
+                reader,
+                limits.decode.max_collection_items,
+                "schema variants",
+            )?;
+            let mut variants = std::collections::BTreeMap::new();
+            let mut previous = None;
+            for _ in 0..len {
+                let raw = reader.bytes_exact::<16>()?;
+                if previous.is_some_and(|value| value >= raw) {
+                    return Err(DecodeError::NonCanonical("schema variant order"));
+                }
+                previous = Some(raw);
+                variants.insert(
+                    VariantId::from_bytes(raw),
+                    decode_schema(reader, limits, depth.saturating_add(1), nodes)?,
+                );
+            }
+            Ok(ValueSchemaV0::Variant { type_id, variants })
+        }
+        _ => Err(DecodeError::Schema("value schema")),
+    }
+}
+
+fn decode_rewind_policy(
+    reader: &mut CborReader<'_>,
+    limits: &ProgramLoadLimits,
+) -> Result<RewindPolicy, DecodeError> {
+    let length = reader.array_len()?;
+    match (reader.unsigned()?, length) {
+        (0, 1) => Ok(RewindPolicy::Reapply),
+        (1, 1) => Ok(RewindPolicy::ReuseRecordedResponse),
+        (2, 1) => Ok(RewindPolicy::Barrier),
+        (3, 2) => Ok(RewindPolicy::Compensatable {
+            capability: CapabilityId::new(reader.text(limits.decode.max_string_bytes)?)
+                .map_err(|_| DecodeError::Schema("compensation capability ID"))?,
+        }),
+        _ => Err(DecodeError::Schema("rewind policy")),
     }
 }
 

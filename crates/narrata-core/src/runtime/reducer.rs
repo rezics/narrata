@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
 
 use crate::{
+    CommitId,
     identity::{ExecutionId, LocalId},
     limits::MacrostepLimits,
     program::CheckedProgram,
@@ -51,6 +52,7 @@ pub fn new_execution(
         turn: Turn(0),
         interaction_counter: 0,
         globals,
+        scene: Default::default(),
         status: RuntimeStatusV0::Ready {
             vm: VmStateV0 {
                 frames: vec![FrameStateV0 {
@@ -71,5 +73,15 @@ pub fn begin_transition(
     input: CheckedRuntimeInput,
     limits: MacrostepLimits,
 ) -> Result<TransitionRunner, TransitionStartError> {
-    TransitionRunner::begin(program, parent, input, limits)
+    TransitionRunner::begin(program, parent, input, limits, None)
+}
+
+pub fn begin_transition_with_parent_commit(
+    program: Arc<CheckedProgram>,
+    parent: Arc<RuntimeStateV0>,
+    parent_commit: CommitId,
+    input: CheckedRuntimeInput,
+    limits: MacrostepLimits,
+) -> Result<TransitionRunner, TransitionStartError> {
+    TransitionRunner::begin(program, parent, input, limits, Some(parent_commit))
 }

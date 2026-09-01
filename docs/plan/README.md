@@ -1,6 +1,6 @@
 # Narrata 分步实施计划
 
-状态：Stage 1、Stage 2 已实施；Stage 3 待实施
+状态：Stage 1、Stage 2、Stage 3 已实施；Stage 4 待实施
 日期：2026-09-01
 
 ## 交付目标
@@ -13,6 +13,7 @@
 → 每个交互 safe point 产生不可变 Commit
 → save / load / rewind / fork
 → 可选开启完整 Timeline Archive
+→ durable Effect / barrier / Compound Save
 → native reference store 崩溃安全
 ```
 
@@ -34,17 +35,18 @@ flowchart LR
 - [Phase 1：最小确定性 Runtime](./01-runtime-kernel.md)
 - [Phase 2：时间旅行与持久化](./02-time-travel-and-persistence.md)
 - [Phase 3：Effect 与宿主协调](./03-effects-and-host-coordination.md)
+- [Stage 3：Effects and Host Coordination](./stage-3-effects-and-host-coordination.md)
 - [Phase 4：Statechart](./04-statecharts.md)
 - [Phase 5：迁移、Binding 与 Nickel 适配](./05-migrations-bindings-and-nickel.md)
 
-## 当前 workspace（Stage 2）
+## 当前 workspace（Stage 3）
 
 先保持少量 crate，等依赖边界和编译成本提供证据后再拆：
 
 ```text
 crates/
-  narrata-core/          # typed IR、VM、runtime state、纯 transition
-  narrata-store/         # checked object、Commit/Ref、timeline、bundle、GC、coordinator
+  narrata-core/          # typed IR、VM、Scene、capability/effect、纯 transition
+  narrata-store/         # Commit/Ref、ledger、barrier、federated save、GC、coordinator
   narrata-store-sqlite/  # native crash-safe reference adapter
   narrata-testkit/       # fixture、model、generator、conformance backend
   narrata-cli/           # validate/inspect/run/replay/conformance

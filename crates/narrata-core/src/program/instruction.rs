@@ -1,4 +1,8 @@
-use crate::identity::{ChoiceId, FlowId, GlobalId, InstructionId, LocalId};
+use crate::{
+    effect::CapabilityId,
+    identity::{ChoiceId, FlowId, GlobalId, InstructionId, LocalId},
+    scene::SceneState,
+};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ConstIndex(pub u32);
@@ -132,6 +136,14 @@ pub enum OpV0 {
         prompt: Option<ConstIndex>,
         choices: Vec<ChoiceArmV0>,
     },
+    Effect {
+        capability: CapabilityId,
+        next: InstructionId,
+    },
+    ReconcileScene {
+        target: SceneState,
+        next: InstructionId,
+    },
     Finish {
         value: ReturnModeV0,
     },
@@ -151,6 +163,8 @@ impl OpV0 {
             Self::Return { .. } => "Return",
             Self::Say { .. } => "Say",
             Self::Choice { .. } => "Choice",
+            Self::Effect { .. } => "Effect",
+            Self::ReconcileScene { .. } => "ReconcileScene",
             Self::Finish { .. } => "Finish",
         }
     }

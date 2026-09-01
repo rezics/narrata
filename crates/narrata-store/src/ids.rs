@@ -45,6 +45,7 @@ macro_rules! fixed_id {
 
 fixed_id!(BranchId, "branch:");
 fixed_id!(TimelineOperationId, "timeline-op:");
+fixed_id!(LeaseId, "lease:");
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum NameError {
@@ -210,6 +211,30 @@ impl CatalogRefKey {
 pub struct TimelineArchiveRefKey {
     timeline: ExecutionId,
     name: RefName,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CompoundSaveRefKey {
+    owner: RefName,
+    slot: RefName,
+}
+
+impl CompoundSaveRefKey {
+    pub const fn new(owner: RefName, slot: RefName) -> Self {
+        Self { owner, slot }
+    }
+
+    pub fn owner(&self) -> &RefName {
+        &self.owner
+    }
+
+    pub fn slot(&self) -> &RefName {
+        &self.slot
+    }
+
+    pub fn storage_key(&self) -> String {
+        format!("compound-saves/{}/{}", self.owner, self.slot)
+    }
 }
 
 impl TimelineArchiveRefKey {

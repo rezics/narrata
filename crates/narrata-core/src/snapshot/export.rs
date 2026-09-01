@@ -13,6 +13,8 @@ use super::encode_state_payload;
 pub enum SnapshotExportError {
     #[error("Runtime State is not at a safe point")]
     NotSafePoint,
+    #[error("a pending external Effect cannot be copied to a new Execution")]
+    PendingEffectCannotChangeExecution,
 }
 
 pub fn export_snapshot(state: &RuntimeStateV0) -> Result<Vec<u8>, SnapshotExportError> {
@@ -38,6 +40,9 @@ pub fn copy_as_new_execution(
 ) -> Result<RuntimeStateV0, SnapshotExportError> {
     ensure_safe(state)?;
     let mut copied = state.clone();
+    if matches!(&copied.status, RuntimeStatusV0::AwaitingEffect { .. }) {
+        return Err(SnapshotExportError::PendingEffectCannotChangeExecution);
+    }
     copied.execution_id = execution_id;
     if let RuntimeStatusV0::Awaiting { pending, .. } = &mut copied.status {
         match pending {
@@ -82,7 +87,9 @@ pub fn copy_as_new_execution(
 
 fn ensure_safe(state: &RuntimeStateV0) -> Result<(), SnapshotExportError> {
     let frames = match &state.status {
-        RuntimeStatusV0::Ready { vm } | RuntimeStatusV0::Awaiting { vm, .. } => &vm.frames,
+        RuntimeStatusV0::Ready { vm }
+        | RuntimeStatusV0::Awaiting { vm, .. }
+        | RuntimeStatusV0::AwaitingEffect { vm, .. } => &vm.frames,
         RuntimeStatusV0::Finished { final_frames, .. } => final_frames,
     };
     if frames.is_empty()

@@ -1,22 +1,26 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{
+    CapabilityId, CapabilityVersion, DeliveryPolicy, EffectRequestV0, RewindPolicy,
     codec::{CborReader, CborWriter, DecodeError},
     identity::{
-        ChoiceId, ExecutionId, FlowId, GlobalId, InputPayloadDigest, InstructionId, InteractionId,
-        LocalId, ProgramArtifactId, StateDigest,
+        ChoiceId, CommitId, EffectId, EffectPayloadDigest, EffectRequestDigest, ExecutionId,
+        FlowId, GlobalId, InputPayloadDigest, InstructionId, InteractionId, LocalId,
+        ProgramArtifactId, StateDigest,
     },
     limits::SnapshotLoadLimits,
     runtime::{
-        FrameStateV0, PendingChoiceItemV0, PendingInteractionV0, RuntimeStateV0, RuntimeStatusV0,
-        Turn, VmStateV0,
+        FrameStateV0, PendingChoiceItemV0, PendingEffectV0, PendingInteractionV0, RuntimeStateV0,
+        RuntimeStatusV0, Turn, VmStateV0,
     },
+    scene::{SceneState, decode_scene, encode_scene},
     version::SemanticsVersion,
 };
 
 pub(crate) fn encode_state_payload(state: &RuntimeStateV0) -> Vec<u8> {
     let mut writer = CborWriter::new();
-    writer.map(7);
+    let has_scene = state.scene != SceneState::default();
+    writer.map(if has_scene { 8 } else { 7 });
     writer.unsigned(0);
     writer.unsigned(u64::from(state.semantics_version.get()));
     writer.unsigned(1);
@@ -35,6 +39,10 @@ pub(crate) fn encode_state_payload(state: &RuntimeStateV0) -> Vec<u8> {
     }
     writer.unsigned(6);
     encode_status(&mut writer, &state.status);
+    if has_scene {
+        writer.unsigned(7);
+        encode_scene(&mut writer, &state.scene);
+    }
     writer.into_bytes()
 }
 
@@ -51,6 +59,12 @@ fn encode_status(writer: &mut CborWriter, status: &RuntimeStatusV0) {
             encode_vm(writer, vm);
             encode_pending(writer, pending);
         }
+        RuntimeStatusV0::AwaitingEffect { vm, pending } => {
+            writer.array(3);
+            writer.unsigned(3);
+            encode_vm(writer, vm);
+            encode_pending_effect(writer, pending);
+        }
         RuntimeStatusV0::Finished {
             result,
             final_frames,
@@ -64,6 +78,30 @@ fn encode_status(writer: &mut CborWriter, status: &RuntimeStatusV0) {
             }
         }
     }
+}
+
+fn encode_pending_effect(writer: &mut CborWriter, pending: &PendingEffectV0) {
+    writer.array(7);
+    encode_effect_request(writer, &pending.request);
+    writer.bytes(pending.origin_instruction.as_bytes());
+    writer.bytes(pending.origin_parent_commit.as_bytes());
+    writer.bytes(pending.origin_parent_state.as_bytes());
+    writer.bytes(pending.origin_input_digest.as_bytes());
+    writer.unsigned(pending.occurrence);
+    writer.bytes(pending.resume_to.as_bytes());
+}
+
+fn encode_effect_request(writer: &mut CborWriter, request: &EffectRequestV0) {
+    writer.array(9);
+    writer.bytes(request.id.as_bytes());
+    writer.bytes(request.execution.as_bytes());
+    writer.text(request.capability.as_str());
+    writer.unsigned(u64::from(request.capability_version.get()));
+    crate::value::encode_value(writer, &request.payload);
+    writer.bytes(request.payload_digest.as_bytes());
+    writer.bytes(request.request_digest.as_bytes());
+    writer.unsigned(request.delivery as u64);
+    crate::effect::encode_rewind_policy(writer, &request.rewind);
 }
 
 fn encode_vm(writer: &mut CborWriter, vm: &VmStateV0) {
@@ -154,7 +192,8 @@ pub(crate) fn decode_state_payload(
     limits: &SnapshotLoadLimits,
 ) -> Result<RuntimeStateV0, DecodeError> {
     let mut reader = CborReader::new(bytes);
-    if reader.map_len()? != 7 {
+    let field_count = reader.map_len()?;
+    if !matches!(field_count, 7 | 8) {
         return Err(DecodeError::Schema("Runtime State field count"));
     }
     expect_key(&mut reader, 0)?;
@@ -188,6 +227,12 @@ pub(crate) fn decode_state_payload(
     }
     expect_key(&mut reader, 6)?;
     let status = decode_status(&mut reader, limits, &mut value_nodes)?;
+    let scene = if field_count == 8 {
+        expect_key(&mut reader, 7)?;
+        decode_scene(&mut reader, &limits.decode)?
+    } else {
+        SceneState::default()
+    };
     reader.finish()?;
     Ok(RuntimeStateV0 {
         semantics_version,
@@ -196,6 +241,7 @@ pub(crate) fn decode_state_payload(
         turn,
         interaction_counter,
         globals,
+        scene,
         status,
     })
 }
@@ -228,7 +274,81 @@ fn decode_status(
                 final_frames,
             })
         }
+        (3, 3) => Ok(RuntimeStatusV0::AwaitingEffect {
+            vm: decode_vm(reader, limits, nodes)?,
+            pending: decode_pending_effect(reader, limits, nodes)?,
+        }),
         _ => Err(DecodeError::Schema("Runtime status")),
+    }
+}
+
+fn decode_pending_effect(
+    reader: &mut CborReader<'_>,
+    limits: &SnapshotLoadLimits,
+    nodes: &mut u64,
+) -> Result<PendingEffectV0, DecodeError> {
+    if reader.array_len()? != 7 {
+        return Err(DecodeError::Schema("pending Effect"));
+    }
+    let request = decode_effect_request(reader, limits, nodes)?;
+    Ok(PendingEffectV0 {
+        request,
+        origin_instruction: InstructionId::from_bytes(reader.bytes_exact::<16>()?),
+        origin_parent_commit: CommitId::from_bytes(reader.bytes_exact::<32>()?),
+        origin_parent_state: StateDigest::from_bytes(reader.bytes_exact::<32>()?),
+        origin_input_digest: InputPayloadDigest::from_bytes(reader.bytes_exact::<32>()?),
+        occurrence: reader.unsigned()?,
+        resume_to: InstructionId::from_bytes(reader.bytes_exact::<16>()?),
+    })
+}
+
+fn decode_effect_request(
+    reader: &mut CborReader<'_>,
+    limits: &SnapshotLoadLimits,
+    nodes: &mut u64,
+) -> Result<EffectRequestV0, DecodeError> {
+    if reader.array_len()? != 9 {
+        return Err(DecodeError::Schema("Effect request"));
+    }
+    let id = EffectId::from_bytes(reader.bytes_exact::<32>()?);
+    let execution = ExecutionId::from_bytes(reader.bytes_exact::<16>()?);
+    let capability = CapabilityId::new(reader.text(limits.decode.max_string_bytes)?)
+        .map_err(|_| DecodeError::Schema("Effect capability"))?;
+    let capability_version = CapabilityVersion::new(read_u16(reader)?)
+        .ok_or(DecodeError::Schema("Effect capability version"))?;
+    let payload = crate::value::decode_value(reader, &limits.decode, 1, nodes)?;
+    let payload_digest = EffectPayloadDigest::from_bytes(reader.bytes_exact::<32>()?);
+    let request_digest = EffectRequestDigest::from_bytes(reader.bytes_exact::<32>()?);
+    let delivery = DeliveryPolicy::from_u64(reader.unsigned()?)
+        .ok_or(DecodeError::Schema("Effect delivery policy"))?;
+    let rewind = decode_rewind(reader, limits)?;
+    Ok(EffectRequestV0 {
+        id,
+        execution,
+        capability,
+        capability_version,
+        payload,
+        payload_digest,
+        request_digest,
+        delivery,
+        rewind,
+    })
+}
+
+fn decode_rewind(
+    reader: &mut CborReader<'_>,
+    limits: &SnapshotLoadLimits,
+) -> Result<RewindPolicy, DecodeError> {
+    let length = reader.array_len()?;
+    match (reader.unsigned()?, length) {
+        (0, 1) => Ok(RewindPolicy::Reapply),
+        (1, 1) => Ok(RewindPolicy::ReuseRecordedResponse),
+        (2, 1) => Ok(RewindPolicy::Barrier),
+        (3, 2) => Ok(RewindPolicy::Compensatable {
+            capability: CapabilityId::new(reader.text(limits.decode.max_string_bytes)?)
+                .map_err(|_| DecodeError::Schema("compensation capability"))?,
+        }),
+        _ => Err(DecodeError::Schema("Effect rewind policy")),
     }
 }
 

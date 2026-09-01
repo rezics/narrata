@@ -5,8 +5,8 @@ use crate::{
     limits::SnapshotLoadLimits,
     program::{CheckedProgram, OpV0, SlotRefV0},
     runtime::{
-        FrameStateV0, PendingChoiceItemV0, PendingInteractionV0, RuntimeStateV0, RuntimeStatusV0,
-        derive_interaction_id,
+        FrameStateV0, PendingChoiceItemV0, PendingEffectV0, PendingInteractionV0, RuntimeStateV0,
+        RuntimeStatusV0, derive_interaction_id,
     },
     value::Value,
     version::{SEMANTICS_V0, SNAPSHOT_SCHEMA_V0},
@@ -88,7 +88,9 @@ fn validate_state(
         }
     }
     let frames = match &state.status {
-        RuntimeStatusV0::Ready { vm } | RuntimeStatusV0::Awaiting { vm, .. } => &vm.frames,
+        RuntimeStatusV0::Ready { vm }
+        | RuntimeStatusV0::Awaiting { vm, .. }
+        | RuntimeStatusV0::AwaitingEffect { vm, .. } => &vm.frames,
         RuntimeStatusV0::Finished { final_frames, .. } => final_frames,
     };
     validate_frames(frames, program)?;
@@ -105,8 +107,81 @@ fn validate_state(
         RuntimeStatusV0::Awaiting { vm, pending } => {
             validate_pending(state, vm.frames.last(), pending, program)
         }
+        RuntimeStatusV0::AwaitingEffect { vm, pending } => {
+            validate_pending_effect(state, vm.frames.last(), pending, program)
+        }
         RuntimeStatusV0::Ready { .. } | RuntimeStatusV0::Finished { .. } => Ok(()),
     }
+}
+
+fn validate_pending_effect(
+    state: &RuntimeStateV0,
+    frame: Option<&FrameStateV0>,
+    pending: &PendingEffectV0,
+    program: &CheckedProgram,
+) -> Result<(), SnapshotRestoreError> {
+    let frame = frame.ok_or(SnapshotRestoreError::InvalidState(
+        "pending Effect without frame",
+    ))?;
+    if frame.instruction != pending.origin_instruction {
+        return Err(SnapshotRestoreError::InvalidState(
+            "Effect origin instruction",
+        ));
+    }
+    let instruction = program
+        .instruction(frame.flow, pending.origin_instruction)
+        .ok_or(SnapshotRestoreError::InvalidState(
+            "Effect instruction missing",
+        ))?;
+    let OpV0::Effect { capability, next } = &instruction.op else {
+        return Err(SnapshotRestoreError::InvalidState(
+            "pending Effect points to another opcode",
+        ));
+    };
+    let declaration = program
+        .capability(capability)
+        .ok_or(SnapshotRestoreError::InvalidState(
+            "pending Effect capability missing",
+        ))?;
+    let request = &pending.request;
+    if &request.capability != capability
+        || request.capability_version != declaration.version
+        || request.delivery != declaration.delivery
+        || request.rewind != declaration.rewind
+        || pending.resume_to != *next
+        || request.execution != state.execution_id
+        || !declaration.request_schema.accepts(&request.payload)
+    {
+        return Err(SnapshotRestoreError::InvalidState(
+            "pending Effect contract",
+        ));
+    }
+    let payload_digest = crate::effect_payload_digest(&request.payload);
+    let request_digest = crate::effect_request_digest(
+        &request.capability,
+        request.capability_version,
+        payload_digest,
+        request.delivery,
+        &request.rewind,
+    );
+    let effect = crate::derive_effect_id(
+        state.execution_id,
+        pending.origin_parent_commit,
+        pending.origin_input_digest,
+        pending.origin_instruction,
+        pending.occurrence,
+        request_digest,
+    );
+    if request.payload_digest != payload_digest
+        || request.request_digest != request_digest
+        || request.id != effect
+        || state.interaction_counter != pending.occurrence.saturating_add(1)
+    {
+        return Err(SnapshotRestoreError::InvalidState(
+            "pending Effect identity",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_frames(

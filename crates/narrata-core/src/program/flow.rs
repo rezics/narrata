@@ -4,6 +4,7 @@ use crate::{
 };
 
 use super::InstructionRecordV0;
+pub use crate::effect::CapabilityDeclV0;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GlobalDeclV0 {
@@ -28,9 +29,6 @@ pub struct FlowV0 {
     pub entry: InstructionId,
     pub instructions: Vec<InstructionRecordV0>,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CapabilityDeclV0;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalContentDeclV0;

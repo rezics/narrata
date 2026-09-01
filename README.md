@@ -21,14 +21,13 @@ Its goal is broader than visual novels. Narrata is designed for any system where
 The current architecture decisions, research notes, and phased implementation plan are indexed in
 [docs/README.md](./docs/README.md).
 
-## Stage 2 quick start
+## Stage 3 quick start
 
-The deterministic runtime and local time-travel persistence layer are implemented as a Rust 1.98
-workspace. Run the complete local
-gate with:
+The deterministic runtime, local time-travel store, and crash-recoverable host Effect protocol are
+implemented as a Rust 1.98 workspace. Run the complete local gate with:
 
 ```powershell
-./scripts/check-g2.ps1
+./scripts/check-g3.ps1
 ```
 
 Validate the checked-in canonical Program vector or replay both conformance stories:
@@ -38,12 +37,12 @@ cargo run -p narrata-cli -- program validate fixtures/codec/program-v0.cbor.hex
 cargo run -p narrata-cli -- conformance fixtures/conformance
 ```
 
-`narrata-store` provides checked commits, CAS refs, save/load, rewind/redo/fork, checkpoint bundles,
-opt-in complete timeline archives, and mark/sweep GC. `narrata-store-sqlite` is the native reference
-adapter. Complete recording retains choice and save-directory history from its declared baseline;
-deleting a save slot does not erase that archived history. See
-[Stage 2](./docs/plan/stage-2-time-travel-persistence.md) before exposing archive or deletion controls
-to users.
+`narrata-store` now also provides capability negotiation, commit-before-dispatch, a monotonic Effect
+ledger, recorded query recovery, rewind barriers, compensation links, declarative Scene reconcile,
+and atomically published Compound Saves. `narrata-store-sqlite` persists the same checked model.
+See [Stage 3](./docs/plan/stage-3-effects-and-host-coordination.md) before connecting commands or
+host snapshots. Narrata does not promise generic exactly-once delivery: a host must supply a stable
+idempotency key, transactional API, or explicit unknown-outcome resolution.
 
 ## License
 

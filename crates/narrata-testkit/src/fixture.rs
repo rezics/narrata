@@ -250,6 +250,7 @@ pub fn result_name(result: &DraftResult) -> &'static str {
     match result {
         DraftResult::AwaitSay(_) => "say",
         DraftResult::AwaitChoice(_) => "choice",
+        DraftResult::AwaitEffect(_) => "effect",
         DraftResult::Finished(_) => "finished",
     }
 }

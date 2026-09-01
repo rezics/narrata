@@ -1,6 +1,7 @@
 # Phase 3：Effect 与宿主协调
 
-状态：待实施
+状态：已实施（G3）；合并实现与可执行 Gate 见
+[Stage 3：Effects and Host Coordination](./stage-3-effects-and-host-coordination.md)
 前置：[Phase 2](./02-time-travel-and-persistence.md)
 完成后解锁：有外部内容/游戏状态的生产集成、[Phase 4](./04-statecharts.md)
 

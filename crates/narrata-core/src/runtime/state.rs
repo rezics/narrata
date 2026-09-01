@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 
 use crate::{
     identity::{ExecutionId, GlobalId, ProgramArtifactId},
+    scene::SceneState,
     value::Value,
     version::SemanticsVersion,
 };
 
-use super::{FrameStateV0, PendingInteractionV0, VmStateV0};
+use super::{FrameStateV0, PendingEffectV0, PendingInteractionV0, VmStateV0};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Turn(pub u64);
@@ -19,6 +20,7 @@ pub struct RuntimeStateV0 {
     pub turn: Turn,
     pub interaction_counter: u64,
     pub globals: BTreeMap<GlobalId, Value>,
+    pub scene: SceneState,
     pub status: RuntimeStatusV0,
 }
 
@@ -31,6 +33,10 @@ pub enum RuntimeStatusV0 {
         vm: VmStateV0,
         pending: PendingInteractionV0,
     },
+    AwaitingEffect {
+        vm: VmStateV0,
+        pending: PendingEffectV0,
+    },
     Finished {
         result: Value,
         final_frames: Vec<FrameStateV0>,
@@ -41,14 +47,27 @@ impl RuntimeStateV0 {
     pub fn pending(&self) -> Option<&PendingInteractionV0> {
         match &self.status {
             RuntimeStatusV0::Awaiting { pending, .. } => Some(pending),
-            RuntimeStatusV0::Ready { .. } | RuntimeStatusV0::Finished { .. } => None,
+            RuntimeStatusV0::Ready { .. }
+            | RuntimeStatusV0::AwaitingEffect { .. }
+            | RuntimeStatusV0::Finished { .. } => None,
         }
     }
 
     pub fn vm(&self) -> Option<&VmStateV0> {
         match &self.status {
-            RuntimeStatusV0::Ready { vm } | RuntimeStatusV0::Awaiting { vm, .. } => Some(vm),
+            RuntimeStatusV0::Ready { vm }
+            | RuntimeStatusV0::Awaiting { vm, .. }
+            | RuntimeStatusV0::AwaitingEffect { vm, .. } => Some(vm),
             RuntimeStatusV0::Finished { .. } => None,
+        }
+    }
+
+    pub fn pending_effect(&self) -> Option<&super::PendingEffectV0> {
+        match &self.status {
+            RuntimeStatusV0::AwaitingEffect { pending, .. } => Some(pending),
+            RuntimeStatusV0::Ready { .. }
+            | RuntimeStatusV0::Awaiting { .. }
+            | RuntimeStatusV0::Finished { .. } => None,
         }
     }
 }

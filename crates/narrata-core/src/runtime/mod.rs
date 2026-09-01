@@ -12,10 +12,13 @@ pub use budget::{SliceBudget, SliceBudgetError};
 pub use frame::{FrameStateV0, VmStateV0};
 pub use input::{CheckedRuntimeInput, RuntimeInputV0};
 pub use interaction::{
-    ChoiceView, ChoiceViewItem, DraftResult, PendingChoiceItemV0, PendingInteractionV0, SayView,
+    ChoiceView, ChoiceViewItem, DraftResult, PendingChoiceItemV0, PendingEffectV0,
+    PendingInteractionV0, SayView,
 };
 pub use receipt::{ReceiptResultKindV0, TransitionReceiptV0, encode_receipt};
-pub use reducer::{RuntimeInitError, begin_transition, new_execution};
+pub use reducer::{
+    RuntimeInitError, begin_transition, begin_transition_with_parent_commit, new_execution,
+};
 pub use runner::{
     RuntimeFault, SliceOutcome, SliceProgress, TransitionDraft, TransitionRunner,
     TransitionStartError,

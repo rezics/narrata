@@ -12,4 +12,3 @@ fuzz_target!(|data: &[u8]| {
     let _ = CheckpointBundle::from_bytes(data, limits);
     let _ = TimelineArchiveBundle::from_bytes(data, limits);
 });
-

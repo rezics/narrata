@@ -49,3 +49,6 @@ authored_id!(TypeId, "type:");
 authored_id!(VariantId, "variant:");
 authored_id!(FieldId, "field:");
 authored_id!(EntityId, "entity:");
+authored_id!(LayerId, "layer:");
+authored_id!(ActorId, "actor:");
+authored_id!(AudioChannelId, "audio-channel:");

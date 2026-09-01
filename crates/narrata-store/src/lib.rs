@@ -1,4 +1,4 @@
-//! Stage 2 persistence contracts for Narrata.
+//! Stage 3 persistence and host-coordination contracts for Narrata.
 //!
 //! Bytes, bundle entries, database rows, and mutable references remain untrusted until they
 //! pass the checked constructors in this crate. Immutable objects are content addressed;
@@ -11,6 +11,8 @@ mod catalog;
 mod codec;
 mod commit;
 mod coordinator;
+mod effect;
+mod federated;
 mod ids;
 mod manifest;
 mod memory;
@@ -22,6 +24,8 @@ pub use catalog::*;
 pub use codec::WireError;
 pub use commit::*;
 pub use coordinator::*;
+pub use effect::*;
+pub use federated::*;
 pub use ids::*;
 pub use manifest::*;
 pub use memory::*;
