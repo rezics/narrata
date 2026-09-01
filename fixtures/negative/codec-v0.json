@@ -1,0 +1,20 @@
+{
+  "schema": 0,
+  "vectors": [
+    { "name": "non-minimal-integer", "hex": "82180000", "expected": "NAR-D0002" },
+    { "name": "indefinite-array", "hex": "9f00ff", "expected": "NAR-D0001" },
+    { "name": "indefinite-map", "hex": "8205bfff", "expected": "NAR-D0001" },
+    { "name": "indefinite-string", "hex": "82037f6161ff", "expected": "NAR-D0001" },
+    { "name": "unsorted-map-keys", "mutation": "swap Program fields 0 and 1", "expected": "NAR-D0002" },
+    { "name": "duplicate-map-key", "mutation": "append duplicate Program field 0", "expected": "NAR-D0001" },
+    { "name": "unknown-field", "mutation": "append Program field 9", "expected": "NAR-D0001" },
+    { "name": "wrong-object-kind", "mutation": "change envelope object kind", "expected": "NAR-D0003" },
+    { "name": "unsupported-schema-version", "mutation": "change envelope schema", "expected": "NAR-I0001" },
+    { "name": "payload-length-overflow", "mutation": "set envelope payload length to u64::MAX", "expected": "NAR-L0001" },
+    { "name": "payload-digest-mismatch", "mutation": "flip payload byte", "expected": "NAR-D0003" },
+    { "name": "invalid-utf8", "hex": "820361ff", "expected": "NAR-D0001" },
+    { "name": "trailing-bytes", "hex": "810000", "expected": "NAR-D0001" },
+    { "name": "nesting-too-deep", "mutation": "decode nested lists with max_value_depth=1", "expected": "NAR-L0001" },
+    { "name": "unsupported-value-tag", "hex": "8118ff", "expected": "NAR-D0001" }
+  ]
+}

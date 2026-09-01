@@ -1,6 +1,6 @@
 # Narrata 分步实施计划
 
-状态：可执行计划
+状态：Stage 1 已实施；Stage 2 待实施
 日期：2026-09-01
 
 ## 交付目标
@@ -37,28 +37,25 @@ flowchart LR
 - [Phase 4：Statechart](./04-statecharts.md)
 - [Phase 5：迁移、Binding 与 Nickel 适配](./05-migrations-bindings-and-nickel.md)
 
-## 初始 workspace
+## 当前 workspace（Stage 1）
 
 先保持少量 crate，等依赖边界和编译成本提供证据后再拆：
 
 ```text
 crates/
-  narrata-core/          # typed IR、VM、runtime state、纯 reduce
-  narrata-store/         # object/commit/ref、MemoryStore、coordinator
-  narrata-store-sqlite/  # native reference persistence
-  narrata-testkit/       # trace fixture、model、fault injection
+  narrata-core/          # typed IR、VM、runtime state、纯 transition
+  narrata-testkit/       # fixture、model、generator、conformance backend
+  narrata-cli/           # validate/inspect/run/replay/conformance
 
-tools/
-  narrata-cli/           # compile/inspect/run/replay/migrate
+fixtures/
+  codec/ program/ runtime/ negative/ conformance/
 
-tests/
-  conformance/
-  persistence/
-  migration/
-  fuzz/
+fuzz/
+  fuzz_targets/
 ```
 
-Phase 4/5 再按实际边界增加 `narrata-statechart`、`narrata-protocol`、`narrata-ffi`、
+Phase 2 才增加 `narrata-store` 与 `narrata-store-sqlite`。Phase 4/5 再按实际边界增加
+`narrata-statechart`、`narrata-protocol`、`narrata-ffi`、
 `narrata-wasm` 和可选 `narrata-nickel`。不要在第一批 PR 创建十多个空 crate。
 
 ## 每一步的完成规则
@@ -76,6 +73,9 @@ Phase 4/5 再按实际边界增加 `narrata-statechart`、`narrata-protocol`、`
 test 已存在后冻结。
 
 ## Release gate
+
+Stage 1 的合并实施与自动 Gate 见
+[Stage 1：Deterministic In-Memory Narrative Kernel](./stage-1-deterministic-kernel.md)。
 
 | Gate | 可交付能力 | 必须通过 |
 | --- | --- | --- |

@@ -1,0 +1,21 @@
+[package]
+name = "narrata-cli"
+description = "CLI for validating, inspecting, running, and replaying Narrata artifacts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "narrata"
+path = "src/main.rs"
+
+[dependencies]
+hex.workspace = true
+narrata-core = { path = "../narrata-core", version = "=0.1.0-alpha.1" }
+narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

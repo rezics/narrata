@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+ --> tests/ui/wrong_identity.rs:7:16
+  |
+7 |     takes_flow(choice);
+  |     ---------- ^^^^^^ expected `FlowId`, found `ChoiceId`
+  |     |
+  |     arguments to this function are incorrect
+  |
+note: function defined here
+ --> tests/ui/wrong_identity.rs:3:4
+  |
+3 | fn takes_flow(_: FlowId) {}
+  |    ^^^^^^^^^^ ---------

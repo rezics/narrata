@@ -1,0 +1,17 @@
+{
+  "schema": 0,
+  "story": "hello-v0",
+  "execution_id": "execution:00000000000000000000000000000001",
+  "inputs": [
+    { "kind": "start", "request_id": "input:00000000000000000000000000000001" },
+    { "kind": "advance", "request_id": "input:00000000000000000000000000000002" }
+  ],
+  "expected_state_digests": [
+    "state:de00aa9a4614d06d06c62037594bd7ad0a875671f16a5309fa58e5d17bfbe978",
+    "state:31febe4117eee2d9bed3fbd240199ff00f56f802a24c537890944bbe1019624e"
+  ],
+  "expected_receipt_digests": [
+    "receipt:6ec853dacf1c14f51791bdb215de3a9a2b7c956cefabaa2e63112ed7cbcd4884",
+    "receipt:59f56b9d60eee097f35322126dae74cf911b86d7d4b588cf289e1691f6a8e84c"
+  ]
+}

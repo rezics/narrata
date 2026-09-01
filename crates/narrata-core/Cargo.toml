@@ -1,0 +1,21 @@
+[package]
+name = "narrata-core"
+description = "Deterministic, host-independent narrative runtime kernel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+hex.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+trybuild = "1.0.110"
+
+[lints]
+workspace = true
+

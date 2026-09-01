@@ -1,1 +1,4 @@
 .temp/
+/target/
+/fuzz/target/
+*.profraw

@@ -206,7 +206,7 @@ configuration 后，才发布 Await。若业务必须先取得外部结果再决
 
 ```rust
 struct TransitionDraft {
-    parent: CommitId,
+    parent: StateDigest,
     next_state: RuntimeState,
     result: DraftResult,
     receipt: TransitionReceipt,
@@ -219,6 +219,10 @@ enum DraftResult {
     Finished(Value),
 }
 ```
+
+`InputId` 历史去重由 coordinator/store 拥有；core 的 Receipt 只携带 `InputId` 与
+`InputPayloadDigest`。Phase 2 coordinator 再把 `StateDigest` materialize 成 Snapshot/Receipt/
+Commit objects 与 `CommitId`。
 
 `SessionCoordinator` 在 store 中提交 draft 后，才对宿主发布带 `CommitId` 的
 `CommittedRunResult`。特别是 external effect，不能先执行再尝试保存 pending state。

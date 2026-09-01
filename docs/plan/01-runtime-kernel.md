@@ -1,6 +1,6 @@
 # Phase 1：最小确定性 Runtime
 
-状态：待实施
+状态：已实施（Stage 1 / G1）
 前置：[Phase 0](./00-contracts-and-test-oracles.md)
 完成后解锁：[Phase 2](./02-time-travel-and-persistence.md)
 
@@ -12,7 +12,7 @@
 ## v0 指令集
 
 ```text
-Const / Load / Store
+Const / Load / Store / Unary / Binary
 Jump / JumpIfFalse
 Call / Return
 Say / Choice
@@ -21,6 +21,9 @@ Finish
 
 `Say` 与 `Choice` 生成 typed pending interaction；不直接调用 UI。表达式先限制为 Value 常量、
 变量读取、相等/布尔/整数基本运算。除零、溢出和类型不匹配有确定诊断。
+
+`And / Or` 由未来 compiler 展开为 `JumpIfFalse` 以保留 short-circuit。所有互动 safe point 的
+evaluation stack 必须为空。
 
 ## P1.1 Typed Program IR 与 validator
 

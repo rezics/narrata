@@ -1,6 +1,6 @@
 # Phase 0：契约与测试判据
 
-状态：待实施
+状态：已实施（并入 Stage 1 / G0+G1）
 前置：无
 完成后解锁：[Phase 1](./01-runtime-kernel.md)
 
@@ -14,7 +14,7 @@
 交付：
 
 - 根 `Cargo.toml`、固定 `rust-toolchain.toml`、`rustfmt.toml`、lint policy；
-- `narrata-core`、`narrata-store`、`narrata-testkit`、`narrata-cli` 最小 package；
+- `narrata-core`、`narrata-testkit`、`narrata-cli` package；Store 延后到 Phase 2；
 - native test、Wasm compile check、doc test、format/lint；
 - feature matrix，默认 feature 不含 SQLite、Nickel 或 FFI；
 - 许可证与第三方 notice 生成入口。
@@ -27,12 +27,10 @@ Nix/Nickel。
 在 `narrata-core` 增加不可互换的 newtype：
 
 ```text
-ProgramId / ProgramArtifactId / BuildProvenanceId / ContentLockId
-ExecutionId / InputId / InteractionId / EffectId
-FlowId / InstructionId / StateId / ChoiceId
-ObjectId / SnapshotId / ReceiptId / CommitId
-TimelineOperationId / TimelineCatalogEventId / TimelineArchiveManifestId / ArchiveBranchId
-RefRevision / LedgerFence
+ProgramId / ExecutionId / InputId
+FlowId / InstructionId / ChoiceId / GlobalId / LocalId
+TypeId / VariantId / FieldId / EntityId
+ProgramArtifactId / InteractionId / StateDigest / InputPayloadDigest / ReceiptDigest
 ```
 
 交付：

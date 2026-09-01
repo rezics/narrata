@@ -1,0 +1,8 @@
+{
+  "record": [
+    { "field_id": "field:00000000000000000000000000000001", "value": { "string": "é" } },
+    { "field_id": "field:00000000000000000000000000000002", "value": { "i64": -1 } }
+  ],
+  "unicode_policy": "exact-utf8-no-normalization"
+}
+

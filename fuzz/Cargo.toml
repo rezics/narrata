@@ -1,0 +1,42 @@
+[package]
+name = "narrata-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.10"
+narrata-core = { path = "../crates/narrata-core" }
+narrata-testkit = { path = "../crates/narrata-testkit" }
+
+[[bin]]
+name = "decode_value"
+path = "fuzz_targets/decode_value.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_program"
+path = "fuzz_targets/decode_program.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "restore_snapshot"
+path = "fuzz_targets/restore_snapshot.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "reduce_macrostep"
+path = "fuzz_targets/reduce_macrostep.rs"
+test = false
+doc = false
+bench = false
+

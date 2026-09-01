@@ -21,6 +21,22 @@ Its goal is broader than visual novels. Narrata is designed for any system where
 The current architecture decisions, research notes, and phased implementation plan are indexed in
 [docs/README.md](./docs/README.md).
 
+## Stage 1 quick start
+
+The deterministic in-memory kernel is implemented as a Rust 1.98 workspace. Run the complete local
+gate with:
+
+```powershell
+./scripts/check-g1.ps1
+```
+
+Validate the checked-in canonical Program vector or replay both conformance stories:
+
+```powershell
+cargo run -p narrata-cli -- program validate fixtures/codec/program-v0.cbor.hex
+cargo run -p narrata-cli -- conformance fixtures/conformance
+```
+
 ## License
 
 Except where otherwise noted, REZICS is licensed under the
