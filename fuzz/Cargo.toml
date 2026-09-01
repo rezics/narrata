@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.10"
 narrata-core = { path = "../crates/narrata-core" }
+narrata-store = { path = "../crates/narrata-store" }
 narrata-testkit = { path = "../crates/narrata-testkit" }
 
 [[bin]]
@@ -40,3 +41,9 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "decode_bundles"
+path = "fuzz_targets/decode_bundles.rs"
+test = false
+doc = false
+bench = false

@@ -41,6 +41,7 @@
 
 - [实施总览](./plan/README.md)
 - [Stage 1：Deterministic In-Memory Narrative Kernel](./plan/stage-1-deterministic-kernel.md)
+- [Stage 2：Time Travel and Crash-Safe Persistence](./plan/stage-2-time-travel-persistence.md)
 - [Phase 0：契约与测试判据](./plan/00-contracts-and-test-oracles.md)
 - [Phase 1：最小确定性 Runtime](./plan/01-runtime-kernel.md)
 - [Phase 2：时间旅行与持久化](./plan/02-time-travel-and-persistence.md)
@@ -48,13 +49,14 @@
 - [Phase 4：Statechart](./plan/04-statecharts.md)
 - [Phase 5：迁移、Binding 与 Nickel 适配](./plan/05-migrations-bindings-and-nickel.md)
 
-### Stage 1 ADR
+### ADR
 
 - [0001：Stage 1 scope](./adr/0001-stage-1-scope.md)
 - [0002：Identities and digests](./adr/0002-identities-and-digests.md)
 - [0003：Deterministic CBOR profile](./adr/0003-deterministic-cbor-profile.md)
 - [0004：Flow VM safe points](./adr/0004-flow-vm-safe-points.md)
 - [0005：Input idempotency ownership](./adr/0005-input-idempotency-ownership.md)
+- [0006：Stage 2 persistence boundary](./adr/0006-stage-2-persistence-boundary.md)
 
 ## 文档状态约定
 

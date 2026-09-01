@@ -1,6 +1,7 @@
 # Phase 2：时间旅行与持久化
 
-状态：待实施
+状态：已实施（G2）；合并实现与可执行 Gate 见
+[Stage 2：Time Travel and Crash-Safe Persistence](./stage-2-time-travel-persistence.md)
 前置：[Phase 1](./01-runtime-kernel.md)
 完成后解锁：[Phase 3](./03-effects-and-host-coordination.md)、Phase 5 migration/binding
 

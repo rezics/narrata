@@ -150,7 +150,18 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "narrata-core",
+ "narrata-store",
  "narrata-testkit",
+]
+
+[[package]]
+name = "narrata-store"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "hex",
+ "narrata-core",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]

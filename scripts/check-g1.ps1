@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $true
 
 cargo fmt --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings

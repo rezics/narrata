@@ -2,6 +2,8 @@
 resolver = "3"
 members = [
   "crates/narrata-core",
+  "crates/narrata-store",
+  "crates/narrata-store-sqlite",
   "crates/narrata-testkit",
   "crates/narrata-cli",
 ]
@@ -21,6 +23,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 sha2 = "0.10.9"
 thiserror = "2.0.16"
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

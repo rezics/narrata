@@ -1,23 +1,20 @@
 [package]
-name = "narrata-cli"
-description = "CLI for validating, inspecting, running, and replaying Narrata artifacts"
+name = "narrata-store-sqlite"
+description = "Crash-safe SQLite SaveStore adapter for Narrata"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "narrata"
-path = "src/main.rs"
-
 [dependencies]
-hex.workspace = true
 narrata-core = { path = "../narrata-core", version = "=0.1.0-alpha.1" }
 narrata-store = { path = "../narrata-store", version = "=0.1.0-alpha.1" }
-narrata-store-sqlite = { path = "../narrata-store-sqlite", version = "=0.1.0-alpha.1" }
+rusqlite.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
 narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
-serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -5,24 +5,36 @@ use super::{DecodeError, sha256};
 const MAGIC: &[u8; 8] = b"NARRATA\0";
 const HEADER_LENGTH: usize = 56;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u16)]
 pub enum ObjectKind {
     Program = 1,
     Snapshot = 2,
     Receipt = 3,
     Value = 4,
+    Commit = 5,
+    TimelineCatalogEvent = 6,
+    CheckpointBundleManifest = 7,
+    TimelineArchiveManifest = 8,
 }
 
 impl ObjectKind {
-    fn from_u16(value: u16) -> Option<Self> {
+    pub const fn from_code(value: u16) -> Option<Self> {
         match value {
             1 => Some(Self::Program),
             2 => Some(Self::Snapshot),
             3 => Some(Self::Receipt),
             4 => Some(Self::Value),
+            5 => Some(Self::Commit),
+            6 => Some(Self::TimelineCatalogEvent),
+            7 => Some(Self::CheckpointBundleManifest),
+            8 => Some(Self::TimelineArchiveManifest),
             _ => None,
         }
+    }
+
+    pub const fn code(self) -> u16 {
+        self as u16
     }
 }
 
@@ -65,7 +77,7 @@ pub fn decode_envelope<'a>(
     if envelope_version != ENVELOPE_V0.get() {
         return Err(DecodeError::Envelope("unsupported envelope version"));
     }
-    let kind = ObjectKind::from_u16(read_u16(header, 10)?)
+    let kind = ObjectKind::from_code(read_u16(header, 10)?)
         .ok_or(DecodeError::Envelope("unknown object kind"))?;
     if kind != expected_kind {
         return Err(DecodeError::Envelope("wrong object kind"));
