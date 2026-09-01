@@ -16,6 +16,11 @@ Its goal is broader than visual novels. Narrata is designed for any system where
 
 **One narrative model. Any engine.**
 
+## Documentation
+
+The current architecture decisions, research notes, and phased implementation plan are indexed in
+[docs/README.md](./docs/README.md).
+
 ## License
 
 Except where otherwise noted, REZICS is licensed under the
