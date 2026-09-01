@@ -12,6 +12,8 @@
 3. 时间旅行通过移动游标和从旧提交分叉实现，不反向执行指令，也不修改历史提交。
 4. 输入与 Effect Response 日志用于审计、确定性验证和调试重放；它不是唯一恢复来源。
 5. 外部不可逆效果位于可回滚时间线之外，必须使用幂等键、单调账本或回滚屏障。
+6. 普通 checkpoint 只承诺恢复目标点；完整用户时间线是默认关闭的独立能力，自显式启用的
+   baseline 起保留所有语义转换、分支和存档目录历史。
 
 ## 推荐阅读顺序
 
@@ -26,8 +28,8 @@
 
 - [确定性运行模型](./architecture/runtime-model.md)：状态、输入、macrostep、safe point 和
   核心 API。
-- [时间旅行与存档](./architecture/time-travel-and-save.md)：不可变提交图、快照、Ref、原子
-  写入、分支与 GC。
+- [时间旅行与存档](./architecture/time-travel-and-save.md)：不可变提交图、快照、Ref、普通
+  Checkpoint Bundle、可选 Timeline Archive、原子写入、分支与 GC。
 - [Effect 与宿主状态](./architecture/effects-and-host-state.md)：展示协调、外部副作用、幂等、
   回滚屏障和联合存档。
 - [程序身份与迁移](./architecture/program-versioning-and-migration.md)：Stable ID、精确构件、

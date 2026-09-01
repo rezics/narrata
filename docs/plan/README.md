@@ -12,6 +12,7 @@
 → say / advance / choice / set / branch / call / return
 → 每个交互 safe point 产生不可变 Commit
 → save / load / rewind / fork
+→ 可选开启完整 Timeline Archive
 → native reference store 崩溃安全
 ```
 
@@ -80,7 +81,7 @@ test 已存在后冻结。
 | --- | --- | --- |
 | G0 | 可执行语义骨架 | 类型/codec vectors、trace schema、CI |
 | G1 | 内存中运行短篇剧情 | 确定性、预算、save/restore 等价 |
-| G2 | 本地持久存档与时间旅行 | crash matrix、CAS、branch、GC、corruption fuzz |
+| G2 | 本地持久存档、时间旅行与可选完整归档 | crash matrix、CAS、branch、Catalog、bundle、GC、corruption fuzz |
 | G3 | 安全宿主 Effect | commit-before-dispatch、ledger、barrier、联合存档 |
 | G4 | 层级/并行 Statechart | SCXML 子集 golden/model tests |
 | G5 | C/Wasm 与升级 | binding conformance、migration corpus、旧存档 CI |

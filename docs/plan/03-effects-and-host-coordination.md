@@ -114,10 +114,12 @@ recorded response object
 交付：
 
 - `HostSnapshotRef` 与 `CompoundSaveManifest`；
+- 可选完整时间线使用 `HostTimelineManifest`，逐个映射可联合恢复的 Narrative Commit；
 - immutable host snapshot digest；
 - Narrata Commit、Host Snapshot、Program、Content Lock、LedgerFence 联合验证；
 - orphan host/narrative object retention；
 - 任一半缺失或版本不兼容不移动 save Ref；
+- Host Timeline 缺少映射的点只能标为 narrative-only，不能恢复一半后继续；
 - narrative-authoritative 模式无需 Host Snapshot。
 
 ## P3.9 Effect fault matrix
@@ -145,4 +147,5 @@ next Commit 前/后
 - Scene 可由单个 Snapshot reconcile；
 - Recorded Query 重放不访问外部系统；
 - Federated Save 原子验证两侧；
+- Federated Timeline 对每个宣称可执行恢复的点都有经过验证的 Host Snapshot 映射；
 - exactly-once 限制在 API 与文档中明确，没有 catch-all `ExternalCommit` 误导。

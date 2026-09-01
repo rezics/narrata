@@ -148,20 +148,40 @@ not-found、forbidden、retired 或 incompatible 结果返回。
 
 ## 存档
 
-Narrata 产生版本化 Snapshot 和必要的路径事件；宿主决定保存位置。
+Narrata 产生版本化 Snapshot、Commit 和 Transition Receipt；宿主决定保存位置、访问权限和
+是否为用户显式开启完整时间线。普通存档与完整时间线使用不同契约：
 
-Gamebook 的最小 Snapshot 至少需要表达：
+| 能力 | Narrata 数据 | REZICS/宿主责任 |
+| --- | --- | --- |
+| 普通存档 | `CheckpointBundle`：一个目标 Commit 及其必要 closure | save slot、归属、同步和保留策略 |
+| 完整时间线 | `TimelineArchiveBundle`：多 root、Catalog Event、cursor、branch 与对象 closure | 显式启用、容量/隐私说明、长期保留和账户级导出 |
+
+Gamebook 的最小 Snapshot 至少表达：
 
 - Narrative Program 或关系图身份与版本；
 - 所依赖的 REZICS Content Structure 身份与兼容信息；
 - 当前 `ContentStructureNode` 引用；
 - 当前等待中的交互；
-- 已提交的选择路径或其日志游标；
 - Snapshot Schema 版本。
 
+已提交的选择路径不复制进 Snapshot：`Commit.parent` 和 `TransitionReceipt` 表达怎样来到目标
+状态；save、bookmark 和 branch 的创建、覆盖、改名或删除历史只在完整时间线启用后由
+`TimelineCatalogEvent` 表达。普通 checkpoint 不承诺保留 sibling branch、被覆盖 save 的旧目录
+状态或完整用户时间线。
+
 未来加入变量、调用栈、随机数或其他运行能力时，它们继续由 Narrata Snapshot 表达。REZICS
-可以把 Snapshot 作为用户数据持久化，同时保存检索、归属和同步所需的宿主元数据，但不能
-解析未知字段后自行重建一个不同的运行语义。
+可以把 bundle/object 作为用户数据持久化，同时保存检索、归属和同步所需的宿主元数据，但
+不能解析未知字段后自行重建一个不同的运行语义。
+
+完整时间线默认关闭；启用时只能从一个已提交 baseline 开始保证完整，并把当时仍存在的
+save/bookmark/branch 当前值作为初始目录。REZICS 必须向用户说明记录范围、保留和删除后果。
+从普通存档列表删除一个 save 不会自动删除完整时间线中的 Catalog Event 或其所引用 Commit；
+“从列表移除”和“永久清除完整时间线”必须是不同操作。
+
+Narrata 的 `TimelineArchiveBundle` 只覆盖一个 `ExecutionId`。REZICS 若提供“导出该用户的所有
+游玩记录”，应在账户层组合多个 Timeline Archive/Checkpoint Bundle，不得把多个 Execution
+伪装成同一 Commit DAG。完整时间线记录的是已提交剧情输入和存档/分支等语义操作，不是页面
+访问、鼠标行为或分析 telemetry。
 
 旧内容与新内容之间不能通过 Post 标题、数组位置或当前排序猜测存档位置。恢复必须使用稳定
 节点和选择 ID，并采取以下一种显式结果：精确恢复、经过已声明迁移恢复，或报告不兼容。
@@ -191,6 +211,7 @@ Narrata 状态之后。
 
 1. 在 Narrata 固定 provider-neutral 的外部内容节点引用协议。
 2. 定义有向多重图、稳定选择 ID、入口与结局的权威 Schema。
-3. 定义 Snapshot、路径事件、内容版本兼容与迁移协议。
+3. 冻结 Snapshot/Commit/Receipt、Checkpoint Bundle、可选 Timeline Archive、内容版本兼容与
+   迁移协议。
 4. 为 REZICS 实现节点 resolver、正文 render adapter 和 Narrata 前端集成层。
 5. 删除或改写 REZICS 中仍把 `GameContentStructure` 和 Journey 描述为 REZICS 自有领域模型的规划文档。

@@ -94,8 +94,8 @@ struct ContentLockV1 {
 ```
 
 `ContentLockId` 是 `ContentLockV1` 的 domain-separated 内容摘要。Program Artifact 引用该
-ID，因此 lock 内容变化会改变 `ProgramArtifactId`，同时 SaveBundle/GC 又能把 lock 当作
-独立 immutable object 遍历和去重。
+ID，因此 lock 内容变化会改变 `ProgramArtifactId`，同时 Checkpoint/Timeline Bundle 与 GC
+又能把 lock 当作独立 immutable object 遍历和去重。
 
 Source、compiler、authoring import 与 Nickel evaluator 的精确锁属于 `BuildProvenance`；它们
 生成的最终结果已经体现在 canonical IR 中。只有运行时仍需解析、尚未完全嵌入 IR 的依赖才
@@ -144,7 +144,8 @@ Narrata 引用 REZICS `ContentStructureNode` occurrence，而不是 Post ID，�
 
 ## Migration Registry
 
-SaveBundle 不携带可执行代码。可信应用/compiler 注册 migration：
+CheckpointBundle 和 TimelineArchiveBundle 都不携带可执行代码。可信应用/compiler 注册
+migration：
 
 ```rust
 struct MigrationDescriptor {

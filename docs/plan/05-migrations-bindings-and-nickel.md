@@ -19,7 +19,8 @@
 ```text
 Program Artifact bytes/hash
 Snapshot/Receipt/Commit bytes/hash
-SaveBundle
+CheckpointBundle
+TimelineArchiveBundle（含 coverage/Catalog fixture）
 expected continuation/effects
 source BuildProvenance
 ```
@@ -71,7 +72,7 @@ EngineCreate / ProgramLoad
 SessionCreate / SessionLoad
 Dispatch / ContinueSlice
 CommittedRunResult / Diagnostic
-SaveBundle import/export
+CheckpointBundle / TimelineArchiveBundle import/export
 Capability negotiation / Effect response
 ```
 
@@ -152,6 +153,7 @@ locked .ncl inputs
 在已有 Commit/Receipt 上增加，不改变运行语义：
 
 - timeline/branch/Barrier 可视化；
+- 完整时间线的 coverage、save Catalog 与 prune/delete 后果可视化；
 - state/value/frame/chart inspector；
 - Receipt replay verification；
 - breakpoint 仅停在 instruction slice，明确区分 durable safe point；

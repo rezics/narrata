@@ -52,11 +52,13 @@ Narrata 的 root 包括：
 - 用户 save slot；
 - timeline branch head 与当前 active cursor；
 - 明确 bookmark；
+- 完整时间线启用后的 Catalog Head/Archive root；
 - 尚未结束的 external effect ledger entry；
 - 有期限的 debugger/autosave pin。
 
-从这些 root 必须遍历 `Commit → parent/state/program/transition/content lock`。只保留
-snapshot 而清掉其精确 Program Artifact，会制造无法恢复的“有效存档”。
+从这些 root 必须遍历 `Commit → parent/state/program/transition/content lock`；Catalog/Archive
+root 还必须遍历目录事件和其中引用的所有 Commit。只保留 snapshot 而清掉其精确 Program
+Artifact，会制造无法恢复的“有效存档”。
 
 ### 3. 临时对象到永久 root 的交接必须与 GC 同步
 

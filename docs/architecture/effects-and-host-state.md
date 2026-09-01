@@ -300,6 +300,35 @@ struct CompoundSaveManifest {
 恢复必须共同验证 Narrata Commit、Host Snapshot、Program、Content Lock 与 ledger fence；不能
 只恢复其中一半后继续。
 
+### Federated Timeline Archive
+
+单个 `CompoundSaveManifest` 只能恢复一个联合 checkpoint，不能据此宣称宿主世界的整个时间线
+也可回溯。若宿主开启[完整用户时间线](./time-travel-and-save.md#完整时间线归档)，并且宿主状态
+会影响分支，则必须额外提供：
+
+```rust
+struct HostTimelineManifest {
+    execution: ExecutionId,
+    coverage: TimelineCoverage,
+    entries: Vec<HostTimelineEntry>,
+}
+
+struct HostTimelineEntry {
+    narrative: CommitId,
+    host: HostSnapshotRef,
+    host_digest: HostSnapshotDigest,
+    ledger_fence: LedgerFence,
+}
+```
+
+每个对外承诺可联合 rewind/load 的 Narrative Commit 都必须有对应 entry，或者由宿主自己的
+版本化时间线证明能够精确构造该 Host Snapshot。缺少映射的点只能标记为 narrative-only view，
+不能恢复一半后继续执行。Host Timeline 与 Narrative Archive 使用相同 `ExecutionId` 和明确的
+coverage；导入时共同验证后才发布任何 Ref。
+
+支付、通知、服务器写入等 monotonic external fact 不进入 Host Timeline。Ledger 和 Barrier 仍
+独立存在；完整归档可以展示这些事实，却不能把它们变成可撤销状态。
+
 ### External-authoritative
 
 服务器或其他系统是权威。Narrata 只保存引用与已记录 response，并对不可逆改变使用 Barrier。
@@ -316,4 +345,6 @@ struct CompoundSaveManifest {
 - compensation 不删除原 ledger entry；
 - Recorded Query 重放不调用 query adapter；
 - Reconcile 在任意历史点都能从单个 SceneState 建立目标画面；
-- Federated save 任一半缺失、hash 不符或版本不兼容都原子失败。
+- Federated save 任一半缺失、hash 不符或版本不兼容都原子失败；
+- Federated Timeline 对每个可联合恢复点都有 Host Timeline entry，缺失映射的点不会被报告为
+  可继续执行。
