@@ -30,6 +30,11 @@ pub struct ProgramLimits {
     pub max_locals_per_flow: u64,
     pub max_choices_per_instruction: u64,
     pub max_capabilities: u64,
+    pub max_states: u64,
+    pub max_regions: u64,
+    pub max_transitions: u64,
+    pub max_statechart_actions: u64,
+    pub max_guard_depth: u32,
 }
 
 impl Default for ProgramLimits {
@@ -42,6 +47,11 @@ impl Default for ProgramLimits {
             max_locals_per_flow: 65_536,
             max_choices_per_instruction: 4_096,
             max_capabilities: 1_024,
+            max_states: 65_536,
+            max_regions: 65_536,
+            max_transitions: 262_144,
+            max_statechart_actions: 1_000_000,
+            max_guard_depth: 64,
         }
     }
 }
@@ -51,6 +61,10 @@ pub struct RuntimeLimits {
     pub max_call_depth: u64,
     pub max_stack_depth: u64,
     pub max_total_live_values: u64,
+    pub max_active_states: u64,
+    pub max_history_entries: u64,
+    pub max_internal_events: u64,
+    pub max_deferred_work: u64,
 }
 
 impl Default for RuntimeLimits {
@@ -59,6 +73,10 @@ impl Default for RuntimeLimits {
             max_call_depth: 1_024,
             max_stack_depth: 16_384,
             max_total_live_values: 2_000_000,
+            max_active_states: 65_536,
+            max_history_entries: 65_536,
+            max_internal_events: 65_536,
+            max_deferred_work: 65_536,
         }
     }
 }
@@ -68,6 +86,8 @@ pub struct MacrostepLimits {
     pub max_instructions: u64,
     pub max_calls: u64,
     pub max_logical_alloc_units: u64,
+    pub max_microsteps: u64,
+    pub max_internal_events: u64,
     pub runtime: RuntimeLimits,
 }
 
@@ -77,6 +97,8 @@ impl Default for MacrostepLimits {
             max_instructions: 1_000_000,
             max_calls: 100_000,
             max_logical_alloc_units: 64 * 1024 * 1024,
+            max_microsteps: 100_000,
+            max_internal_events: 100_000,
             runtime: RuntimeLimits::default(),
         }
     }

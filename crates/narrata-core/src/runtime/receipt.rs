@@ -11,6 +11,7 @@ pub enum ReceiptResultKindV0 {
     Choice = 1,
     Finished = 2,
     Effect = 3,
+    StatechartStable = 4,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,6 +25,8 @@ pub struct TransitionReceiptV0 {
     pub instruction_count: u64,
     pub call_count: u64,
     pub logical_alloc_units: u64,
+    pub microstep_count: u64,
+    pub internal_event_count: u64,
 }
 
 pub fn encode_receipt(receipt: &TransitionReceiptV0) -> Vec<u8> {
@@ -33,7 +36,8 @@ pub fn encode_receipt(receipt: &TransitionReceiptV0) -> Vec<u8> {
 
 pub(crate) fn encode_receipt_payload(receipt: &TransitionReceiptV0) -> Vec<u8> {
     let mut writer = CborWriter::new();
-    writer.map(9);
+    let has_statechart_metrics = receipt.microstep_count != 0 || receipt.internal_event_count != 0;
+    writer.map(if has_statechart_metrics { 11 } else { 9 });
     writer.unsigned(0);
     writer.unsigned(u64::from(receipt.schema_version.get()));
     writer.unsigned(1);
@@ -52,6 +56,12 @@ pub(crate) fn encode_receipt_payload(receipt: &TransitionReceiptV0) -> Vec<u8> {
     writer.unsigned(receipt.call_count);
     writer.unsigned(8);
     writer.unsigned(receipt.logical_alloc_units);
+    if has_statechart_metrics {
+        writer.unsigned(9);
+        writer.unsigned(receipt.microstep_count);
+        writer.unsigned(10);
+        writer.unsigned(receipt.internal_event_count);
+    }
     writer.into_bytes()
 }
 
@@ -60,6 +70,8 @@ pub(crate) struct ReceiptMetrics {
     pub instruction_count: u64,
     pub call_count: u64,
     pub logical_alloc_units: u64,
+    pub microstep_count: u64,
+    pub internal_event_count: u64,
 }
 
 pub(crate) fn receipt_v0(
@@ -80,5 +92,7 @@ pub(crate) fn receipt_v0(
         instruction_count: metrics.instruction_count,
         call_count: metrics.call_count,
         logical_alloc_units: metrics.logical_alloc_units,
+        microstep_count: metrics.microstep_count,
+        internal_event_count: metrics.internal_event_count,
     }
 }

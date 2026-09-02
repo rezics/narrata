@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    CommitId, EffectId, EffectPayloadDigest, EffectRequestDigest, ExecutionId, FieldId,
+    ActionId, CommitId, EffectId, EffectPayloadDigest, EffectRequestDigest, ExecutionId, FieldId,
     InputPayloadDigest, InstructionId, TypeId, Value, ValueKindV0, VariantId,
     codec::{CborWriter, digest_bytes},
     scene::ResumeSupport,
@@ -453,6 +453,29 @@ pub fn derive_effect_id(
     hasher.update(parent_commit.as_bytes());
     hasher.update(input.as_bytes());
     hasher.update(instruction.as_bytes());
+    hasher.update(occurrence.to_be_bytes());
+    hasher.update(request_digest.as_bytes());
+    let digest = hasher.finalize();
+    let mut bytes = [0_u8; 32];
+    bytes.copy_from_slice(&digest);
+    EffectId::from_bytes(bytes)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn derive_statechart_effect_id(
+    execution: ExecutionId,
+    parent_commit: CommitId,
+    input: InputPayloadDigest,
+    action: ActionId,
+    occurrence: u64,
+    request_digest: EffectRequestDigest,
+) -> EffectId {
+    let mut hasher = Sha256::new();
+    hasher.update(b"narrata-statechart-effect\0");
+    hasher.update(execution.as_bytes());
+    hasher.update(parent_commit.as_bytes());
+    hasher.update(input.as_bytes());
+    hasher.update(action.as_bytes());
     hasher.update(occurrence.to_be_bytes());
     hasher.update(request_digest.as_bytes());
     let digest = hasher.finalize();

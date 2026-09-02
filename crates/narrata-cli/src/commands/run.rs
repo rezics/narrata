@@ -1,7 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use narrata_core::{
-    ChoiceId, ExecutionId, InputId,
+    ChoiceId, EventTypeId, ExecutionId, InputId,
     runtime::{
         CheckedRuntimeInput, PendingInteractionV0, RuntimeStateV0, SliceBudget, new_execution,
     },
@@ -60,6 +60,25 @@ pub(crate) fn program(args: &[String]) -> Result<(), String> {
                         .map_or_else(|| "-".to_owned(), |value| value.to_string()),
                 );
             }
+            for event in draft.statechart_trace() {
+                println!(
+                    "microstep={} kind={:?} event={} state={} transition={} action={}",
+                    event.microstep,
+                    event.kind,
+                    event
+                        .event
+                        .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+                    event
+                        .state
+                        .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+                    event
+                        .transition
+                        .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+                    event
+                        .action
+                        .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+                );
+            }
         }
         states.push(draft.next_state_digest().to_string());
         receipts.push(draft.receipt_digest().to_string());
@@ -114,6 +133,9 @@ fn resolve_input(
             };
             Ok(CheckedRuntimeInput::select(request, interaction, choice))
         }
+        "event" => EventTypeId::from_str(string_field(object, "event_type_id")?)
+            .map(|event| CheckedRuntimeInput::event(request, event))
+            .map_err(|error| error.to_string()),
         _ => Err(format!("unknown trace input kind '{kind}'")),
     }
 }
@@ -134,6 +156,11 @@ fn status_name(state: &RuntimeStateV0) -> &'static str {
         narrata_core::runtime::RuntimeStatusV0::Awaiting { .. } => "awaiting",
         narrata_core::runtime::RuntimeStatusV0::AwaitingEffect { .. } => "awaiting-effect",
         narrata_core::runtime::RuntimeStatusV0::Finished { .. } => "finished",
+        narrata_core::runtime::RuntimeStatusV0::StatechartStable => "statechart-stable",
+        narrata_core::runtime::RuntimeStatusV0::AwaitingStatechartEffect { .. } => {
+            "awaiting-statechart-effect"
+        }
+        narrata_core::runtime::RuntimeStatusV0::StatechartFinished => "statechart-finished",
     }
 }
 

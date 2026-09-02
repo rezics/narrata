@@ -12,6 +12,7 @@ use crate::{
     },
     identity::{ChoiceId, FlowId, InstructionId, ProgramArtifactId},
     limits::ProgramLoadLimits,
+    statechart::{StatechartIndices, validate_statechart},
     version::{PROGRAM_FORMAT_V0, SEMANTICS_V0},
 };
 
@@ -231,10 +232,13 @@ pub fn validate_program(
         instruction_indices,
         global_indices,
         stack_limits: BTreeMap::new(),
+        statechart_indices: StatechartIndices::default(),
     };
     if diagnostics.is_empty() {
         validate_references(&checked, &mut diagnostics);
     }
+    let statechart_indices = validate_statechart(&checked, limits, &mut diagnostics);
+    checked.statechart_indices = statechart_indices;
     if diagnostics.is_empty() {
         match stack_analysis::analyze(&checked) {
             Ok(limits_by_flow)
@@ -441,6 +445,15 @@ fn validate_references(program: &CheckedProgram, diagnostics: &mut Vec<Diagnosti
                     target_ref(program, flow.id, *next, path, diagnostics);
                 }
                 OpV0::ReconcileScene { next, .. } => {
+                    target_ref(program, flow.id, *next, path, diagnostics);
+                }
+                OpV0::Raise { event, next } => {
+                    if !program
+                        .statechart()
+                        .is_some_and(|chart| chart.events.binary_search(event).is_ok())
+                    {
+                        diagnostics.push(missing(path.clone(), *event));
+                    }
                     target_ref(program, flow.id, *next, path, diagnostics);
                 }
                 OpV0::Finish { value } => {

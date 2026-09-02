@@ -1960,6 +1960,19 @@ fn result_from_state(state: &RuntimeStateV0) -> Result<DraftResult, CoordinatorE
         narrata_core::runtime::RuntimeStatusV0::AwaitingEffect { pending, .. } => {
             Ok(DraftResult::AwaitEffect(pending.request.clone()))
         }
+        narrata_core::runtime::RuntimeStatusV0::AwaitingStatechartEffect { pending } => {
+            Ok(DraftResult::AwaitEffect(pending.request.clone()))
+        }
+        narrata_core::runtime::RuntimeStatusV0::StatechartStable => state
+            .statechart
+            .as_ref()
+            .map(|chart| DraftResult::StatechartStable(chart.into()))
+            .ok_or_else(|| {
+                CoordinatorError::Commit("stable Statechart state is missing".to_owned())
+            }),
+        narrata_core::runtime::RuntimeStatusV0::StatechartFinished => {
+            Ok(DraftResult::Finished(narrata_core::Value::Null))
+        }
         narrata_core::runtime::RuntimeStatusV0::Ready { .. } => Err(CoordinatorError::Commit(
             "committed transition ended outside an interaction safe point".to_owned(),
         )),

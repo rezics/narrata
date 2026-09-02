@@ -21,13 +21,13 @@ Its goal is broader than visual novels. Narrata is designed for any system where
 The current architecture decisions, research notes, and phased implementation plan are indexed in
 [docs/README.md](./docs/README.md).
 
-## Stage 3 quick start
+## Stage 4 quick start
 
-The deterministic runtime, local time-travel store, and crash-recoverable host Effect protocol are
-implemented as a Rust 1.98 workspace. Run the complete local gate with:
+The deterministic Flow/Statechart runtime, local time-travel store, and crash-recoverable host
+Effect protocol are implemented as a Rust 1.98 workspace. Run the complete local gate with:
 
 ```powershell
-./scripts/check-g3.ps1
+./scripts/check-g4.ps1
 ```
 
 Validate the checked-in canonical Program vector or replay both conformance stories:
@@ -40,8 +40,9 @@ cargo run -p narrata-cli -- conformance fixtures/conformance
 `narrata-store` now also provides capability negotiation, commit-before-dispatch, a monotonic Effect
 ledger, recorded query recovery, rewind barriers, compensation links, declarative Scene reconcile,
 and atomically published Compound Saves. `narrata-store-sqlite` persists the same checked model.
-See [Stage 3](./docs/plan/stage-3-effects-and-host-coordination.md) before connecting commands or
-host snapshots. Narrata does not promise generic exactly-once delivery: a host must supply a stable
+See [Stage 4](./docs/plan/stage-4-statecharts.md) for the implemented Statechart subset and
+[Stage 3](./docs/plan/stage-3-effects-and-host-coordination.md) before connecting commands or host
+snapshots. Narrata does not promise generic exactly-once delivery: a host must supply a stable
 idempotency key, transactional API, or explicit unknown-outcome resolution.
 
 ## License

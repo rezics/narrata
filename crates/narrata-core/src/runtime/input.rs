@@ -1,7 +1,7 @@
 use crate::{
     codec::{CborWriter, digest_bytes},
     effect::{EffectResponseError, EffectResponseV0},
-    identity::{ChoiceId, InputId, InputPayloadDigest, InteractionId},
+    identity::{ChoiceId, EventTypeId, InputId, InputPayloadDigest, InteractionId},
     runtime::PendingEffectV0,
 };
 
@@ -22,6 +22,10 @@ pub enum RuntimeInputV0 {
     EffectResponse {
         request_id: InputId,
         response: EffectResponseV0,
+    },
+    Event {
+        request_id: InputId,
+        event: EventTypeId,
     },
 }
 
@@ -77,12 +81,17 @@ impl CheckedRuntimeInput {
         }))
     }
 
+    pub fn event(request_id: InputId, event: EventTypeId) -> Self {
+        Self(RuntimeInputV0::Event { request_id, event })
+    }
+
     pub fn request_id(&self) -> InputId {
         match self.0 {
             RuntimeInputV0::Start { request_id }
             | RuntimeInputV0::Advance { request_id, .. }
             | RuntimeInputV0::Select { request_id, .. }
             | RuntimeInputV0::EffectResponse { request_id, .. } => request_id,
+            RuntimeInputV0::Event { request_id, .. } => request_id,
         }
     }
 
@@ -135,6 +144,12 @@ pub(crate) fn input_payload_digest(input: &CheckedRuntimeInput) -> InputPayloadD
             writer.text(response.capability.as_str());
             writer.unsigned(u64::from(response.capability_version.get()));
             crate::value::encode_value(&mut writer, &response.payload);
+        }
+        RuntimeInputV0::Event { request_id, event } => {
+            writer.array(3);
+            writer.unsigned(4);
+            writer.bytes(request_id.as_bytes());
+            writer.bytes(event.as_bytes());
         }
     }
     InputPayloadDigest::from_bytes(digest_bytes(

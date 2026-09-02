@@ -247,6 +247,7 @@ fn apply(
             require_empty(stack, path)?;
             Ok(vec![*next])
         }
+        OpV0::Raise { next, .. } => Ok(vec![*next]),
         OpV0::Finish { value } => {
             let expected = match value {
                 ReturnModeV0::None => None,

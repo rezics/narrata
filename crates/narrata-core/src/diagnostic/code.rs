@@ -38,6 +38,10 @@ pub mod codes {
     pub const KIND_MISMATCH: DiagnosticCode = DiagnosticCode("NAR-V0003");
     pub const STACK_INVALID: DiagnosticCode = DiagnosticCode("NAR-V0004");
     pub const CONTROL_FLOW_INVALID: DiagnosticCode = DiagnosticCode("NAR-V0005");
+    pub const STATECHART_STRUCTURE_INVALID: DiagnosticCode = DiagnosticCode("NAR-V0006");
+    pub const STATECHART_CONFLICT: DiagnosticCode = DiagnosticCode("NAR-V0007");
+    pub const STATECHART_EVENTLESS_CYCLE: DiagnosticCode = DiagnosticCode("NAR-V0008");
+    pub const STATECHART_UNREACHABLE: DiagnosticCode = DiagnosticCode("NAR-V0009");
     pub const INVALID_INPUT: DiagnosticCode = DiagnosticCode("NAR-N0001");
     pub const INVALID_STATE: DiagnosticCode = DiagnosticCode("NAR-N0002");
     pub const RUNTIME_ARITHMETIC: DiagnosticCode = DiagnosticCode("NAR-R0001");

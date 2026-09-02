@@ -12,7 +12,9 @@ use narrata_store::{
     LedgerFence, RefKey, RefMutation, RefName, SaveStore, SessionCoordinator, StoreError,
 };
 use narrata_store_sqlite::SqliteStore;
-use narrata_testkit::generator::{branch_call_choice_v0, recorded_query_v0};
+use narrata_testkit::generator::{
+    branch_call_choice_v0, recorded_query_v0, statechart_parallel_history_v0,
+};
 
 struct TestDb(PathBuf);
 
@@ -52,6 +54,53 @@ fn query_program() -> Arc<narrata_core::CheckedProgram> {
         &Default::default(),
     )
     .unwrap()
+}
+
+fn statechart_program() -> Arc<narrata_core::CheckedProgram> {
+    load_program(
+        &encode_program_artifact(&statechart_parallel_history_v0().unwrap()),
+        &Default::default(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn statechart_invocation_and_pending_effect_restore_after_reopen() {
+    let db = TestDb::new("statechart-reopen");
+    let program = statechart_program();
+    let mut coordinator = SessionCoordinator::create_with_capabilities(
+        SqliteStore::open(&db.0).unwrap(),
+        Arc::clone(&program),
+        ExecutionId::from_u128(700),
+        RefName::new("statechart").unwrap(),
+        BranchId::from_u128(1),
+        InitialRecordingMode::Complete,
+        1,
+        &builtin_host_capabilities().unwrap(),
+    )
+    .unwrap();
+    let committed = coordinator
+        .dispatch(
+            CheckedRuntimeInput::start(InputId::from_u128(1)),
+            Default::default(),
+            2,
+        )
+        .unwrap();
+    let expected = committed.state.clone();
+    drop(coordinator);
+
+    let reopened = SessionCoordinator::open_with_capabilities(
+        SqliteStore::open(&db.0).unwrap(),
+        program,
+        ExecutionId::from_u128(700),
+        RefName::new("statechart").unwrap(),
+        BranchId::from_u128(1),
+        &builtin_host_capabilities().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(reopened.state().as_ref(), expected.as_ref());
+    assert!(reopened.state().pending_effect().is_some());
+    assert!(reopened.store().integrity_scan().unwrap().is_empty());
 }
 
 #[test]

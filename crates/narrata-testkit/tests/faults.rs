@@ -179,6 +179,7 @@ fn binary_program(op: BinaryOpV0, left: i64, right: i64) -> ProgramArtifactV0 {
         }],
         capabilities: Vec::new(),
         external_content: Vec::new(),
+        statechart: None,
     }
 }
 
@@ -292,6 +293,7 @@ fn recursive_call_program() -> ProgramArtifactV0 {
         ],
         capabilities: Vec::new(),
         external_content: Vec::new(),
+        statechart: None,
     }
 }
 
@@ -317,6 +319,7 @@ fn bare_program(
         }],
         capabilities: Vec::new(),
         external_content: Vec::new(),
+        statechart: None,
     }
 }
 

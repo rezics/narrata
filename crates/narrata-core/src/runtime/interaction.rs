@@ -6,7 +6,8 @@ use crate::{
     CommitId,
     effect::EffectRequestV0,
     identity::{
-        ChoiceId, ExecutionId, InputPayloadDigest, InstructionId, InteractionId, StateDigest,
+        ActionId, ChoiceId, EventTypeId, ExecutionId, GlobalId, InputPayloadDigest, InstructionId,
+        InteractionId, StateDigest,
     },
     value::Value,
 };
@@ -14,12 +15,58 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingEffectV0 {
     pub request: EffectRequestV0,
-    pub origin_instruction: InstructionId,
+    pub path: EffectPathV0,
     pub origin_parent_commit: CommitId,
     pub origin_parent_state: StateDigest,
     pub origin_input_digest: InputPayloadDigest,
     pub occurrence: u64,
-    pub resume_to: InstructionId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EffectPathV0 {
+    Flow {
+        origin: InstructionId,
+        resume_to: InstructionId,
+    },
+    Statechart {
+        site: ActionId,
+        response_to: Option<GlobalId>,
+        response_event: Option<EventTypeId>,
+    },
+}
+
+impl PendingEffectV0 {
+    pub fn flow_origin(&self) -> Option<InstructionId> {
+        match self.path {
+            EffectPathV0::Flow { origin, .. } => Some(origin),
+            EffectPathV0::Statechart { .. } => None,
+        }
+    }
+
+    pub fn flow_continuation(&self) -> Option<InstructionId> {
+        match self.path {
+            EffectPathV0::Flow { resume_to, .. } => Some(resume_to),
+            EffectPathV0::Statechart { .. } => None,
+        }
+    }
+
+    pub fn statechart_continuation(&self) -> Option<(Option<GlobalId>, Option<EventTypeId>)> {
+        match self.path {
+            EffectPathV0::Statechart {
+                response_to,
+                response_event,
+                ..
+            } => Some((response_to, response_event)),
+            EffectPathV0::Flow { .. } => None,
+        }
+    }
+
+    pub fn statechart_site(&self) -> Option<ActionId> {
+        match self.path {
+            EffectPathV0::Statechart { site, .. } => Some(site),
+            EffectPathV0::Flow { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -94,6 +141,7 @@ pub enum DraftResult {
     AwaitChoice(ChoiceView),
     AwaitEffect(EffectRequestV0),
     Finished(Value),
+    StatechartStable(crate::statechart::StatechartView),
 }
 
 pub(crate) fn interaction_view(pending: &PendingInteractionV0) -> DraftResult {

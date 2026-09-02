@@ -1,7 +1,7 @@
 # Narrata 设计文档索引
 
 状态：工作基线
-日期：2026-09-01
+日期：2026-09-02
 
 本目录把早期调研收敛为可以实现和验证的设计。当前最重要的决定是：
 
@@ -43,6 +43,7 @@
 - [Stage 1：Deterministic In-Memory Narrative Kernel](./plan/stage-1-deterministic-kernel.md)
 - [Stage 2：Time Travel and Crash-Safe Persistence](./plan/stage-2-time-travel-persistence.md)
 - [Stage 3：Effects and Host Coordination](./plan/stage-3-effects-and-host-coordination.md)
+- [Stage 4：Deterministic Statecharts](./plan/stage-4-statecharts.md)
 - [Phase 0：契约与测试判据](./plan/00-contracts-and-test-oracles.md)
 - [Phase 1：最小确定性 Runtime](./plan/01-runtime-kernel.md)
 - [Phase 2：时间旅行与持久化](./plan/02-time-travel-and-persistence.md)
@@ -59,6 +60,7 @@
 - [0005：Input idempotency ownership](./adr/0005-input-idempotency-ownership.md)
 - [0006：Stage 2 persistence boundary](./adr/0006-stage-2-persistence-boundary.md)
 - [0007：Stage 3 effect and host-state boundary](./adr/0007-stage-3-effect-host-boundary.md)
+- [0008：Stage 4 Statechart semantics](./adr/0008-stage-4-statechart-semantics.md)
 
 ## 文档状态约定
 

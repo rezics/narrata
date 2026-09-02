@@ -4,23 +4,26 @@ use crate::{
     CapabilityId, CapabilityVersion, DeliveryPolicy, EffectRequestV0, RewindPolicy,
     codec::{CborReader, CborWriter, DecodeError},
     identity::{
-        ChoiceId, CommitId, EffectId, EffectPayloadDigest, EffectRequestDigest, ExecutionId,
-        FlowId, GlobalId, InputPayloadDigest, InstructionId, InteractionId, LocalId,
-        ProgramArtifactId, StateDigest,
+        ActionId, ChoiceId, CommitId, EffectId, EffectPayloadDigest, EffectRequestDigest,
+        EventTypeId, ExecutionId, FlowId, GlobalId, InputPayloadDigest, InstructionId,
+        InteractionId, LocalId, ProgramArtifactId, StateDigest,
     },
     limits::SnapshotLoadLimits,
     runtime::{
-        FrameStateV0, PendingChoiceItemV0, PendingEffectV0, PendingInteractionV0, RuntimeStateV0,
-        RuntimeStatusV0, Turn, VmStateV0,
+        EffectPathV0, FrameStateV0, PendingChoiceItemV0, PendingEffectV0, PendingInteractionV0,
+        RuntimeStateV0, RuntimeStatusV0, Turn, VmStateV0,
     },
     scene::{SceneState, decode_scene, encode_scene},
+    statechart::{decode_statechart_state, encode_statechart_state},
     version::SemanticsVersion,
 };
 
 pub(crate) fn encode_state_payload(state: &RuntimeStateV0) -> Vec<u8> {
     let mut writer = CborWriter::new();
-    let has_scene = state.scene != SceneState::default();
-    writer.map(if has_scene { 8 } else { 7 });
+    let has_statechart = state.statechart.is_some();
+    let has_scene = state.scene != SceneState::default() || has_statechart;
+    let field_count = 7 + u64::from(has_scene) + u64::from(has_statechart);
+    writer.map(field_count);
     writer.unsigned(0);
     writer.unsigned(u64::from(state.semantics_version.get()));
     writer.unsigned(1);
@@ -42,6 +45,10 @@ pub(crate) fn encode_state_payload(state: &RuntimeStateV0) -> Vec<u8> {
     if has_scene {
         writer.unsigned(7);
         encode_scene(&mut writer, &state.scene);
+    }
+    if let Some(statechart) = &state.statechart {
+        writer.unsigned(8);
+        encode_statechart_state(&mut writer, statechart);
     }
     writer.into_bytes()
 }
@@ -77,18 +84,58 @@ fn encode_status(writer: &mut CborWriter, status: &RuntimeStatusV0) {
                 encode_frame(writer, frame);
             }
         }
+        RuntimeStatusV0::StatechartStable => {
+            writer.array(1);
+            writer.unsigned(4);
+        }
+        RuntimeStatusV0::AwaitingStatechartEffect { pending } => {
+            writer.array(2);
+            writer.unsigned(5);
+            encode_pending_effect(writer, pending);
+        }
+        RuntimeStatusV0::StatechartFinished => {
+            writer.array(1);
+            writer.unsigned(6);
+        }
     }
 }
 
 fn encode_pending_effect(writer: &mut CborWriter, pending: &PendingEffectV0) {
-    writer.array(7);
-    encode_effect_request(writer, &pending.request);
-    writer.bytes(pending.origin_instruction.as_bytes());
-    writer.bytes(pending.origin_parent_commit.as_bytes());
-    writer.bytes(pending.origin_parent_state.as_bytes());
-    writer.bytes(pending.origin_input_digest.as_bytes());
-    writer.unsigned(pending.occurrence);
-    writer.bytes(pending.resume_to.as_bytes());
+    match pending.path {
+        EffectPathV0::Flow { origin, resume_to } => {
+            // Preserve the Stage 3 canonical representation byte-for-byte.
+            writer.array(7);
+            encode_effect_request(writer, &pending.request);
+            writer.bytes(origin.as_bytes());
+            writer.bytes(pending.origin_parent_commit.as_bytes());
+            writer.bytes(pending.origin_parent_state.as_bytes());
+            writer.bytes(pending.origin_input_digest.as_bytes());
+            writer.unsigned(pending.occurrence);
+            writer.bytes(resume_to.as_bytes());
+        }
+        EffectPathV0::Statechart {
+            site,
+            response_to,
+            response_event,
+        } => {
+            writer.array(9);
+            encode_effect_request(writer, &pending.request);
+            writer.bytes(site.as_bytes());
+            writer.bytes(pending.origin_parent_commit.as_bytes());
+            writer.bytes(pending.origin_parent_state.as_bytes());
+            writer.bytes(pending.origin_input_digest.as_bytes());
+            writer.unsigned(pending.occurrence);
+            writer.unsigned(1);
+            match response_to {
+                Some(global) => writer.bytes(global.as_bytes()),
+                None => writer.null(),
+            }
+            match response_event {
+                Some(event) => writer.bytes(event.as_bytes()),
+                None => writer.null(),
+            }
+        }
+    }
 }
 
 fn encode_effect_request(writer: &mut CborWriter, request: &EffectRequestV0) {
@@ -193,7 +240,7 @@ pub(crate) fn decode_state_payload(
 ) -> Result<RuntimeStateV0, DecodeError> {
     let mut reader = CborReader::new(bytes);
     let field_count = reader.map_len()?;
-    if !matches!(field_count, 7 | 8) {
+    if !(7..=9).contains(&field_count) {
         return Err(DecodeError::Schema("Runtime State field count"));
     }
     expect_key(&mut reader, 0)?;
@@ -227,11 +274,21 @@ pub(crate) fn decode_state_payload(
     }
     expect_key(&mut reader, 6)?;
     let status = decode_status(&mut reader, limits, &mut value_nodes)?;
-    let scene = if field_count == 8 {
+    let scene = if field_count >= 8 {
         expect_key(&mut reader, 7)?;
         decode_scene(&mut reader, &limits.decode)?
     } else {
         SceneState::default()
+    };
+    let statechart = if field_count == 9 {
+        expect_key(&mut reader, 8)?;
+        Some(decode_statechart_state(
+            &mut reader,
+            limits,
+            &mut value_nodes,
+        )?)
+    } else {
+        None
     };
     reader.finish()?;
     Ok(RuntimeStateV0 {
@@ -242,6 +299,7 @@ pub(crate) fn decode_state_payload(
         interaction_counter,
         globals,
         scene,
+        statechart,
         status,
     })
 }
@@ -278,6 +336,11 @@ fn decode_status(
             vm: decode_vm(reader, limits, nodes)?,
             pending: decode_pending_effect(reader, limits, nodes)?,
         }),
+        (4, 1) => Ok(RuntimeStatusV0::StatechartStable),
+        (5, 2) => Ok(RuntimeStatusV0::AwaitingStatechartEffect {
+            pending: decode_pending_effect(reader, limits, nodes)?,
+        }),
+        (6, 1) => Ok(RuntimeStatusV0::StatechartFinished),
         _ => Err(DecodeError::Schema("Runtime status")),
     }
 }
@@ -287,18 +350,42 @@ fn decode_pending_effect(
     limits: &SnapshotLoadLimits,
     nodes: &mut u64,
 ) -> Result<PendingEffectV0, DecodeError> {
-    if reader.array_len()? != 7 {
+    let length = reader.array_len()?;
+    if !matches!(length, 7 | 9) {
         return Err(DecodeError::Schema("pending Effect"));
     }
     let request = decode_effect_request(reader, limits, nodes)?;
+    let origin = reader.bytes_exact::<16>()?;
+    let origin_parent_commit = CommitId::from_bytes(reader.bytes_exact::<32>()?);
+    let origin_parent_state = StateDigest::from_bytes(reader.bytes_exact::<32>()?);
+    let origin_input_digest = InputPayloadDigest::from_bytes(reader.bytes_exact::<32>()?);
+    let occurrence = reader.unsigned()?;
+    let path = if length == 7 {
+        EffectPathV0::Flow {
+            origin: InstructionId::from_bytes(origin),
+            resume_to: InstructionId::from_bytes(reader.bytes_exact::<16>()?),
+        }
+    } else {
+        if reader.unsigned()? != 1 {
+            return Err(DecodeError::Schema("pending Statechart Effect tag"));
+        }
+        EffectPathV0::Statechart {
+            site: ActionId::from_bytes(origin),
+            response_to: reader
+                .optional(|reader| reader.bytes_exact::<16>())?
+                .map(GlobalId::from_bytes),
+            response_event: reader
+                .optional(|reader| reader.bytes_exact::<16>())?
+                .map(EventTypeId::from_bytes),
+        }
+    };
     Ok(PendingEffectV0 {
         request,
-        origin_instruction: InstructionId::from_bytes(reader.bytes_exact::<16>()?),
-        origin_parent_commit: CommitId::from_bytes(reader.bytes_exact::<32>()?),
-        origin_parent_state: StateDigest::from_bytes(reader.bytes_exact::<32>()?),
-        origin_input_digest: InputPayloadDigest::from_bytes(reader.bytes_exact::<32>()?),
-        occurrence: reader.unsigned()?,
-        resume_to: InstructionId::from_bytes(reader.bytes_exact::<16>()?),
+        path,
+        origin_parent_commit,
+        origin_parent_state,
+        origin_input_digest,
+        occurrence,
     })
 }
 

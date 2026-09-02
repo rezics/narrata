@@ -12,7 +12,7 @@ pub use budget::{SliceBudget, SliceBudgetError};
 pub use frame::{FrameStateV0, VmStateV0};
 pub use input::{CheckedRuntimeInput, RuntimeInputV0};
 pub use interaction::{
-    ChoiceView, ChoiceViewItem, DraftResult, PendingChoiceItemV0, PendingEffectV0,
+    ChoiceView, ChoiceViewItem, DraftResult, EffectPathV0, PendingChoiceItemV0, PendingEffectV0,
     PendingInteractionV0, SayView,
 };
 pub use receipt::{ReceiptResultKindV0, TransitionReceiptV0, encode_receipt};

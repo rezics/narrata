@@ -130,6 +130,8 @@ pub struct TransitionReceiptV1 {
     pub instruction_count: u64,
     pub call_count: u64,
     pub logical_alloc_units: u64,
+    pub microstep_count: u64,
+    pub internal_event_count: u64,
 }
 
 impl TransitionReceiptV1 {
@@ -154,6 +156,8 @@ impl TransitionReceiptV1 {
             instruction_count: receipt.instruction_count,
             call_count: receipt.call_count,
             logical_alloc_units: receipt.logical_alloc_units,
+            microstep_count: receipt.microstep_count,
+            internal_event_count: receipt.internal_event_count,
         }
     }
 
@@ -167,7 +171,8 @@ impl TransitionReceiptV1 {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut writer = Writer::new();
-        writer.map(13);
+        let has_statechart_metrics = self.microstep_count != 0 || self.internal_event_count != 0;
+        writer.map(if has_statechart_metrics { 15 } else { 13 });
         writer.unsigned(0);
         writer.unsigned(u64::from(STORED_RECEIPT_SCHEMA_V1));
         writer.unsigned(1);
@@ -194,12 +199,21 @@ impl TransitionReceiptV1 {
         writer.unsigned(self.call_count);
         writer.unsigned(12);
         writer.unsigned(self.logical_alloc_units);
+        if has_statechart_metrics {
+            writer.unsigned(13);
+            writer.unsigned(self.microstep_count);
+            writer.unsigned(14);
+            writer.unsigned(self.internal_event_count);
+        }
         writer.into_bytes()
     }
 
     pub fn decode(payload: &[u8]) -> Result<Self, WireError> {
         let mut reader = Reader::new(payload);
-        expect_map(&mut reader, 13)?;
+        let field_count = reader.map()?;
+        if !matches!(field_count, 13 | 15) {
+            return Err(WireError::Schema("Receipt field count"));
+        }
         key(&mut reader, 0)?;
         if reader.unsigned()? != u64::from(STORED_RECEIPT_SCHEMA_V1) {
             return Err(WireError::Schema("Receipt schema"));
@@ -226,6 +240,7 @@ impl TransitionReceiptV1 {
             1 => ReceiptResultKindV0::Choice,
             2 => ReceiptResultKindV0::Finished,
             3 => ReceiptResultKindV0::Effect,
+            4 => ReceiptResultKindV0::StatechartStable,
             _ => return Err(WireError::Schema("Receipt result kind")),
         };
         key(&mut reader, 10)?;
@@ -234,6 +249,14 @@ impl TransitionReceiptV1 {
         let call_count = reader.unsigned()?;
         key(&mut reader, 12)?;
         let logical_alloc_units = reader.unsigned()?;
+        let (microstep_count, internal_event_count) = if field_count == 15 {
+            key(&mut reader, 13)?;
+            let microsteps = reader.unsigned()?;
+            key(&mut reader, 14)?;
+            (microsteps, reader.unsigned()?)
+        } else {
+            (0, 0)
+        };
         reader.finish()?;
         let value = Self {
             execution,
@@ -248,6 +271,8 @@ impl TransitionReceiptV1 {
             instruction_count,
             call_count,
             logical_alloc_units,
+            microstep_count,
+            internal_event_count,
         };
         if value.encode() != payload {
             return Err(WireError::NonCanonical);

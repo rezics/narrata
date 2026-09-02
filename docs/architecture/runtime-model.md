@@ -26,8 +26,9 @@ Flow VM：    短生命周期、顺序执行、表达式/调用/选择
 Statechart 可以在 entry action 启动 Flow；Flow 可以 raise 内部事件。二者共享一个
 macrostep 和同一份事务性 working state，但不能把每句台词强行展开成 Statechart state。
 
-v0.1 先实现 Flow VM。Statechart 接入时不能改变 Input、Commit、safe point 或 Effect 的
-基础协议。
+v0.1 已实现 Flow VM 与 typed Statechart。Statechart 作为可选 extension 接入，并保持既有
+Input、Commit、safe point 与 Effect 基础协议；完整规则见
+[Stage 4](../plan/stage-4-statecharts.md)。
 
 ## 权威类型
 
@@ -173,8 +174,8 @@ flowchart TD
 8. eventless transition 在稳定前继续执行；
 9. 同优先级冲突必须由固定规则解析或编译期拒绝。
 
-Phase 4 实现 Statechart 前，必须把更完整的 transition conflict 和 parallel region 顺序写成
-golden trace，不能只依赖代码结构暗示。
+Stage 4 已把 transition conflict、parallel region 顺序和 Flow/Effect 交界写成稳定规则、golden
+trace 与 model/property tests，不能只依赖代码结构暗示。
 
 ## Safe point
 

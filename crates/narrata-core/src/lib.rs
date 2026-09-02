@@ -15,6 +15,7 @@ pub mod program;
 pub mod runtime;
 pub mod scene;
 pub mod snapshot;
+pub mod statechart;
 pub mod value;
 pub mod version;
 
@@ -28,4 +29,5 @@ pub use runtime::{
 };
 pub use scene::*;
 pub use snapshot::{export_snapshot, restore_snapshot};
+pub use statechart::*;
 pub use value::{Value, ValueKindV0};

@@ -1,6 +1,6 @@
 # Phase 4：Statechart
 
-状态：待实施
+状态：已实施（G4）；详见 [Stage 4 交付说明](./stage-4-statecharts.md)
 前置：[Phase 3](./03-effects-and-host-coordination.md)
 完成后解锁：复杂任务/模式、并行场景与完整 migration corpus
 

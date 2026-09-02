@@ -59,6 +59,11 @@ pub(crate) fn snapshot(args: &[String]) -> Result<(), String> {
         },
         narrata_core::runtime::RuntimeStatusV0::AwaitingEffect { .. } => "awaiting-effect",
         narrata_core::runtime::RuntimeStatusV0::Finished { .. } => "finished",
+        narrata_core::runtime::RuntimeStatusV0::StatechartStable => "statechart-stable",
+        narrata_core::runtime::RuntimeStatusV0::AwaitingStatechartEffect { .. } => {
+            "awaiting-statechart-effect"
+        }
+        narrata_core::runtime::RuntimeStatusV0::StatechartFinished => "statechart-finished",
     };
     let value = serde_json::json!({
         "program_artifact_id": state.program_artifact_id.to_string(),

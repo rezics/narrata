@@ -252,5 +252,6 @@ pub fn result_name(result: &DraftResult) -> &'static str {
         DraftResult::AwaitChoice(_) => "choice",
         DraftResult::AwaitEffect(_) => "effect",
         DraftResult::Finished(_) => "finished",
+        DraftResult::StatechartStable(_) => "statechart-stable",
     }
 }

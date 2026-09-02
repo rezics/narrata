@@ -45,6 +45,7 @@ pub fn new_execution(
         .iter()
         .map(|decl| (decl.id, decl.default.clone()))
         .collect::<BTreeMap<LocalId, Value>>();
+    let has_statechart = program.statechart().is_some();
     Ok(RuntimeStateV0 {
         semantics_version: SEMANTICS_V0,
         execution_id,
@@ -53,16 +54,21 @@ pub fn new_execution(
         interaction_counter: 0,
         globals,
         scene: Default::default(),
-        status: RuntimeStatusV0::Ready {
-            vm: VmStateV0 {
-                frames: vec![FrameStateV0 {
-                    flow: entry.id,
-                    instruction: entry.entry,
-                    return_to: None,
-                    locals,
-                    evaluation_stack: Vec::new(),
-                }],
-            },
+        statechart: has_statechart.then(Default::default),
+        status: if has_statechart {
+            RuntimeStatusV0::StatechartStable
+        } else {
+            RuntimeStatusV0::Ready {
+                vm: VmStateV0 {
+                    frames: vec![FrameStateV0 {
+                        flow: entry.id,
+                        instruction: entry.entry,
+                        return_to: None,
+                        locals,
+                        evaluation_stack: Vec::new(),
+                    }],
+                },
+            }
         },
     })
 }

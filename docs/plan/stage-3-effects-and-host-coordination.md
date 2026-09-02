@@ -73,4 +73,5 @@ unknown stop、Barrier 原子检查、compensation、ledger GC roots、Scene 单
 - Host Snapshot 的 bytes 由宿主拥有，Narrata 只保存 checked opaque ref、format version 与 digest；
 - Program v0 不内嵌 external-content declaration wire；外部内容通过 negotiated recorded-query Effect 和
   checked resolver boundary 接入；
-- callback/reentrancy、并发 Effect batch、Statechart、跨语言 binding 与 migration 仍在后续 Stage。
+- callback/reentrancy、并发 Effect batch、child-machine invocation、跨语言 binding 与 migration
+  仍在后续 Stage；typed Statechart 已由 Stage 4 接入同一协议。

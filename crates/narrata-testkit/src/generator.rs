@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
 
 use narrata_core::{
-    ActorId, ActorState, AudioChannelId, AudioState, CameraState, CapabilityDeclV0, CapabilityId,
-    CapabilityIdError, CapabilityRequirement, CapabilityVersion, ChoiceId, DeliveryPolicy,
-    EntityId, FlowId, GlobalId, InstructionId, LayerId, LayerState, LocalId, ProgramId,
-    RewindPolicy, SceneError, SceneState, Value, ValueKindV0, ValueSchemaV0,
+    ActionId, ActionRecordV0, ActorId, ActorState, AudioChannelId, AudioState, CameraState,
+    CapabilityDeclV0, CapabilityId, CapabilityIdError, CapabilityRequirement, CapabilityVersion,
+    ChoiceId, DeliveryPolicy, EntityId, EventTypeId, FlowId, GlobalId, GuardExprV0, HistoryId,
+    HistoryKindV0, HistoryV0, InstructionId, LayerId, LayerState, LocalId, ProgramId, RegionId,
+    RegionV0, RewindPolicy, SceneError, SceneState, StateId, StateKindV0, StateV0,
+    StatechartActionV0, StatechartV0, TransitionId, TransitionKindV0, TransitionTargetV0,
+    TransitionV0, Value, ValueKindV0, ValueSchemaV0,
     program::{
         BinaryOpV0, ChoiceArmV0, ConstIndex, FlowV0, GlobalDeclV0, InstructionRecordV0,
         LocalDeclV0, OpV0, ProgramArtifactV0, ReturnModeV0, SlotRefV0, UnaryOpV0,
@@ -93,6 +96,7 @@ pub fn scene_reconcile_v0() -> Result<ProgramArtifactV0, SceneError> {
         }],
         capabilities: Vec::new(),
         external_content: Vec::new(),
+        statechart: None,
     })
 }
 
@@ -189,6 +193,7 @@ fn effect_v0(
             rewind,
         }],
         external_content: Vec::new(),
+        statechart: None,
     })
 }
 
@@ -228,6 +233,7 @@ pub fn hello_v0() -> ProgramArtifactV0 {
         }],
         capabilities: Vec::new(),
         external_content: Vec::new(),
+        statechart: None,
     }
 }
 
@@ -502,7 +508,307 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
         ],
         capabilities: Vec::new(),
         external_content: Vec::new(),
+        statechart: None,
     }
+}
+
+pub fn statechart_parallel_history_v0() -> Result<ProgramArtifactV0, CapabilityIdError> {
+    let entry = FlowId::from_u128(500);
+    let invoked = FlowId::from_u128(501);
+    let result = GlobalId::from_u128(500);
+    let left_done = GlobalId::from_u128(501);
+    let right_done = GlobalId::from_u128(502);
+    let capability = CapabilityId::new("host.query")?;
+    let capability_version = CapabilityVersion::new(1).ok_or(CapabilityIdError::Invalid)?;
+    let event = |id| EventTypeId::from_u128(id);
+    let state = |id| StateId::from_u128(id);
+    let region = |id| RegionId::from_u128(id);
+    let transition = |id| TransitionId::from_u128(id);
+    let action_id = |id| ActionId::from_u128(id);
+    let action_record = |id, value| ActionRecordV0 {
+        id: action_id(id),
+        action: value,
+        source_span: None,
+    };
+    let state_record = |id: u128,
+                        parent: Option<u128>,
+                        region_id: Option<u128>,
+                        kind: StateKindV0,
+                        on_entry: Vec<ActionRecordV0>,
+                        completion_event: Option<u128>| StateV0 {
+        id: state(id),
+        parent: parent.map(state),
+        region: region_id.map(region),
+        kind,
+        on_entry,
+        on_exit: Vec::new(),
+        completion_event: completion_event.map(event),
+        source_span: None,
+    };
+    let transition_record =
+        |id: u128,
+         source: u128,
+         trigger: Option<u128>,
+         targets: Vec<TransitionTargetV0>,
+         actions: Vec<ActionRecordV0>| TransitionV0 {
+            id: transition(id),
+            source: state(source),
+            event: trigger.map(event),
+            kind: TransitionKindV0::External,
+            guard: GuardExprV0::Always,
+            targets,
+            actions,
+            source_span: None,
+        };
+    Ok(ProgramArtifactV0 {
+        format_version: PROGRAM_FORMAT_V0,
+        semantics_version: SEMANTICS_V0,
+        program_id: ProgramId::from_u128(500),
+        entry_flow: entry,
+        constants: vec![Value::I64(7)],
+        globals: vec![
+            GlobalDeclV0 {
+                id: result,
+                kind: ValueKindV0::I64,
+                default: Value::I64(0),
+            },
+            GlobalDeclV0 {
+                id: left_done,
+                kind: ValueKindV0::Bool,
+                default: Value::Bool(false),
+            },
+            GlobalDeclV0 {
+                id: right_done,
+                kind: ValueKindV0::Bool,
+                default: Value::Bool(false),
+            },
+        ],
+        flows: vec![
+            FlowV0 {
+                id: entry,
+                parameters: Vec::new(),
+                locals: Vec::new(),
+                return_kind: None,
+                entry: InstructionId::from_u128(500),
+                instructions: vec![record(
+                    500,
+                    OpV0::Finish {
+                        value: ReturnModeV0::None,
+                    },
+                )],
+            },
+            FlowV0 {
+                id: invoked,
+                parameters: Vec::new(),
+                locals: Vec::new(),
+                return_kind: None,
+                entry: InstructionId::from_u128(501),
+                instructions: vec![
+                    record(
+                        501,
+                        OpV0::Const {
+                            constant: ConstIndex(0),
+                            next: InstructionId::from_u128(502),
+                        },
+                    ),
+                    record(
+                        502,
+                        OpV0::Effect {
+                            capability: capability.clone(),
+                            next: InstructionId::from_u128(503),
+                        },
+                    ),
+                    record(
+                        503,
+                        OpV0::Store {
+                            slot: SlotRefV0::Global(result),
+                            next: InstructionId::from_u128(504),
+                        },
+                    ),
+                    record(
+                        504,
+                        OpV0::Raise {
+                            event: event(1),
+                            next: InstructionId::from_u128(505),
+                        },
+                    ),
+                    record(
+                        505,
+                        OpV0::Return {
+                            value: ReturnModeV0::None,
+                        },
+                    ),
+                ],
+            },
+        ],
+        capabilities: vec![CapabilityDeclV0 {
+            id: capability.clone(),
+            version: capability_version,
+            requirement: CapabilityRequirement::Required,
+            request_schema: ValueSchemaV0::I64,
+            response_schema: ValueSchemaV0::I64,
+            delivery: DeliveryPolicy::RecordedQuery,
+            rewind: RewindPolicy::ReuseRecordedResponse,
+        }],
+        external_content: Vec::new(),
+        statechart: Some(StatechartV0 {
+            root: state(1),
+            events: (1..=6).map(event).collect(),
+            states: vec![
+                state_record(1, None, None, StateKindV0::Compound, Vec::new(), None),
+                state_record(
+                    2,
+                    Some(1),
+                    Some(10),
+                    StateKindV0::Atomic,
+                    vec![action_record(
+                        1,
+                        StatechartActionV0::StartFlow {
+                            flow: invoked,
+                            result_to: None,
+                            done_event: None,
+                        },
+                    )],
+                    None,
+                ),
+                state_record(
+                    3,
+                    Some(1),
+                    Some(10),
+                    StateKindV0::Atomic,
+                    vec![action_record(
+                        2,
+                        StatechartActionV0::EmitEffect {
+                            capability,
+                            payload: Value::I64(9),
+                            response_to: Some(result),
+                            response_event: Some(event(2)),
+                        },
+                    )],
+                    None,
+                ),
+                state_record(
+                    4,
+                    Some(1),
+                    Some(10),
+                    StateKindV0::Parallel,
+                    Vec::new(),
+                    Some(6),
+                ),
+                state_record(5, Some(1), Some(10), StateKindV0::Atomic, Vec::new(), None),
+                state_record(6, Some(1), Some(10), StateKindV0::Final, Vec::new(), None),
+                state_record(10, Some(4), Some(11), StateKindV0::Atomic, Vec::new(), None),
+                state_record(11, Some(4), Some(11), StateKindV0::Final, Vec::new(), None),
+                state_record(20, Some(4), Some(12), StateKindV0::Atomic, Vec::new(), None),
+                state_record(21, Some(4), Some(12), StateKindV0::Final, Vec::new(), None),
+            ],
+            regions: vec![
+                RegionV0 {
+                    id: region(10),
+                    parent: state(1),
+                    initial: state(2),
+                    source_span: None,
+                },
+                RegionV0 {
+                    id: region(11),
+                    parent: state(4),
+                    initial: state(10),
+                    source_span: None,
+                },
+                RegionV0 {
+                    id: region(12),
+                    parent: state(4),
+                    initial: state(20),
+                    source_span: None,
+                },
+            ],
+            histories: vec![
+                HistoryV0 {
+                    id: HistoryId::from_u128(1),
+                    parent: state(4),
+                    region: region(11),
+                    kind: HistoryKindV0::Deep,
+                    default_targets: vec![state(10)],
+                    source_span: None,
+                },
+                HistoryV0 {
+                    id: HistoryId::from_u128(2),
+                    parent: state(4),
+                    region: region(12),
+                    kind: HistoryKindV0::Shallow,
+                    default_targets: vec![state(20)],
+                    source_span: None,
+                },
+            ],
+            transitions: vec![
+                transition_record(
+                    1,
+                    2,
+                    Some(1),
+                    vec![TransitionTargetV0::State(state(3))],
+                    Vec::new(),
+                ),
+                transition_record(
+                    2,
+                    3,
+                    Some(2),
+                    vec![TransitionTargetV0::State(state(4))],
+                    Vec::new(),
+                ),
+                transition_record(
+                    3,
+                    4,
+                    Some(3),
+                    vec![TransitionTargetV0::State(state(5))],
+                    Vec::new(),
+                ),
+                transition_record(
+                    4,
+                    5,
+                    Some(4),
+                    vec![
+                        TransitionTargetV0::History(HistoryId::from_u128(1)),
+                        TransitionTargetV0::History(HistoryId::from_u128(2)),
+                    ],
+                    Vec::new(),
+                ),
+                transition_record(
+                    5,
+                    10,
+                    Some(5),
+                    vec![TransitionTargetV0::State(state(11))],
+                    vec![action_record(
+                        3,
+                        StatechartActionV0::Assign {
+                            global: left_done,
+                            value: Value::Bool(true),
+                        },
+                    )],
+                ),
+                transition_record(
+                    6,
+                    20,
+                    Some(5),
+                    vec![TransitionTargetV0::State(state(21))],
+                    vec![action_record(
+                        4,
+                        StatechartActionV0::Assign {
+                            global: right_done,
+                            value: Value::Bool(true),
+                        },
+                    )],
+                ),
+                transition_record(
+                    7,
+                    4,
+                    Some(6),
+                    vec![TransitionTargetV0::State(state(6))],
+                    Vec::new(),
+                ),
+            ],
+            source_span: None,
+        }),
+    })
 }
 
 fn record(id: u128, op: OpV0) -> InstructionRecordV0 {

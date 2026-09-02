@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use crate::{
     identity::{ExecutionId, GlobalId, ProgramArtifactId},
     scene::SceneState,
+    statechart::StatechartStateV0,
     value::Value,
     version::SemanticsVersion,
 };
@@ -21,6 +22,7 @@ pub struct RuntimeStateV0 {
     pub interaction_counter: u64,
     pub globals: BTreeMap<GlobalId, Value>,
     pub scene: SceneState,
+    pub statechart: Option<StatechartStateV0>,
     pub status: RuntimeStatusV0,
 }
 
@@ -37,6 +39,11 @@ pub enum RuntimeStatusV0 {
         vm: VmStateV0,
         pending: PendingEffectV0,
     },
+    StatechartStable,
+    AwaitingStatechartEffect {
+        pending: PendingEffectV0,
+    },
+    StatechartFinished,
     Finished {
         result: Value,
         final_frames: Vec<FrameStateV0>,
@@ -49,6 +56,9 @@ impl RuntimeStateV0 {
             RuntimeStatusV0::Awaiting { pending, .. } => Some(pending),
             RuntimeStatusV0::Ready { .. }
             | RuntimeStatusV0::AwaitingEffect { .. }
+            | RuntimeStatusV0::StatechartStable
+            | RuntimeStatusV0::AwaitingStatechartEffect { .. }
+            | RuntimeStatusV0::StatechartFinished
             | RuntimeStatusV0::Finished { .. } => None,
         }
     }
@@ -58,16 +68,22 @@ impl RuntimeStateV0 {
             RuntimeStatusV0::Ready { vm }
             | RuntimeStatusV0::Awaiting { vm, .. }
             | RuntimeStatusV0::AwaitingEffect { vm, .. } => Some(vm),
-            RuntimeStatusV0::Finished { .. } => None,
+            RuntimeStatusV0::Finished { .. }
+            | RuntimeStatusV0::StatechartStable
+            | RuntimeStatusV0::AwaitingStatechartEffect { .. }
+            | RuntimeStatusV0::StatechartFinished => None,
         }
     }
 
     pub fn pending_effect(&self) -> Option<&super::PendingEffectV0> {
         match &self.status {
             RuntimeStatusV0::AwaitingEffect { pending, .. } => Some(pending),
+            RuntimeStatusV0::AwaitingStatechartEffect { pending } => Some(pending),
             RuntimeStatusV0::Ready { .. }
             | RuntimeStatusV0::Awaiting { .. }
-            | RuntimeStatusV0::Finished { .. } => None,
+            | RuntimeStatusV0::Finished { .. }
+            | RuntimeStatusV0::StatechartStable
+            | RuntimeStatusV0::StatechartFinished => None,
         }
     }
 }

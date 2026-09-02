@@ -1,7 +1,7 @@
 # Narrata 分步实施计划
 
-状态：Stage 1、Stage 2、Stage 3 已实施；Stage 4 待实施
-日期：2026-09-01
+状态：Stage 1、Stage 2、Stage 3、Stage 4 已实施
+日期：2026-09-02
 
 ## 交付目标
 
@@ -37,15 +37,16 @@ flowchart LR
 - [Phase 3：Effect 与宿主协调](./03-effects-and-host-coordination.md)
 - [Stage 3：Effects and Host Coordination](./stage-3-effects-and-host-coordination.md)
 - [Phase 4：Statechart](./04-statecharts.md)
+- [Stage 4：Deterministic Statecharts](./stage-4-statecharts.md)
 - [Phase 5：迁移、Binding 与 Nickel 适配](./05-migrations-bindings-and-nickel.md)
 
-## 当前 workspace（Stage 3）
+## 当前 workspace（Stage 4）
 
 先保持少量 crate，等依赖边界和编译成本提供证据后再拆：
 
 ```text
 crates/
-  narrata-core/          # typed IR、VM、Scene、capability/effect、纯 transition
+  narrata-core/          # typed IR、Flow VM、Statechart、Scene、capability/effect、纯 transition
   narrata-store/         # Commit/Ref、ledger、barrier、federated save、GC、coordinator
   narrata-store-sqlite/  # native crash-safe reference adapter
   narrata-testkit/       # fixture、model、generator、conformance backend
@@ -58,8 +59,7 @@ fuzz/
   fuzz_targets/
 ```
 
-Phase 4/5 再按实际边界增加
-`narrata-statechart`、`narrata-protocol`、`narrata-ffi`、
+Phase 5 再按实际边界增加 `narrata-protocol`、`narrata-ffi`、
 `narrata-wasm` 和可选 `narrata-nickel`。不要在第一批 PR 创建十多个空 crate。
 
 ## 每一步的完成规则

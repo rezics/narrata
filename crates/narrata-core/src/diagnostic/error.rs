@@ -31,6 +31,11 @@ impl Diagnostic {
         self.relevant_ids.push(id.to_string());
         self
     }
+
+    pub fn with_span(mut self, source_span: Option<SourceSpan>) -> Self {
+        self.source_span = source_span;
+        self
+    }
 }
 
 impl std::fmt::Display for Diagnostic {

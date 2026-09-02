@@ -1,0 +1,49 @@
+{
+  "name": "parallel-history-v0",
+  "semantics_rules": [
+    "SC-R01-active-leaves",
+    "SC-R02-run-to-completion",
+    "SC-R05-exit-action-entry-order",
+    "SC-R08-internal-fifo-and-completion",
+    "SC-R09-deep-and-shallow-history",
+    "SC-R10-effect-after-stable-configuration",
+    "SC-R11-flow-await-and-raise"
+  ],
+  "steps": [
+    {
+      "kind": "start",
+      "expect": "effect",
+      "trace": ["Entry", "Entry", "Action", "Invoke"]
+    },
+    {
+      "kind": "effect_response",
+      "value": 42,
+      "expect": "effect",
+      "trace_contains": ["Resume", "Event", "Exit", "Transition", "Entry", "Action", "Await"]
+    },
+    {
+      "kind": "effect_response",
+      "value": 99,
+      "expect": "stable",
+      "active": [10, 20]
+    },
+    {
+      "kind": "event",
+      "event": 3,
+      "expect": "stable",
+      "active": [5]
+    },
+    {
+      "kind": "event",
+      "event": 4,
+      "expect": "stable",
+      "active": [10, 20]
+    },
+    {
+      "kind": "event",
+      "event": 5,
+      "expect": "finished",
+      "trace_contains": ["Exit", "Transition", "Entry", "Event", "Finished"]
+    }
+  ]
+}

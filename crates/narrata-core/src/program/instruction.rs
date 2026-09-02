@@ -1,6 +1,6 @@
 use crate::{
     effect::CapabilityId,
-    identity::{ChoiceId, FlowId, GlobalId, InstructionId, LocalId},
+    identity::{ChoiceId, EventTypeId, FlowId, GlobalId, InstructionId, LocalId},
     scene::SceneState,
 };
 
@@ -144,6 +144,10 @@ pub enum OpV0 {
         target: SceneState,
         next: InstructionId,
     },
+    Raise {
+        event: EventTypeId,
+        next: InstructionId,
+    },
     Finish {
         value: ReturnModeV0,
     },
@@ -165,6 +169,7 @@ impl OpV0 {
             Self::Choice { .. } => "Choice",
             Self::Effect { .. } => "Effect",
             Self::ReconcileScene { .. } => "ReconcileScene",
+            Self::Raise { .. } => "Raise",
             Self::Finish { .. } => "Finish",
         }
     }

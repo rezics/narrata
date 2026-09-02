@@ -2,9 +2,10 @@ use crate::{
     CapabilityId, CapabilityRequirement, CapabilityVersion, DeliveryPolicy, FieldId, RewindPolicy,
     TypeId, ValueSchemaV0, VariantId,
     codec::{CborReader, CborWriter, DecodeError, ObjectKind, decode_envelope, encode_envelope},
-    identity::{ChoiceId, FlowId, GlobalId, InstructionId, LocalId, ProgramId},
+    identity::{ChoiceId, EventTypeId, FlowId, GlobalId, InstructionId, LocalId, ProgramId},
     limits::ProgramLoadLimits,
     scene::{decode_scene, encode_scene},
+    statechart::{StatechartV0, decode_statechart, encode_statechart},
     value::{Value, ValueKindV0},
     version::{ProgramFormatVersion, SemanticsVersion},
 };
@@ -25,6 +26,7 @@ pub struct ProgramArtifactV0 {
     pub flows: Vec<FlowV0>,
     pub capabilities: Vec<CapabilityDeclV0>,
     pub external_content: Vec<ExternalContentDeclV0>,
+    pub statechart: Option<StatechartV0>,
 }
 
 pub fn encode_program_artifact(artifact: &ProgramArtifactV0) -> Vec<u8> {
@@ -34,7 +36,7 @@ pub fn encode_program_artifact(artifact: &ProgramArtifactV0) -> Vec<u8> {
 
 pub(crate) fn encode_program_payload(artifact: &ProgramArtifactV0) -> Vec<u8> {
     let mut writer = CborWriter::new();
-    writer.map(9);
+    writer.map(if artifact.statechart.is_some() { 10 } else { 9 });
     writer.unsigned(0);
     writer.unsigned(u64::from(artifact.format_version.get()));
     writer.unsigned(1);
@@ -65,6 +67,10 @@ pub(crate) fn encode_program_payload(artifact: &ProgramArtifactV0) -> Vec<u8> {
     }
     writer.unsigned(8);
     writer.array(0);
+    if let Some(statechart) = &artifact.statechart {
+        writer.unsigned(9);
+        encode_statechart(&mut writer, statechart);
+    }
     writer.into_bytes()
 }
 
@@ -87,7 +93,11 @@ fn decode_program_payload(
     limits: &ProgramLoadLimits,
 ) -> Result<ProgramArtifactV0, DecodeError> {
     let mut reader = CborReader::new(bytes);
-    expect_map(&mut reader, 9)?;
+    let field_count = reader.map_len()?;
+    if !matches!(field_count, 9 | 10) {
+        return Err(DecodeError::Schema("Program map field count"));
+    }
+    expect_key(&mut reader, 0)?;
     let format_version = ProgramFormatVersion::new(read_u16(&mut reader)?);
     expect_key(&mut reader, 1)?;
     let semantics_version = SemanticsVersion::new(read_u16(&mut reader)?);
@@ -152,6 +162,12 @@ fn decode_program_payload(
             "Program v0 external content declarations must be empty; use a checked resolver Effect",
         ));
     }
+    let statechart = if field_count == 10 {
+        expect_key(&mut reader, 9)?;
+        Some(decode_statechart(&mut reader, limits, &mut value_nodes)?)
+    } else {
+        None
+    };
     reader.finish()?;
     Ok(ProgramArtifactV0 {
         format_version,
@@ -163,6 +179,7 @@ fn decode_program_payload(
         flows,
         capabilities,
         external_content: Vec::new(),
+        statechart,
     })
 }
 
@@ -414,6 +431,12 @@ fn encode_op(writer: &mut CborWriter, op: &OpV0) {
             encode_scene(writer, target);
             writer.bytes(next.as_bytes());
         }
+        OpV0::Raise { event, next } => {
+            writer.array(3);
+            writer.unsigned(14);
+            writer.bytes(event.as_bytes());
+            writer.bytes(next.as_bytes());
+        }
         OpV0::Finish { value } => {
             writer.array(2);
             writer.unsigned(11);
@@ -499,6 +522,10 @@ fn decode_op(reader: &mut CborReader<'_>, limits: &ProgramLoadLimits) -> Result<
         }),
         (13, 3) => Ok(OpV0::ReconcileScene {
             target: decode_scene(reader, &limits.decode)?,
+            next: instruction(reader.bytes_exact::<16>()?),
+        }),
+        (14, 3) => Ok(OpV0::Raise {
+            event: EventTypeId::from_bytes(reader.bytes_exact::<16>()?),
             next: instruction(reader.bytes_exact::<16>()?),
         }),
         _ => Err(DecodeError::Schema("instruction opcode or field count")),
@@ -678,13 +705,6 @@ fn decode_return_mode(reader: &mut CborReader<'_>) -> Result<ReturnModeV0, Decod
 
 fn decode_kind(reader: &mut CborReader<'_>) -> Result<ValueKindV0, DecodeError> {
     ValueKindV0::from_u64(reader.unsigned()?).ok_or(DecodeError::Schema("value kind"))
-}
-
-fn expect_map(reader: &mut CborReader<'_>, length: u64) -> Result<(), DecodeError> {
-    if reader.map_len()? != length {
-        return Err(DecodeError::Schema("map field count"));
-    }
-    expect_key(reader, 0)
 }
 
 fn expect_key(reader: &mut CborReader<'_>, key: u64) -> Result<(), DecodeError> {

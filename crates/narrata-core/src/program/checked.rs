@@ -3,6 +3,10 @@ use std::collections::BTreeMap;
 use crate::{
     effect::{CapabilityDeclV0, CapabilityId},
     identity::{FlowId, GlobalId, InstructionId, ProgramArtifactId},
+    identity::{HistoryId, RegionId, StateId, TransitionId},
+    statechart::{
+        ActionRecordV0, HistoryV0, RegionV0, StateV0, StatechartIndices, StatechartV0, TransitionV0,
+    },
     value::{Value, ValueKindV0},
 };
 
@@ -16,6 +20,7 @@ pub struct CheckedProgram {
     pub(crate) instruction_indices: BTreeMap<FlowId, BTreeMap<InstructionId, usize>>,
     pub(crate) global_indices: BTreeMap<GlobalId, usize>,
     pub(crate) stack_limits: BTreeMap<FlowId, usize>,
+    pub(crate) statechart_indices: StatechartIndices,
 }
 
 impl CheckedProgram {
@@ -77,5 +82,48 @@ impl CheckedProgram {
             .capabilities
             .iter()
             .find(|capability| &capability.id == id)
+    }
+
+    pub fn statechart(&self) -> Option<&StatechartV0> {
+        self.artifact.statechart.as_ref()
+    }
+
+    pub fn state(&self, id: StateId) -> Option<&StateV0> {
+        let index = self.statechart_indices.states.get(&id)?;
+        self.statechart()?.states.get(*index)
+    }
+
+    pub fn region(&self, id: RegionId) -> Option<&RegionV0> {
+        let index = self.statechart_indices.regions.get(&id)?;
+        self.statechart()?.regions.get(*index)
+    }
+
+    pub fn history(&self, id: HistoryId) -> Option<&HistoryV0> {
+        let index = self.statechart_indices.histories.get(&id)?;
+        self.statechart()?.histories.get(*index)
+    }
+
+    pub fn transition(&self, id: TransitionId) -> Option<&TransitionV0> {
+        let index = self.statechart_indices.transitions.get(&id)?;
+        self.statechart()?.transitions.get(*index)
+    }
+
+    pub fn statechart_action(&self, id: crate::ActionId) -> Option<&ActionRecordV0> {
+        let chart = self.statechart()?;
+        chart
+            .states
+            .iter()
+            .flat_map(|state| state.on_entry.iter().chain(&state.on_exit))
+            .chain(
+                chart
+                    .transitions
+                    .iter()
+                    .flat_map(|transition| transition.actions.iter()),
+            )
+            .find(|action| action.id == id)
+    }
+
+    pub(crate) fn statechart_indices(&self) -> &StatechartIndices {
+        &self.statechart_indices
     }
 }

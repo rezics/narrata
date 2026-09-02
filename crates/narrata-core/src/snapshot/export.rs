@@ -40,7 +40,10 @@ pub fn copy_as_new_execution(
 ) -> Result<RuntimeStateV0, SnapshotExportError> {
     ensure_safe(state)?;
     let mut copied = state.clone();
-    if matches!(&copied.status, RuntimeStatusV0::AwaitingEffect { .. }) {
+    if matches!(
+        &copied.status,
+        RuntimeStatusV0::AwaitingEffect { .. } | RuntimeStatusV0::AwaitingStatechartEffect { .. }
+    ) {
         return Err(SnapshotExportError::PendingEffectCannotChangeExecution);
     }
     copied.execution_id = execution_id;
@@ -86,11 +89,40 @@ pub fn copy_as_new_execution(
 }
 
 fn ensure_safe(state: &RuntimeStateV0) -> Result<(), SnapshotExportError> {
+    let chart_safe = match (&state.statechart, &state.status) {
+        (None, _) => true,
+        (Some(chart), RuntimeStatusV0::StatechartStable | RuntimeStatusV0::StatechartFinished) => {
+            chart.internal_queue.is_empty()
+                && chart.deferred_events.is_empty()
+                && chart.deferred_work.is_empty()
+                && chart.invocation.is_none()
+        }
+        (Some(chart), RuntimeStatusV0::AwaitingStatechartEffect { .. }) => {
+            chart.internal_queue.is_empty()
+                && chart.deferred_events.is_empty()
+                && chart.invocation.is_none()
+        }
+        (
+            Some(chart),
+            RuntimeStatusV0::Awaiting { .. } | RuntimeStatusV0::AwaitingEffect { .. },
+        ) => {
+            chart.internal_queue.is_empty()
+                && chart.deferred_events.is_empty()
+                && chart.invocation.is_some()
+        }
+        (Some(_), RuntimeStatusV0::Ready { .. } | RuntimeStatusV0::Finished { .. }) => false,
+    };
+    if !chart_safe {
+        return Err(SnapshotExportError::NotSafePoint);
+    }
     let frames = match &state.status {
         RuntimeStatusV0::Ready { vm }
         | RuntimeStatusV0::Awaiting { vm, .. }
         | RuntimeStatusV0::AwaitingEffect { vm, .. } => &vm.frames,
         RuntimeStatusV0::Finished { final_frames, .. } => final_frames,
+        RuntimeStatusV0::StatechartStable
+        | RuntimeStatusV0::AwaitingStatechartEffect { .. }
+        | RuntimeStatusV0::StatechartFinished => return Ok(()),
     };
     if frames.is_empty()
         || frames
