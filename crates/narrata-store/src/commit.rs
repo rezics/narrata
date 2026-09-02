@@ -1,6 +1,6 @@
 use narrata_core::{
-    CommitId, ExecutionId, InputId, InputPayloadDigest, ProgramArtifactId, ReceiptId, SnapshotId,
-    StateDigest,
+    CommitId, ExecutionId, InputId, InputPayloadDigest, MigrationId, ProgramArtifactId, ReceiptId,
+    SnapshotId, StateDigest,
     codec::ObjectKind,
     runtime::{ReceiptResultKindV0, TransitionDraft, Turn},
 };
@@ -17,6 +17,7 @@ pub const STORED_RECEIPT_SCHEMA_V1: u16 = 1;
 pub enum CommitCauseV1 {
     Genesis,
     RuntimeTransition(ReceiptId),
+    Migration(MigrationId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -62,6 +63,11 @@ impl CommitV1 {
                 writer.unsigned(1);
                 writer.bytes(receipt.as_bytes());
             }
+            CommitCauseV1::Migration(migration) => {
+                writer.array(2);
+                writer.unsigned(2);
+                writer.bytes(migration.as_bytes());
+            }
         }
         writer.unsigned(6);
         writer.unsigned(self.ledger_fence);
@@ -92,6 +98,9 @@ impl CommitV1 {
             (0, 1) => CommitCauseV1::Genesis,
             (1, 2) => {
                 CommitCauseV1::RuntimeTransition(ReceiptId::from_bytes(reader.bytes_exact::<32>()?))
+            }
+            (2, 2) => {
+                CommitCauseV1::Migration(MigrationId::from_bytes(reader.bytes_exact::<16>()?))
             }
             _ => return Err(WireError::Schema("Commit cause")),
         };

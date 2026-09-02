@@ -1,0 +1,22 @@
+[package]
+name = "narrata-ffi"
+description = "Narrow owned-buffer C ABI for the Narrata protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+narrata-protocol = { path = "../narrata-protocol", version = "=0.1.0-alpha.1" }
+prost.workspace = true
+
+[build-dependencies]
+cc = "1.2.37"
+
+[dev-dependencies]
+narrata-core = { path = "../narrata-core", version = "=0.1.0-alpha.1" }
+narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }

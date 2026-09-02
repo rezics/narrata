@@ -53,3 +53,4 @@ derived_id!(HostSnapshotDigest, "host-snapshot:");
 derived_id!(ContentLockId, "content-lock:");
 derived_id!(CompoundSaveManifestId, "compound-save:");
 derived_id!(HostTimelineManifestId, "host-timeline:");
+derived_id!(BuildProvenanceId, "build-provenance:");

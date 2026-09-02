@@ -155,6 +155,7 @@ struct MigrationDescriptor {
     accepted_snapshot_schemas: VersionRange,
     relocations: RelocationTable,
     recovery_points: RecoveryTable,
+    recovery_locations: ScopedRecoveryTable,
 }
 
 trait TrustedMigration {
@@ -169,8 +170,10 @@ trait TrustedMigration {
 
 `RelocationTable` 分开处理：
 
-- `InstructionId → InstructionId`；
+- program-wide `InstructionId → InstructionId` 快捷映射，以及允许重号时的
+  `(FlowId, InstructionId) → (FlowId, InstructionId)`；
 - `FlowId → FlowId`；
+- program-wide 或 Flow-scoped Local relocation/drop；
 - `StateId/history → StateId/history`；
 - schema type/field/variant rename；
 - pending Choice/Effect/Interaction；
@@ -237,7 +240,9 @@ runtime 输出，canonical IR 自然改变 `ProgramArtifactId`；不再把同一
 `ContentLock`。相同最终 typed Program 可以得到同一 `ProgramArtifactId`，即使作者源文件
 布局不同。
 
-Nickel contract 不替代 target Program 的 Rust checked constructor，也不执行玩家存档迁移。
+Stage 5 optional Gate 没有证明完整资源隔离，因此当前不发布 Nickel adapter，见
+[ADR 0010](../adr/0010-nickel-adapter-not-published.md)。若未来重新启用，Nickel contract 仍不替代
+target Program 的 Rust checked constructor，也不执行玩家存档迁移。
 
 ## Load 决策
 

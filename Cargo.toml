@@ -6,6 +6,9 @@ members = [
   "crates/narrata-store-sqlite",
   "crates/narrata-testkit",
   "crates/narrata-cli",
+  "crates/narrata-protocol",
+  "crates/narrata-ffi",
+  "crates/narrata-wasm",
 ]
 exclude = ["fuzz"]
 
@@ -19,10 +22,12 @@ repository = "https://github.com/rezics/narrata"
 [workspace.dependencies]
 hex = "0.4.3"
 proptest = "1.7.0"
+prost = "0.14.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 sha2 = "0.10.9"
 thiserror = "2.0.16"
+wasm-bindgen = "0.2.105"
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 
 [workspace.lints.rust]

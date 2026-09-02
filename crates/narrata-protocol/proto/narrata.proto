@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package narrata.protocol.v1;
+
+// Protocol bytes are transport DTOs. They never participate in Narrata object or Commit hashes.
+message Request {
+  uint32 protocol_version = 1;
+  uint64 request_id = 2;
+  oneof body {
+    EngineCreate engine_create = 10;
+    ProgramLoad program_load = 11;
+    SessionCreate session_create = 12;
+    SessionLoad session_load = 13;
+    Dispatch dispatch = 14;
+    ContinueSlice continue_slice = 15;
+    CheckpointExport checkpoint_export = 16;
+    CheckpointImport checkpoint_import = 17;
+    TimelineArchiveExport timeline_archive_export = 18;
+    TimelineArchiveImport timeline_archive_import = 19;
+    CapabilityNegotiation capability_negotiation = 20;
+  }
+}
+
+message Response {
+  uint32 protocol_version = 1;
+  uint64 request_id = 2;
+  oneof body {
+    EngineCreated engine_created = 10;
+    ProgramLoaded program_loaded = 11;
+    SessionCreated session_created = 12;
+    SliceYielded slice_yielded = 13;
+    CommittedRunResult committed = 14;
+    Bundle bundle = 15;
+    CapabilityResult capabilities = 16;
+    Ack ack = 17;
+    Diagnostic diagnostic = 18;
+  }
+}
+
+message EngineCreate { uint64 max_message_bytes = 1; uint64 max_slice_work = 2; }
+message EngineCreated { uint32 abi_version = 1; uint64 max_message_bytes = 2; }
+message ProgramLoad { bytes artifact = 1; }
+message ProgramLoaded { bytes artifact_id = 1; }
+message SessionCreate { bytes artifact_id = 1; bytes execution_id = 2; }
+message SessionLoad { bytes artifact_id = 1; bytes checkpoint_bundle = 2; }
+message Dispatch { uint64 session = 1; RuntimeInput input = 2; uint64 slice_work = 3; }
+message ContinueSlice { uint64 session = 1; uint64 slice_work = 2; }
+message CheckpointExport { uint64 session = 1; }
+message CheckpointImport { bytes artifact_id = 1; bytes bundle = 2; }
+message TimelineArchiveExport { uint64 session = 1; }
+message TimelineArchiveImport { bytes bundle = 1; }
+message CapabilityNegotiation { bytes artifact_id = 1; repeated Capability host = 2; }
+message Capability { string id = 1; uint32 version = 2; }
+message CapabilityResult { repeated Capability accepted = 1; }
+
+message RuntimeInput {
+  bytes request_id = 1;
+  oneof kind {
+    Start start = 10;
+    Advance advance = 11;
+    Select select = 12;
+    EffectResponse effect_response = 13;
+    Event event = 14;
+  }
+}
+message Start {}
+message Advance { bytes interaction_id = 1; }
+message Select { bytes interaction_id = 1; bytes choice_id = 2; }
+message EffectResponse {
+  bytes effect_id = 1;
+  bytes request_digest = 2;
+  string capability = 3;
+  uint32 capability_version = 4;
+  bytes canonical_value = 5;
+}
+message Event { bytes event_type_id = 1; }
+
+message SessionCreated { uint64 session = 1; bytes commit_id = 2; bytes snapshot = 3; }
+message SliceYielded {
+  uint64 session = 1;
+  uint64 instruction_count = 2;
+  uint64 call_count = 3;
+  uint64 logical_alloc_units = 4;
+  uint64 microstep_count = 5;
+  uint64 internal_event_count = 6;
+}
+message CommittedRunResult {
+  uint64 session = 1;
+  bytes commit_id = 2;
+  bytes receipt_id = 3;
+  bytes snapshot = 4;
+  bytes state_digest = 5;
+  bool reused = 6;
+  Result result = 7;
+}
+message Result {
+  enum Kind { SAY = 0; CHOICE = 1; EFFECT = 2; FINISHED = 3; STATECHART_STABLE = 4; }
+  Kind kind = 1;
+  bytes interaction_or_effect_id = 2;
+  string text = 3;
+  repeated Choice choices = 4;
+  bytes canonical_value = 5;
+  repeated bytes active_states = 6;
+}
+message Choice { bytes id = 1; string label = 2; }
+message Bundle { enum Kind { CHECKPOINT = 0; TIMELINE_ARCHIVE = 1; } Kind kind = 1; bytes bytes = 2; }
+message Ack {}
+message Diagnostic { string code = 1; string class = 2; string message = 3; bool retryable = 4; }

@@ -40,6 +40,7 @@ fn log(args: &[String]) -> Result<(), String> {
         let cause = match commit.cause {
             CommitCauseV1::Genesis => "genesis",
             CommitCauseV1::RuntimeTransition(_) => "transition",
+            CommitCauseV1::Migration(_) => "migration",
         };
         let parent = commit
             .parent

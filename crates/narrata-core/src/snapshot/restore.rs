@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, error::Error, fmt, sync::Arc};
 
 use crate::{
-    codec::{DecodeError, ObjectKind, decode_envelope},
+    codec::{DecodeError, ObjectKind, decode_envelope_versions},
     limits::SnapshotLoadLimits,
     program::{CheckedProgram, OpV0, SlotRefV0},
     runtime::{
@@ -43,15 +43,26 @@ pub fn restore_snapshot(
     program: &CheckedProgram,
     limits: &SnapshotLoadLimits,
 ) -> Result<RuntimeStateV0, SnapshotRestoreError> {
-    let envelope = decode_envelope(
+    let envelope = decode_envelope_versions(
         bytes,
         ObjectKind::Snapshot,
-        SNAPSHOT_SCHEMA_V0.get(),
+        &[SNAPSHOT_SCHEMA_V0.get()],
         &limits.decode,
     )
     .map_err(SnapshotRestoreError::Decode)?;
-    let state =
-        decode_state_payload(envelope.payload, limits).map_err(SnapshotRestoreError::Decode)?;
+    let state = match envelope.schema_version {
+        0 => {
+            decode_state_payload(envelope.payload, limits).map_err(SnapshotRestoreError::Decode)?
+        }
+        version => {
+            return Err(SnapshotRestoreError::Decode(
+                DecodeError::UnsupportedVersion {
+                    axis: "Snapshot schema",
+                    version,
+                },
+            ));
+        }
+    };
     if encode_state_payload(&state) != envelope.payload {
         return Err(SnapshotRestoreError::Decode(DecodeError::NonCanonical(
             "Snapshot payload round-trip mismatch",
@@ -61,7 +72,7 @@ pub fn restore_snapshot(
     Ok(state)
 }
 
-fn validate_state(
+pub(crate) fn validate_state(
     state: &RuntimeStateV0,
     program: &CheckedProgram,
     limits: &SnapshotLoadLimits,

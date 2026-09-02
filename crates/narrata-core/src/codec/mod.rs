@@ -8,4 +8,7 @@ pub(crate) use canonical::{CborReader, CborWriter};
 pub use decode::{DecodeError, decode_canonical_value};
 pub use digest::{digest_bytes, sha256};
 pub use encode::encode_canonical_value;
-pub use envelope::{Envelope, ObjectKind, decode_envelope, encode_envelope};
+pub use envelope::{
+    Envelope, ObjectKind, decode_envelope, decode_envelope_versions, encode_envelope,
+    inspect_envelope,
+};

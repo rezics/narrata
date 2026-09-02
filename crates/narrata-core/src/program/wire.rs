@@ -1,7 +1,9 @@
 use crate::{
     CapabilityId, CapabilityRequirement, CapabilityVersion, DeliveryPolicy, FieldId, RewindPolicy,
     TypeId, ValueSchemaV0, VariantId,
-    codec::{CborReader, CborWriter, DecodeError, ObjectKind, decode_envelope, encode_envelope},
+    codec::{
+        CborReader, CborWriter, DecodeError, ObjectKind, decode_envelope_versions, encode_envelope,
+    },
     identity::{ChoiceId, EventTypeId, FlowId, GlobalId, InstructionId, LocalId, ProgramId},
     limits::ProgramLoadLimits,
     scene::{decode_scene, encode_scene},
@@ -78,8 +80,16 @@ pub fn decode_program_artifact(
     bytes: &[u8],
     limits: &ProgramLoadLimits,
 ) -> Result<ProgramArtifactV0, DecodeError> {
-    let envelope = decode_envelope(bytes, ObjectKind::Program, 0, &limits.decode)?;
-    let artifact = decode_program_payload(envelope.payload, limits)?;
+    let envelope = decode_envelope_versions(bytes, ObjectKind::Program, &[0], &limits.decode)?;
+    let artifact = match envelope.schema_version {
+        0 => decode_program_payload(envelope.payload, limits)?,
+        version => {
+            return Err(DecodeError::UnsupportedVersion {
+                axis: "Program schema",
+                version,
+            });
+        }
+    };
     if encode_program_payload(&artifact) != envelope.payload {
         return Err(DecodeError::NonCanonical(
             "program payload round-trip mismatch",

@@ -18,6 +18,7 @@ narrata-store = { path = "../narrata-store", version = "=0.1.0-alpha.1" }
 narrata-store-sqlite = { path = "../narrata-store-sqlite", version = "=0.1.0-alpha.1" }
 narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
 serde_json.workspace = true
+serde.workspace = true
 
 [lints]
 workspace = true

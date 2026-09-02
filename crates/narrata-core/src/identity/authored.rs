@@ -58,3 +58,8 @@ authored_id!(TransitionId, "transition:");
 authored_id!(EventTypeId, "event-type:");
 authored_id!(HistoryId, "history:");
 authored_id!(ActionId, "action:");
+authored_id!(MigrationId, "migration:");
+authored_id!(RecoveryCheckpointId, "recovery-checkpoint:");
+authored_id!(SourceDocumentId, "source-document:");
+authored_id!(CheckpointId, "checkpoint:");
+authored_id!(ContentOccurrenceId, "content-occurrence:");

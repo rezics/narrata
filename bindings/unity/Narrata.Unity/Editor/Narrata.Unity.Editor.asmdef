@@ -1,0 +1,7 @@
+{
+  "name": "Narrata.Unity.Editor",
+  "rootNamespace": "Narrata.Unity.Editor",
+  "references": ["Narrata.Unity.Runtime"],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": false
+}

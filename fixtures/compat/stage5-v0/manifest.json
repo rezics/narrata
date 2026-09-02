@@ -1,0 +1,40 @@
+{
+  "corpus_version": 1,
+  "frozen_at_stage": 5,
+  "artifacts": {
+    "program-v0.hex": {
+      "sha256": "bb472fc893d37513c1216147370e213e2886ffd615df5b2c19170c09fb8cb358"
+    },
+    "snapshot-v0.hex": {
+      "sha256": "060929761247c697701200682d5f959d635f7e0ff5f3cb8a75a30438aa78e7da"
+    },
+    "receipt-v1.hex": {
+      "sha256": "95d9e4f73e0fa1438f443f65fc35bc71645c8f9bb944a5f315fc0395bd1b96db"
+    },
+    "commit-v1.hex": {
+      "sha256": "7e4a82be18c9353bf4722092a2aca5ad6b7b28a2e2f2696d195d19826ff03677"
+    },
+    "checkpoint-bundle-v1.hex": {
+      "sha256": "f4ff5dc701cb6001821c394302311c807f61bbfd10a5f901926cf5373dfc60ab"
+    },
+    "timeline-archive-v1.hex": {
+      "sha256": "230d5842dcc8e350dfc853539f71d637bfeb9074b27a88414b16e75c501fd4dc"
+    }
+  },
+  "program_artifact_id": "artifact:1a9d254ed37f45d8ce8c9d9f7fa820294c29e86a944c5478028519bc2172c3b0",
+  "commit_id": "commit:1dadea62568334eabcd530c3477f27135da00645154f57d98539bd245b4f0332",
+  "receipt_id": "stored-receipt:386eb73fa36b5fcd5b9254229c61241607617baf6ce93345431203e056fb9192",
+  "state_digest": "state:232fcaf8836398c39889b030b52388e99a8f0985c42fbb97405699935aacb102",
+  "expected_continuation": {
+    "kind": "say",
+    "text": "Hello"
+  },
+  "build_provenance": {
+    "compiler": "narrata-testkit/0.1.0-alpha.1",
+    "source": "generator:hello-v0",
+    "rust": "1.98",
+    "locked_inputs": [
+      "hello-v0"
+    ]
+  }
+}

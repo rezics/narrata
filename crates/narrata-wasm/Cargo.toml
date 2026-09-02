@@ -1,0 +1,23 @@
+[package]
+name = "narrata-wasm"
+description = "Wasm/JavaScript binding for the Narrata protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+narrata-protocol = { path = "../narrata-protocol", version = "=0.1.0-alpha.1" }
+wasm-bindgen.workspace = true
+
+[dev-dependencies]
+narrata-core = { path = "../narrata-core", version = "=0.1.0-alpha.1" }
+narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
+prost.workspace = true
+
+[lints]
+workspace = true

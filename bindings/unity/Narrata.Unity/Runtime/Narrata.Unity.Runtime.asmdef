@@ -1,0 +1,6 @@
+{
+  "name": "Narrata.Unity.Runtime",
+  "rootNamespace": "Narrata.Unity",
+  "references": ["Narrata.Binding"],
+  "autoReferenced": true
+}

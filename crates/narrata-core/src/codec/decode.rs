@@ -28,6 +28,8 @@ pub enum DecodeError {
     Limit(&'static str),
     #[error("envelope error: {0}")]
     Envelope(&'static str),
+    #[error("unsupported {axis} version {version}")]
+    UnsupportedVersion { axis: &'static str, version: u16 },
 }
 
 pub fn decode_canonical_value(bytes: &[u8], limits: &DecodeLimits) -> Result<Value, DecodeError> {

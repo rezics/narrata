@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.10"
 narrata-core = { path = "../crates/narrata-core" }
+narrata-protocol = { path = "../crates/narrata-protocol" }
 narrata-store = { path = "../crates/narrata-store" }
 narrata-testkit = { path = "../crates/narrata-testkit" }
 
@@ -58,6 +59,13 @@ bench = false
 [[bin]]
 name = "decode_stage4_objects"
 path = "fuzz_targets/decode_stage4_objects.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_stage5_protocol"
+path = "fuzz_targets/decode_stage5_protocol.rs"
 test = false
 doc = false
 bench = false

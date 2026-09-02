@@ -766,6 +766,19 @@ impl MemoryStore {
                     ));
                 }
             }
+            (Some(parent_id), CommitCauseV1::Migration(_)) => {
+                let parent_object =
+                    self.require_kind(object_id(parent_id.as_bytes()), ObjectKind::Commit)?;
+                let parent = CommitV1::decode(parent_object.payload())
+                    .map_err(|error| StoreError::Corrupt(parent_object.id(), error.to_string()))?;
+                if parent.execution != commit.execution
+                    || parent.turn != commit.turn
+                    || commit.ledger_fence != parent.ledger_fence
+                    || parent.program == commit.program
+                {
+                    return Err(StoreError::InvalidGraph("migration Commit parent mismatch"));
+                }
+            }
             _ => return Err(StoreError::InvalidGraph("Commit cause/parent shape")),
         }
         Ok(())

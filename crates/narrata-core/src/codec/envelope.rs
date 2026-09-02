@@ -70,6 +70,42 @@ pub fn decode_envelope<'a>(
     expected_schema: u16,
     limits: &DecodeLimits,
 ) -> Result<Envelope<'a>, DecodeError> {
+    let envelope = inspect_envelope(bytes, limits)?;
+    if envelope.kind != expected_kind {
+        return Err(DecodeError::Envelope("wrong object kind"));
+    }
+    if envelope.schema_version != expected_schema {
+        return Err(DecodeError::UnsupportedVersion {
+            axis: "object schema",
+            version: envelope.schema_version,
+        });
+    }
+    Ok(envelope)
+}
+
+pub fn decode_envelope_versions<'a>(
+    bytes: &'a [u8],
+    expected_kind: ObjectKind,
+    supported_schemas: &[u16],
+    limits: &DecodeLimits,
+) -> Result<Envelope<'a>, DecodeError> {
+    let envelope = inspect_envelope(bytes, limits)?;
+    if envelope.kind != expected_kind {
+        return Err(DecodeError::Envelope("wrong object kind"));
+    }
+    if !supported_schemas.contains(&envelope.schema_version) {
+        return Err(DecodeError::UnsupportedVersion {
+            axis: "object schema",
+            version: envelope.schema_version,
+        });
+    }
+    Ok(envelope)
+}
+
+pub fn inspect_envelope<'a>(
+    bytes: &'a [u8],
+    limits: &DecodeLimits,
+) -> Result<Envelope<'a>, DecodeError> {
     if bytes.len() as u64 > limits.max_envelope_bytes {
         return Err(DecodeError::Limit("envelope bytes"));
     }
@@ -81,17 +117,14 @@ pub fn decode_envelope<'a>(
     }
     let envelope_version = read_u16(header, 8)?;
     if envelope_version != ENVELOPE_V0.get() {
-        return Err(DecodeError::Envelope("unsupported envelope version"));
+        return Err(DecodeError::UnsupportedVersion {
+            axis: "envelope",
+            version: envelope_version,
+        });
     }
     let kind = ObjectKind::from_code(read_u16(header, 10)?)
         .ok_or(DecodeError::Envelope("unknown object kind"))?;
-    if kind != expected_kind {
-        return Err(DecodeError::Envelope("wrong object kind"));
-    }
     let schema_version = read_u16(header, 12)?;
-    if schema_version != expected_schema {
-        return Err(DecodeError::Envelope("unsupported schema version"));
-    }
     if read_u16(header, 14)? != 0 {
         return Err(DecodeError::Envelope("unsupported flags"));
     }

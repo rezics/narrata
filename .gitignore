@@ -1,4 +1,8 @@
 .temp/
 /target/
 /fuzz/target/
+/bindings/dotnet/**/bin/
+/bindings/dotnet/**/obj/
+/bindings/typescript/dist/
+/bindings/typescript/node_modules/
 *.profraw

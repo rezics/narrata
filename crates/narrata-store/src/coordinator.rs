@@ -682,6 +682,11 @@ impl<S: SaveStore> SessionCoordinator<S> {
                         "input index points to Genesis".to_owned(),
                     ));
                 }
+                CommitCauseV1::Migration(_) => {
+                    return Err(CoordinatorError::Commit(
+                        "input index points to migration Commit".to_owned(),
+                    ));
+                }
             };
             let result = result_from_state(&loaded.state)?;
             let active = self
@@ -1855,10 +1860,31 @@ fn validate_ancestor_closure(
             return Err(StoreError::Limit("Commit ancestry").into());
         }
         let commit = read_commit(store, id)?;
-        if commit.execution != execution || commit.program != program {
+        if commit.execution != execution || (id == start && commit.program != program) {
             return Err(CoordinatorError::IncompatibleCommit);
         }
-        current = commit.parent;
+        current = match (commit.parent, commit.cause) {
+            (None, CommitCauseV1::Genesis) => None,
+            (Some(parent), CommitCauseV1::RuntimeTransition(_)) => {
+                let parent_commit = read_commit(store, parent)?;
+                if parent_commit.execution != execution || parent_commit.program != commit.program {
+                    return Err(CoordinatorError::IncompatibleCommit);
+                }
+                Some(parent)
+            }
+            (Some(parent), CommitCauseV1::Migration(_)) => {
+                let parent_commit = read_commit(store, parent)?;
+                if parent_commit.execution != execution || parent_commit.program == commit.program {
+                    return Err(CoordinatorError::IncompatibleCommit);
+                }
+                Some(parent)
+            }
+            _ => {
+                return Err(CoordinatorError::Commit(
+                    "Commit cause/parent shape".to_owned(),
+                ));
+            }
+        };
     }
     Ok(())
 }

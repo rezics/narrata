@@ -1,6 +1,6 @@
 # Narrata 分步实施计划
 
-状态：Stage 1、Stage 2、Stage 3、Stage 4 已实施
+状态：Stage 1、Stage 2、Stage 3、Stage 4、Stage 5 已实施
 日期：2026-09-02
 
 ## 交付目标
@@ -39,8 +39,9 @@ flowchart LR
 - [Phase 4：Statechart](./04-statecharts.md)
 - [Stage 4：Deterministic Statecharts](./stage-4-statecharts.md)
 - [Phase 5：迁移、Binding 与 Nickel 适配](./05-migrations-bindings-and-nickel.md)
+- [Stage 5：Migrations, Bindings and Debugging](./stage-5-migrations-and-bindings.md)
 
-## 当前 workspace（Stage 4）
+## 当前 workspace（Stage 5）
 
 先保持少量 crate，等依赖边界和编译成本提供证据后再拆：
 
@@ -51,16 +52,22 @@ crates/
   narrata-store-sqlite/  # native crash-safe reference adapter
   narrata-testkit/       # fixture、model、generator、conformance backend
   narrata-cli/           # validate/inspect/run/replay/conformance
+  narrata-protocol/      # versioned Protobuf pull protocol 与 checked transport boundary
+  narrata-ffi/           # opaque handle + owned buffer C ABI
+  narrata-wasm/          # browser Wasm adapter，复用同一 ProtocolEngine
 
 fixtures/
-  codec/ program/ runtime/ negative/ conformance/
+  codec/ program/ runtime/ negative/ conformance/ compat/
+
+bindings/
+  dotnet/ typescript/ unity/
 
 fuzz/
   fuzz_targets/
 ```
 
-Phase 5 再按实际边界增加 `narrata-protocol`、`narrata-ffi`、
-`narrata-wasm` 和可选 `narrata-nickel`。不要在第一批 PR 创建十多个空 crate。
+Stage 5 已按实际边界增加 `narrata-protocol`、`narrata-ffi` 和 `narrata-wasm`。Nickel optional
+Gate 未全部满足，因此没有创建空 crate 或把 evaluator 链入 core。
 
 ## 每一步的完成规则
 

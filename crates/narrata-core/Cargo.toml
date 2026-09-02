@@ -10,6 +10,8 @@ repository.workspace = true
 [dependencies]
 hex.workspace = true
 sha2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
@@ -18,4 +20,3 @@ trybuild = "1.0.110"
 
 [lints]
 workspace = true
-

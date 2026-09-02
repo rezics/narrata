@@ -1,0 +1,21 @@
+[package]
+name = "narrata-protocol"
+description = "Versioned Protobuf pull protocol shared by Narrata native and Wasm bindings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+narrata-core = { path = "../narrata-core", version = "=0.1.0-alpha.1" }
+narrata-store = { path = "../narrata-store", version = "=0.1.0-alpha.1" }
+prost.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
+
+[lints]
+workspace = true
