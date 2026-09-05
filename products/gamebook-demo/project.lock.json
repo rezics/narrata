@@ -1,0 +1,28 @@
+{
+  "format_version": 1,
+  "artifact_id": "b73f74b82f33834c386134e1f5cd548d9ba304d2d299507d827c4fe7acad412b",
+  "packages": {
+    "camp": {
+      "id": "example.mountain-camp",
+      "version": "1.0.0",
+      "digest": "ad3c9a4008060f26eae0afd1efc65a42337b8103c37bc6ea75a3d0ab7d0808a3"
+    },
+    "main": {
+      "id": "example.mountain-main",
+      "version": "1.0.0",
+      "digest": "0e8f77c8bae5cde582850ef217dbb22c75660d9c6b54244c63db0de02c488b34"
+    },
+    "road": {
+      "id": "example.mountain-road",
+      "version": "1.0.0",
+      "digest": "c5b0ffad0563efcddfc5cdb9b0594006d349f51ef635c98b8571749363332dda"
+    }
+  },
+  "node_types": {
+    "narrata.call": "1",
+    "narrata.content": "1",
+    "narrata.decision": "1",
+    "narrata.mutate": "1",
+    "narrata.return": "1"
+  }
+}

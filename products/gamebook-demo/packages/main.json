@@ -1,0 +1,147 @@
+{
+  "id": "example.mountain-main",
+  "version": "1.0.0",
+  "exports": [
+    "journey"
+  ],
+  "content": {
+    "station": {
+      "title": "旧驿站",
+      "paragraphs": [
+        "暮色将山谷染成淡淡的灰紫，旧驿站的木牌在风中轻轻晃动，字迹斑驳，几乎看不清原来的名号。这里曾是往来行旅歇脚换马的所在，现在只剩一间低矮的木屋，屋顶上落满了枯叶。",
+        "你推开吱呀作响的木门，屋内空荡，只有一张破旧的桌子。登记册的最后一页写着：往山口去的人，请先到营地找守火老人。他还留着一封信。",
+        "夜色渐深，冷风从门缝里钻进来。前方的山路看不清尽头，而不远处似乎有一处营地的火光在摇曳。你需要决定接下来的行动。"
+      ]
+    },
+    "gate": {
+      "title": "抵达山口",
+      "paragraphs": [
+        "石门从雾里显出轮廓。守门人提着灯走下台阶，先看了看你身后的路，才伸出手。",
+        "“驿站那边，有消息吗？”他问。"
+      ]
+    }
+  },
+  "graphs": {
+    "journey": {
+      "title": "主线",
+      "entry": "station",
+      "outcomes": [
+        "arrived",
+        "delivered"
+      ],
+      "shared": {
+        "rations": "int",
+        "letter": "bool",
+        "rests": "int",
+        "helped": "bool"
+      },
+      "imports": {
+        "road": {
+          "parameters": {},
+          "outcomes": [
+            "crossed",
+            "retreated"
+          ]
+        },
+        "camp": {
+          "parameters": {
+            "visitor": "text"
+          },
+          "outcomes": [
+            "left",
+            "rested"
+          ]
+        }
+      },
+      "nodes": {
+        "station": {
+          "type_id": "narrata.decision",
+          "data": {
+            "content": "station",
+            "choices": [
+              {
+                "id": "road",
+                "label": "沿山路出发",
+                "target": "road"
+              },
+              {
+                "id": "camp",
+                "label": "到营地歇脚",
+                "target": "camp"
+              }
+            ]
+          }
+        },
+        "road": {
+          "type_id": "narrata.call",
+          "data": {
+            "target": {
+              "kind": "import",
+              "port": "road"
+            },
+            "arguments": {},
+            "on_return": {
+              "crossed": "gate",
+              "retreated": "station"
+            }
+          }
+        },
+        "camp": {
+          "type_id": "narrata.call",
+          "data": {
+            "target": {
+              "kind": "import",
+              "port": "camp"
+            },
+            "arguments": {
+              "visitor": {
+                "kind": "literal",
+                "value": "你"
+              }
+            },
+            "on_return": {
+              "left": "station",
+              "rested": "station"
+            }
+          }
+        },
+        "gate": {
+          "type_id": "narrata.decision",
+          "data": {
+            "content": "gate",
+            "choices": [
+              {
+                "id": "deliver",
+                "label": "将老人的信交给守门人",
+                "enabled_if": {
+                  "kind": "read",
+                  "scope": "shared",
+                  "name": "letter"
+                },
+                "disabled_reason": "需要先从营地老人那里取到信件",
+                "target": "delivered"
+              },
+              {
+                "id": "arrive",
+                "label": "告诉他沿途的见闻，结束旅程",
+                "target": "arrived"
+              }
+            ]
+          }
+        },
+        "delivered": {
+          "type_id": "narrata.return",
+          "data": {
+            "outcome": "delivered"
+          }
+        },
+        "arrived": {
+          "type_id": "narrata.return",
+          "data": {
+            "outcome": "arrived"
+          }
+        }
+      }
+    }
+  }
+}

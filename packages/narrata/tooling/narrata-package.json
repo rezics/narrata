@@ -1,0 +1,8 @@
+{
+  "format_version": 1,
+  "id": "narrata.tooling",
+  "version": "0.1.0-alpha.1",
+  "implementation": "crates/narrata-node-tools/Cargo.toml",
+  "provides": ["gamebook-compose.v1", "gamebook-cli.v1"],
+  "requires": ["narrata.nodes"]
+}

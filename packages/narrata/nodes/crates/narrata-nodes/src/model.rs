@@ -76,6 +76,8 @@ pub struct Product {
     pub arguments: BTreeMap<String, Scalar>,
     #[serde(default)]
     pub shared: BTreeMap<String, Scalar>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub shared_labels: BTreeMap<String, String>,
     #[serde(default)]
     pub bindings: Vec<Binding>,
 }

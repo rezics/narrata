@@ -8,6 +8,7 @@ mod validate;
 
 pub(crate) fn run(args: Vec<String>) -> Result<(), String> {
     match args.as_slice() {
+        [group, rest @ ..] if group == "gamebook" => narrata_node_tools::run(rest),
         [group, command, rest @ ..] if group == "program" && command == "validate" => {
             validate::program(rest)
         }

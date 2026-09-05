@@ -228,6 +228,9 @@
         "kind": {
           "$ref": "#/$defs/ScalarType"
         },
+        "label": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
@@ -238,6 +241,7 @@
       "additionalProperties": false,
       "required": [
         "name",
+        "label",
         "kind",
         "value"
       ]

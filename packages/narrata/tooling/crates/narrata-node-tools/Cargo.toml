@@ -1,0 +1,23 @@
+[package]
+name = "narrata-node-tools"
+description = "Filesystem composition and CLI for Narrata node products"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "narrata-book"
+path = "src/main.rs"
+
+[dependencies]
+narrata-nodes = { path = "../../../nodes/crates/narrata-nodes" }
+serde_json.workspace = true
+schemars.workspace = true
+
+[dev-dependencies]
+tempfile = "3.21.0"
+
+[lints]
+workspace = true

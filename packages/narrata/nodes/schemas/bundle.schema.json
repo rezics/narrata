@@ -236,6 +236,12 @@
           },
           "default": {}
         },
+        "shared_labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "title": {
           "type": "string"
         }

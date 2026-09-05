@@ -217,6 +217,16 @@ pub fn compile(mut source: Bundle, registry: &NodeRegistry) -> Result<Compilatio
         name(key, "product.shared")?;
         expr::check_scalar(value, "product.shared")?;
     }
+    for (key, label) in &source.product.shared_labels {
+        if !source.product.shared.contains_key(key) {
+            return Err(Error::new(
+                "reference",
+                "product.shared_labels",
+                format!("unknown shared variable {key}"),
+            ));
+        }
+        expr::check_text(label, "product.shared_labels")?;
+    }
     let mut graphs = BTreeMap::new();
     let mut node_count = 0;
     let mut node_types = BTreeMap::new();

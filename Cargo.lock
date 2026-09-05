@@ -483,6 +483,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "hex",
  "narrata-core",
+ "narrata-node-tools",
  "narrata-store",
  "narrata-store-sqlite",
  "narrata-testkit",
@@ -512,6 +513,16 @@ dependencies = [
  "narrata-protocol",
  "narrata-testkit",
  "prost",
+]
+
+[[package]]
+name = "narrata-node-tools"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "narrata-nodes",
+ "schemars",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

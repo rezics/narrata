@@ -125,6 +125,7 @@ pub struct ActionView {
 #[serde(deny_unknown_fields)]
 pub struct VariableView {
     pub name: String,
+    pub label: String,
     pub kind: ScalarType,
     pub value: String,
 }
@@ -193,6 +194,7 @@ fn variables(map: &BTreeMap<String, Scalar>) -> Vec<VariableView> {
     map.iter()
         .map(|(name, value)| VariableView {
             name: name.clone(),
+            label: name.clone(),
             kind: value.kind(),
             value: value.display(),
         })
@@ -271,7 +273,15 @@ impl Session {
             actions: preview.actions,
             finished: preview.outcome.is_some(),
             outcome: preview.outcome,
-            shared: variables(&commit.state.shared),
+            shared: variables(&commit.state.shared)
+                .into_iter()
+                .map(|mut v| {
+                    if let Some(label) = self.product.source.product.shared_labels.get(&v.name) {
+                        v.label = label.clone();
+                    }
+                    v
+                })
+                .collect(),
             frames: commit
                 .state
                 .frames
