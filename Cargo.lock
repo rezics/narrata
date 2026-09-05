@@ -538,6 +538,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-nodes-wasm"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "narrata-nodes",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "narrata-protocol"
 version = "0.1.0-alpha.1"
 dependencies = [

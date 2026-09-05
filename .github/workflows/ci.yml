@@ -5,6 +5,37 @@ on:
   pull_request:
 
 jobs:
+  gamebook-r1:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: examples/gamebook-web/package-lock.json
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools --all-targets --all-features -- -D warnings
+      - run: cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools
+      - run: npm ci
+        working-directory: examples/gamebook-web
+      - run: npm audit --audit-level=high
+        working-directory: examples/gamebook-web
+      - run: npm run build
+        working-directory: examples/gamebook-web
+      - run: npx playwright install --with-deps chromium
+        working-directory: examples/gamebook-web
+      - run: npm run test:e2e
+        working-directory: examples/gamebook-web
+      - run: git diff --exit-code -- packages/narrata/nodes/schemas examples/gamebook-web/src/generated products/gamebook-demo
   gate-g3:
     strategy:
       matrix:

@@ -1,0 +1,29 @@
+{
+  "name": "@narrata/gamebook-reference",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:runtime": "node scripts/prepare.mjs",
+    "dev": "vite --host 127.0.0.1 --port 4173 --strictPort",
+    "build": "npm run prepare:runtime && tsc --noEmit && vite build",
+    "test:e2e": "playwright test",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "json-schema-to-typescript": "16.0.0",
+    "typescript": "~5.9.3",
+    "vite": "8.2.2"
+  }
+}

@@ -10,6 +10,7 @@ members = [
   "crates/narrata-ffi",
   "crates/narrata-wasm",
   "packages/narrata/nodes/crates/narrata-nodes",
+  "packages/narrata/nodes/crates/narrata-nodes-wasm",
   "packages/narrata/tooling/crates/narrata-node-tools",
 ]
 exclude = ["fuzz"]

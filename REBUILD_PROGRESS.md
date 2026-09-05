@@ -25,7 +25,23 @@
 
 ## 切片 2
 
-已实现独立 `narrata-book` 与旧 CLI 的 `gamebook` 入口，源闭包加载、精确 lock、可移植作品和分析输出。
+已提交 `f6fa78e`：独立 `narrata-book` 与旧 CLI 的 `gamebook` 入口，源闭包加载、精确 lock、可移植作品和分析输出。
 `products/gamebook-demo` 由主线、山路、营地三个包组成，可完成取信、歇脚、援助旅人和交信路线。
 CLI 已运行完整九步路线并导出存档。新增文件隔离、替换 provider、输出复现和原子文件替换测试。
 验证：节点与工具共 19 项测试通过；节点/工具/旧 CLI 的 Clippy 全目标检查通过。
+
+## 切片 3
+
+已实现独立 Wasm binding 和 React/Vite 参考 Reader；编译、选择与存档验证仍使用 Rust。
+新增由 Rust schema 生成的 BookView 类型/AJV 校验、Worker、IndexedDB CAS、导入导出、结构图和移动布局。
+自动保存事务结束后才发布 view；写入冲突恢复原会话并给出错误。
+
+最终浏览器回归 6/6 通过，完整路线的 Wasm 与原生 Commit 相同；内置浏览器也验证了首屏、跨包进入营地、取信和刷新恢复。
+`scripts/check-g5.ps1` 与 `scripts/check-r1.ps1` 均通过，包含旧格式/迁移/绑定回归、19 项新 Rust 测试、构建与生成文件漂移检查。
+修复了 Gate 发现的 path dependency 版本缺失，以及 Windows dev server 占用原生模块时的预检提示。
+视觉检查覆盖 1536×1024 桌面与 390×844 手机布局；目录排序已改为实际结构遍历，移动状态不会继承桌面检查器的打开状态。
+
+## 后续范围
+
+当前落实 R0/R1 的最小节点与 Gamebook profile。SceneState 的通用节点类型、Scene/Quest、同伴、
+远程内容、业务 Effect 与完整编辑器仍按重建路线后续实施。本轮没有把这些未来能力标成完成。

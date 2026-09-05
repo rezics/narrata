@@ -2,7 +2,7 @@
   "format_version": 1,
   "id": "narrata.nodes",
   "version": "0.1.0-alpha.1",
-  "implementation": "crates/narrata-nodes/Cargo.toml",
+  "implementations": ["crates/narrata-nodes/Cargo.toml", "crates/narrata-nodes-wasm/Cargo.toml"],
   "provides": ["node-compilation.v1", "gamebook-session.v1"],
   "requires": [],
   "schemas": "schemas",

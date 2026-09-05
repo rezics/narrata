@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use narrata_nodes::{Bundle, NodePlan, ProjectManifest, SaveArchive, SessionView};
+use narrata_nodes::{BookView, Bundle, NodePlan, ProjectManifest, SaveArchive, SessionView};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let directory = PathBuf::from(
@@ -11,6 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&directory)?;
     let schemas = BTreeMap::from([
         ("bundle.schema.json", schemars::schema_for!(Bundle)),
+        ("book-view.schema.json", schemars::schema_for!(BookView)),
         ("node-plan.schema.json", schemars::schema_for!(NodePlan)),
         (
             "project.schema.json",

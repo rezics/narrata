@@ -109,6 +109,7 @@ pub struct Session {
     cursor: usize,
     last_steps: u32,
     retained_bytes: usize,
+    retained_steps: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -244,6 +245,7 @@ impl Session {
             cursor: 0,
             last_steps,
             retained_bytes,
+            retained_steps: u64::from(last_steps),
         })
     }
 
@@ -375,11 +377,12 @@ impl Session {
         } else {
             if self.commits.len() >= MAX_COMMITS
                 || self.retained_bytes + state_bytes > MAX_RETAINED_BYTES
+                || self.retained_steps + u64::from(steps) > MAX_REPLAY_STEPS
             {
                 return Err(Error::new(
                     "history_limit",
                     "session",
-                    "R1 retention limit reached (512 commits / 2 MiB of snapshots); export the journey and start a new one",
+                    "R1 retention limit reached (512 commits / 2 MiB snapshots / 1,000,000 replay steps); export the journey and start a new one",
                 ));
             }
             let index = self.commits.len();
@@ -395,6 +398,7 @@ impl Session {
             self.index.insert(id, index);
             self.cursor = index;
             self.retained_bytes += state_bytes;
+            self.retained_steps += u64::from(steps);
         }
         self.last_steps = steps;
         self.view()

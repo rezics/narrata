@@ -52,6 +52,7 @@
 
 ### 实施
 
+- [重建实施记录](../REBUILD_PROGRESS.md)：R0/R1 节点、三个内容包、CLI 与 Web Gamebook。
 - [实施总览](./plan/README.md)
 - [Stage 1：Deterministic In-Memory Narrative Kernel](./plan/stage-1-deterministic-kernel.md)
 - [Stage 2：Time Travel and Crash-Safe Persistence](./plan/stage-2-time-travel-persistence.md)
@@ -67,6 +68,7 @@
 
 ### ADR
 
+- [0011：R1 节点组合与 Gamebook 会话](./adr/0011-r1-node-composition.md)
 - [0001：Stage 1 scope](./adr/0001-stage-1-scope.md)
 - [0002：Identities and digests](./adr/0002-identities-and-digests.md)
 - [0003：Deterministic CBOR profile](./adr/0003-deterministic-cbor-profile.md)

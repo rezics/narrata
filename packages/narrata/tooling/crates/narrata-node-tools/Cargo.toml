@@ -12,7 +12,7 @@ name = "narrata-book"
 path = "src/main.rs"
 
 [dependencies]
-narrata-nodes = { path = "../../../nodes/crates/narrata-nodes" }
+narrata-nodes = { path = "../../../nodes/crates/narrata-nodes", version = "=0.1.0-alpha.1" }
 serde_json.workspace = true
 schemars.workspace = true
 

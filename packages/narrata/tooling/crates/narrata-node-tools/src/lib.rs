@@ -12,7 +12,7 @@ use std::{
 };
 
 use narrata_nodes::{
-    Bundle, CheckedProduct, Compilation, CompositionLock, Error, FORMAT_VERSION,
+    BookView, Bundle, CheckedProduct, Compilation, CompositionLock, Error, FORMAT_VERSION,
     MAX_DOCUMENT_BYTES, NarrativePackage, NodePlan, NodeRegistry, ProjectManifest, Result,
     SaveArchive, Session, SessionView, compile, parse_json,
 };
@@ -206,6 +206,7 @@ pub fn run(args: &[String]) -> std::result::Result<(), String> {
             .ok_or("schemas requires --out <directory>")?;
         for (name, schema) in [
             ("bundle.schema.json", schemars::schema_for!(Bundle)),
+            ("book-view.schema.json", schemars::schema_for!(BookView)),
             (
                 "project.schema.json",
                 schemars::schema_for!(ProjectManifest),

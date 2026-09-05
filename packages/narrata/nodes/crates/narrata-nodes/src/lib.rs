@@ -25,6 +25,15 @@ pub use runtime::{
     VariableView,
 };
 
+/// Authoritative read model shared by browser transports and generated TypeScript validation.
+#[derive(Clone, Debug, serde::Deserialize, schemars::JsonSchema, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BookView {
+    pub view: SessionView,
+    pub graphs: Vec<GraphAnalysis>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 /// This is an alpha authoring/transport format, separate from the legacy CBOR Program format.
 pub const FORMAT_VERSION: u16 = 1;
 pub const MAX_DOCUMENT_BYTES: usize = 4 * 1024 * 1024;
