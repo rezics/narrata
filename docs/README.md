@@ -3,6 +3,11 @@
 状态：工作基线
 日期：2026-09-02
 
+下一步设计提案见 [可组合叙事引擎重建方案](../REBUILD_PROPOSAL.md)（2026-09-05）：
+以类型化节点/子图为候选基础，让 SceneState 从节点实例形成；先 Gamebook，再 VN 与复杂叙事。
+具体实现与论文依据见 [叙事模型研究](./research/2026-09-05-narrative-model-evidence.md)，标签机制尚未冻结。
+下列已实现机制仍作为当前实现说明，新边界在具体实施时通过 ADR 明确保留与替代关系。
+
 本目录把早期调研收敛为可以实现和验证的设计。当前最重要的决定是：
 
 1. Narrata runtime 是确定性的显式状态转换器，不把 continuation 藏在 Rust call stack、
@@ -19,6 +24,14 @@
 
 ### 调研
 
+- [叙事节点的实现与学术研究依据](./research/2026-09-05-narrative-model-evidence.md)：
+  BG3 官方资料、Skyrim 格式、LSLib/Anansi 固定源码与论文，支持节点类型、实例及组合边界的判断。
+- [可组合叙事引擎重建方案](../REBUILD_PROPOSAL.md)：结合 Lattice package 思路、
+  Versu/Ensemble 等资料，提出领域包、可替换 provider 和非对白 Gamebook 的新路线。
+- [Narrata 与竞品的架构差异及可改进方向](./research/2026-09-05-narrata-competitive-architecture.md)：
+  区分现有差异、竞品已具备的能力与候选优化，重新审视作者模型、Scene 边界和存储实现。
+- [Narrata 作者工作台与 Web VN 工具链路线](./research/2026-09-05-narrata-toolchain-roadmap.md)：
+  基于当前源码与官方资料的 Stage 6 提案，涵盖叙事图、Studio、媒体管线和跨仓库边界。
 - [Nix/NixOS 与 Nickel 能带来什么](./research/nix-nickel-lessons.md)：回答是否以及如何采用
   两者。
 - [研究源码登记](./research/source-register.md)：记录本轮实际克隆和审阅的提交、文件与官方
