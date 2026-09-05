@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProjectManifest",
+  "description": "The filesystem manifest is resolved by tooling, never by the deterministic runtime.",
+  "type": "object",
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "packages": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "product": {
+      "$ref": "#/$defs/Product"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "product",
+    "packages"
+  ],
+  "$defs": {
+    "Binding": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/ImportRef"
+        },
+        "to": {
+          "$ref": "#/$defs/GraphRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "GraphRef": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "ImportRef": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph",
+        "port"
+      ]
+    },
+    "Product": {
+      "type": "object",
+      "properties": {
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Binding"
+          }
+        },
+        "entry": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "id": {
+          "type": "string"
+        },
+        "shared": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "entry"
+      ]
+    },
+    "Scalar": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  }
+}

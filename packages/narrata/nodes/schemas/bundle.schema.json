@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bundle",
+  "type": "object",
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "packages": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/NarrativePackage"
+      }
+    },
+    "product": {
+      "$ref": "#/$defs/Product"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "product",
+    "packages"
+  ],
+  "$defs": {
+    "Binding": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/ImportRef"
+        },
+        "to": {
+          "$ref": "#/$defs/GraphRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "Content": {
+      "type": "object",
+      "properties": {
+        "paragraphs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "paragraphs"
+      ]
+    },
+    "Graph": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "type": "string"
+        },
+        "imports": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Signature"
+          },
+          "default": {}
+        },
+        "locals": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "nodes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeDefinition"
+          }
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        },
+        "shared": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "outcomes",
+        "entry",
+        "nodes"
+      ]
+    },
+    "GraphRef": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "ImportRef": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph",
+        "port"
+      ]
+    },
+    "NarrativePackage": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Content"
+          },
+          "default": {}
+        },
+        "exports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "graphs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Graph"
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "exports",
+        "graphs"
+      ]
+    },
+    "NodeDefinition": {
+      "type": "object",
+      "properties": {
+        "data": true,
+        "type_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type_id",
+        "data"
+      ]
+    },
+    "Product": {
+      "type": "object",
+      "properties": {
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Binding"
+          }
+        },
+        "entry": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "id": {
+          "type": "string"
+        },
+        "shared": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "entry"
+      ]
+    },
+    "Scalar": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "ScalarType": {
+      "type": "string",
+      "enum": [
+        "bool",
+        "int",
+        "text"
+      ]
+    },
+    "Signature": {
+      "type": "object",
+      "properties": {
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "outcomes"
+      ]
+    }
+  }
+}

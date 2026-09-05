@@ -1,0 +1,402 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NodePlan",
+  "description": "Checked lowering vocabulary. This is not the extensible authoring node-type registry.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "content"
+        },
+        "label": {
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "content",
+        "label",
+        "next"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Choice"
+          }
+        },
+        "content": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "decision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "content",
+        "choices"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/Expr"
+        },
+        "kind": {
+          "type": "string",
+          "const": "branch"
+        },
+        "when_false": {
+          "type": "string"
+        },
+        "when_true": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "condition",
+        "when_true",
+        "when_false"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "assignments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "mutate"
+        },
+        "next": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "assignments",
+        "next"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Expr"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "call"
+        },
+        "on_return": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "target": {
+          "$ref": "#/$defs/CallTarget"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "target",
+        "arguments",
+        "on_return"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "return"
+        },
+        "outcome": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "outcome"
+      ]
+    }
+  ],
+  "$defs": {
+    "Assignment": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/Variable"
+        },
+        "value": {
+          "$ref": "#/$defs/Expr"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "value"
+      ]
+    },
+    "BinaryOp": {
+      "type": "string",
+      "enum": [
+        "eq",
+        "ne",
+        "lt",
+        "le",
+        "gt",
+        "ge",
+        "add",
+        "sub",
+        "and",
+        "or"
+      ]
+    },
+    "CallTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "graph": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "local"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "import"
+            },
+            "port": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "port"
+          ]
+        }
+      ]
+    },
+    "Choice": {
+      "type": "object",
+      "properties": {
+        "assignments": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          }
+        },
+        "disabled_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "enabled_if": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "visible_if": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "target"
+      ]
+    },
+    "Expr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "literal"
+            },
+            "value": {
+              "$ref": "#/$defs/Scalar"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "read"
+            },
+            "name": {
+              "type": "string"
+            },
+            "scope": {
+              "$ref": "#/$defs/Scope"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "scope",
+            "name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "not"
+            },
+            "value": {
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "binary"
+            },
+            "left": {
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "$ref": "#/$defs/BinaryOp"
+            },
+            "right": {
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "op",
+            "left",
+            "right"
+          ]
+        }
+      ]
+    },
+    "Scalar": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Scope": {
+      "type": "string",
+      "enum": [
+        "parameter",
+        "local",
+        "shared"
+      ]
+    },
+    "Variable": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "name"
+      ]
+    }
+  }
+}

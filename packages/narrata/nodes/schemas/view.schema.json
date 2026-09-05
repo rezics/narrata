@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SessionView",
+  "type": "object",
+  "properties": {
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ActionView"
+      }
+    },
+    "artifact_id": {
+      "type": "string"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "finished": {
+      "type": "boolean"
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FrameView"
+      }
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HistoryView"
+      }
+    },
+    "instance": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "node": {
+      "$ref": "#/$defs/NodeAddress"
+    },
+    "outcome": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "paragraphs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "product_title": {
+      "type": "string"
+    },
+    "shared": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/VariableView"
+      }
+    },
+    "title": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "artifact_id",
+    "cursor",
+    "product_title",
+    "node",
+    "instance",
+    "title",
+    "paragraphs",
+    "actions",
+    "finished",
+    "shared",
+    "frames",
+    "history"
+  ],
+  "$defs": {
+    "ActionView": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "enabled"
+      ]
+    },
+    "FrameView": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "instance": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "locals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VariableView"
+          }
+        },
+        "node": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VariableView"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "graph",
+        "node",
+        "instance",
+        "parameters",
+        "locals"
+      ]
+    },
+    "GraphRef": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "HistoryView": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instance": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "node": {
+          "$ref": "#/$defs/NodeAddress"
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "node",
+        "instance",
+        "current"
+      ]
+    },
+    "NodeAddress": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph",
+        "node"
+      ]
+    },
+    "ScalarType": {
+      "type": "string",
+      "enum": [
+        "bool",
+        "int",
+        "text"
+      ]
+    },
+    "VariableView": {
+      "description": "Scalar payloads are formatted strings, so 64-bit integers never lose precision in JavaScript.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ScalarType"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "value"
+      ]
+    }
+  }
+}

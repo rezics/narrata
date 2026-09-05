@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SaveArchive",
+  "description": "Bounded, fully replay-validated save for the R1 reference profile. It preserves every retained\nbranch. It is not a legacy CheckpointBundle or an authentication/signature format.",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "type": "string"
+    },
+    "commits": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SavedCommit"
+      }
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "artifact_id",
+    "commits",
+    "cursor"
+  ],
+  "$defs": {
+    "SavedCommit": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "parent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot": {
+          "description": "Full logical state. Restore validates it against both its digest and deterministic replay."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "snapshot"
+      ]
+    }
+  }
+}

@@ -9,6 +9,7 @@ members = [
   "crates/narrata-protocol",
   "crates/narrata-ffi",
   "crates/narrata-wasm",
+  "packages/narrata/nodes/crates/narrata-nodes",
 ]
 exclude = ["fuzz"]
 
@@ -25,6 +26,7 @@ proptest = "1.7.0"
 prost = "0.14.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
+schemars = "1.2.1"
 sha2 = "0.10.9"
 thiserror = "2.0.16"
 wasm-bindgen = "0.2.105"
