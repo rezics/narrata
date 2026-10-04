@@ -1,11 +1,10 @@
-//! Native benchmark runner. Scratch `.columns` files concatenate little-endian
-//! vectors solely to estimate compression; they are not a readable tile format.
+//! Native benchmark runner measuring the complete ADR 0016 distribution bytes.
 
 use std::{error::Error, fs, path::PathBuf, time::Instant};
 
 use narrata_graph::{
-    ClusterId, Columns, DetailLevel, Edge, EdgeKind, Ending, EndingClass, Graph, Id, Node,
-    NodeKind, prepare,
+    ClusterId, DetailLevel, Edge, EdgeKind, Ending, EndingClass, Graph, Id, Node, NodeKind,
+    prepare, wire::encode_publication,
 };
 use narrata_kernel::codec::sha256;
 
@@ -86,46 +85,6 @@ fn synthetic(count: usize) -> Graph {
     graph
 }
 
-fn pack(columns: &Columns) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for id in &columns.ids {
-        bytes.extend_from_slice(id);
-    }
-    for value in &columns.x {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    for value in &columns.y {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    for value in &columns.clusters {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes.extend_from_slice(&columns.kinds);
-    bytes.extend_from_slice(&columns.importance);
-    for value in &columns.node_flags {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    for value in &columns.author_order {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes.extend_from_slice(&columns.has_author_order);
-    for value in &columns.sources {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    for value in &columns.targets {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes.extend_from_slice(&columns.edge_kind_masks);
-    for counts in &columns.edge_kind_counts {
-        for count in counts {
-            bytes.extend_from_slice(&count.to_le_bytes());
-        }
-    }
-    bytes.extend_from_slice(&columns.edge_importance);
-    bytes.extend_from_slice(&columns.edge_flags);
-    bytes
-}
-
 fn run() -> Result<(), Box<dyn Error>> {
     let mut args = std::env::args().skip(1);
     let mut count = 10_000;
@@ -148,21 +107,19 @@ fn run() -> Result<(), Box<dyn Error>> {
     let prepare_start = Instant::now();
     let publication = prepare(graph)?;
     let prepare_ns = prepare_start.elapsed().as_nanos();
-    let pack_start = Instant::now();
-    let mut blobs = Vec::new();
-    let mut total_bytes = 0;
-    for tile in &publication.tiles {
-        let bytes = pack(&tile.columns);
-        total_bytes += bytes.len();
-        blobs.push(bytes);
-    }
-    let pack_ns = pack_start.elapsed().as_nanos();
+    let encode_start = Instant::now();
+    let encoded = encode_publication(&publication)?;
+    let summary = publication.summary.encode_json()?;
+    let tile_bytes: usize = encoded.tiles.iter().map(|object| object.bytes.len()).sum();
+    let encode_ns = encode_start.elapsed().as_nanos();
     // Filesystem writes and the sampling grace period are outside measured CPU.
     let mut digests = Vec::new();
-    for (index, bytes) in blobs.iter().enumerate() {
-        fs::write(output.join(format!("{index:06}.columns")), bytes)?;
-        digests.extend_from_slice(&sha256(bytes));
+    for object in std::iter::once(&encoded.index).chain(&encoded.tiles) {
+        fs::write(output.join(object.filename()), &object.bytes)?;
+        digests.extend_from_slice(&sha256(&object.bytes));
     }
+    fs::write(output.join("summary.json"), &summary)?;
+    digests.extend_from_slice(&sha256(&summary));
     let result = serde_json::json!({
         "nodes": count,
         "input_edges": input_edges,
@@ -173,15 +130,16 @@ fn run() -> Result<(), Box<dyn Error>> {
         "node_tiles": publication.tiles.iter().filter(|tile| tile.level == DetailLevel::Node).count(),
         "generate_ns": generate_ns,
         "prepare_ns": prepare_ns,
-        "pack_ns": pack_ns,
-        "column_bytes": total_bytes,
-        // Conservative budget for 15 byte strings plus small metadata and the
-        // kernel's 56-byte envelope; no normative field IDs are assigned here.
-        "framing_budget_bytes": publication.tiles.len() * 256,
+        "encode_ns": encode_ns,
+        "tile_bytes": tile_bytes,
+        "index_bytes": encoded.index.bytes.len(),
+        "index_filename": encoded.index.filename(),
+        "summary_bytes": summary.len(),
+        "total_bytes": tile_bytes + encoded.index.bytes.len() + summary.len(),
         "summary_entries": publication.summary.entries.len(),
         "summary_endings": publication.summary.endings.len(),
         "summary_bottleneck_runs": publication.summary.bottleneck_runs.len(),
-        "columns_checksum": sha256(&digests),
+        "distribution_checksum": hex::encode(sha256(&digests)),
     });
     fs::write(
         output.join("result.json"),
@@ -220,23 +178,14 @@ mod tests {
     }
 
     #[test]
-    fn measurement_buffers_are_little_endian_and_deterministic() -> Result<(), Box<dyn Error>> {
+    fn distribution_bytes_are_deterministic_at_benchmark_scale() -> Result<(), Box<dyn Error>> {
         let mut graph = synthetic(1000);
         let before = prepare(graph.clone())?;
         graph.nodes.reverse();
         graph.edges.reverse();
         let after = prepare(graph)?;
-        for (left, right) in before.tiles.iter().zip(&after.tiles) {
-            let bytes = pack(&left.columns);
-            assert_eq!(bytes, pack(&right.columns));
-            let offset = left.columns.ids.len() * 16;
-            for (index, coordinate) in left.columns.x.iter().enumerate() {
-                assert_eq!(
-                    &bytes[offset + index * 4..offset + index * 4 + 4],
-                    &coordinate.to_le_bytes()
-                );
-            }
-        }
+        assert_eq!(encode_publication(&before)?, encode_publication(&after)?);
+        assert_eq!(before.summary.encode_json()?, after.summary.encode_json()?);
         Ok(())
     }
 }

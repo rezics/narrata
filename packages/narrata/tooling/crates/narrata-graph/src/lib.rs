@@ -1,14 +1,17 @@
 //! Publication-time structural analysis; no dependency on a narrative node format.
 //!
-//! All ordering and geometry use integers. The result is an in-memory projection,
-//! not a second narrative source. A persisted tile/summary format requires its own
-//! ADR and compatibility corpus before an encoder is exposed.
+//! All ordering and geometry use integers. ADR 0016 fixes the checked CBOR tile
+//! and JSON summary projections; neither is a second narrative source.
+
+#[cfg(test)]
+extern crate self as narrata_graph;
 
 mod analysis;
 mod layout;
 mod model;
 mod summary;
 mod tiles;
+pub mod wire;
 
 pub use analysis::{Analysis, NodeAnalysis};
 pub use layout::{ClusterLayout, CutReason, Layout, OrderKey, Partition, Position};
@@ -16,7 +19,10 @@ pub use model::{
     ClusterId, Edge, EdgeKind, Ending, EndingClass, Graph, GraphError, Id, MAX_EDGES, MAX_NODES,
     Node, NodeKind, NormalizedEdge,
 };
-pub use summary::{BottleneckRun, EndingSummary, SemanticSummary};
+pub use summary::{
+    BottleneckRun, EndingSummary, MAX_SUMMARY_BYTES, SUMMARY_VERSION, SemanticSummary,
+    SummaryError, summary_schema,
+};
 pub use tiles::{Columns, DetailLevel, TILE_ELEMENT_LIMIT, Tile};
 
 /// Above this size, authored clusters acquire bounded subclusters.

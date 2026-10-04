@@ -31,7 +31,11 @@ try {
             if ($process.ExitCode -ne 0) { throw "Benchmark exited $($process.ExitCode); see $output/stderr.txt" }
             $result = Get-Content -LiteralPath (Join-Path $output 'result.json') -Raw | ConvertFrom-Json -AsHashtable
             $gzipBytes = 0L
-            foreach ($file in Get-ChildItem -LiteralPath $output -Filter '*.columns') {
+            $gzipTileBytes = 0L
+            $gzipIndexBytes = 0L
+            $gzipSummaryBytes = 0L
+            $distributionFiles = @(Get-ChildItem -LiteralPath $output -Filter '*.cbor') + @(Get-Item -LiteralPath (Join-Path $output 'summary.json'))
+            foreach ($file in $distributionFiles) {
                 $sink = [IO.MemoryStream]::new()
                 $gzip = [IO.Compression.GZipStream]::new($sink, [IO.Compression.CompressionLevel]::SmallestSize, $true)
                 try {
@@ -41,10 +45,16 @@ try {
                     $gzip.Dispose()
                 }
                 $gzipBytes += $sink.Length
+                if ($file.Name -eq 'summary.json') { $gzipSummaryBytes += $sink.Length }
+                elseif ($file.Name -eq $result['index_filename']) { $gzipIndexBytes += $sink.Length }
+                else { $gzipTileBytes += $sink.Length }
                 $sink.Dispose()
             }
             $result['peak_working_set_bytes'] = $peakBytes
-            $result['gzip_column_bytes'] = $gzipBytes
+            $result['gzip_bytes'] = $gzipBytes
+            $result['gzip_tile_bytes'] = $gzipTileBytes
+            $result['gzip_index_bytes'] = $gzipIndexBytes
+            $result['gzip_summary_bytes'] = $gzipSummaryBytes
             $result['run'] = $run
             $results += $result
             $result | ConvertTo-Json -Depth 5 -Compress

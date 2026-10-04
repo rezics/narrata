@@ -1,6 +1,6 @@
 # 图、分析与摘要
 
-状态：发布时内存计算已实现；分发格式与宿主接入待实现。依据：[决定 7、12](../product/decisions.md) 与
+状态：发布时计算与受检分发格式已实现；宿主接入待实现。依据：[决定 7、12](../product/decisions.md) 与
 [图渲染调研](../research/2026-10-05-choice-granularity-and-scale/graph_rendering.md)。
 
 叙事图归 Narrata，与宿主的章节结构无关。图视图是用户需求，但它是程序的一个投影，
@@ -13,10 +13,15 @@
 [行为测试](../../packages/narrata/tooling/crates/narrata-graph/tests/publication.rs) 固定计算语义，
 [基准](../development/benchmarks/graph-layout.md) 记录算法取舍、规模证据与已知限制。
 
-发布计算属于工具链，浏览器不做整图布局。列式瓦片将经 kernel 的规范 CBOR 信封按内容身份
-交付，宿主交换摘要将使用版本 JSON；两种格式仍需新的 ADR、冻结语料与受检读取路径。
-[ADR 0013](../adr/0013-r2-text-free-node-format.md) 只保留分析 kind code，不规定这些输出。
-当前 runner 的临时列缓冲只用于测量，不是交付格式；R2 产品到结构图的适配也尚未接入。
+发布计算属于工具链，浏览器不做整图布局。
+
+## 交付格式
+
+[ADR 0016](../adr/0016-graph-publication-format.md) 记录几何、内容标签与宿主摘要分开的理由。
+[wire 编解码器](../../packages/narrata/tooling/crates/narrata-graph/src/wire.rs) 固定索引与三层
+CBOR 瓦片；[摘要类型与 JSON Schema](../../packages/narrata/tooling/crates/narrata-graph/schema/summary-v1.schema.json)
+固定宿主交换形状。[兼容测试](../../packages/narrata/tooling/crates/narrata-graph/tests/distribution.rs)
+受检读取冻结语料，并与重新生成的字节比较。R2 产品到结构图的适配与标签表仍待接入。
 
 ## 作者视图
 
@@ -36,7 +41,7 @@
 ## 语义摘要
 
 供宿主写入自己的索引或图库（REZICS 的 Jena），每次发布导出一次；宿主负责映射到自己的词汇。
-[内存摘要](../../packages/narrata/tooling/crates/narrata-graph/src/summary.rs) 表达结构上的路线
+[语义摘要](../../packages/narrata/tooling/crates/narrata-graph/src/summary.rs) 表达结构上的路线
 近似，不证明分支条件可行，也不替代完整诊断。它不含选择边全集；瓶颈按连续作者簇压缩，避免
 把长 passage 链逐节点写入索引。任意图不能保证固定事实条数，不能静默截断。
 

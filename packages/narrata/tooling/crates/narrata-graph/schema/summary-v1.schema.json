@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SemanticSummary",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "description": "Program manifest object ID, attached by a product adapter, not inferred.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "bottleneck_runs": {
+      "description": "Common bottleneck sequence compacted into consecutive authored-cluster\nruns. Exact interior IDs remain in `Analysis::bottlenecks`.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/BottleneckRun"
+      }
+    },
+    "endings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/EndingSummary"
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Id"
+      }
+    },
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 1,
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "entries",
+    "endings",
+    "bottleneck_runs"
+  ],
+  "$defs": {
+    "BottleneckRun": {
+      "type": "object",
+      "properties": {
+        "cluster": {
+          "$ref": "#/$defs/ClusterId"
+        },
+        "first": {
+          "$ref": "#/$defs/Id"
+        },
+        "last": {
+          "$ref": "#/$defs/Id"
+        },
+        "node_count": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1000000,
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cluster",
+        "first",
+        "last",
+        "node_count"
+      ]
+    },
+    "ClusterId": {
+      "type": "string",
+      "pattern": "^cluster:[0-9a-f]{32}$"
+    },
+    "EndingClass": {
+      "type": "string",
+      "enum": [
+        "unspecified",
+        "success",
+        "failure",
+        "neutral"
+      ]
+    },
+    "EndingSummary": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/EndingClass"
+        },
+        "clusters": {
+          "description": "Clusters containing a reachable ancestor of this ending. These are a\nstructural route approximation, not a proof that conditions are feasible.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClusterId"
+          }
+        },
+        "node": {
+          "$ref": "#/$defs/Id"
+        },
+        "reachable": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "class",
+        "reachable",
+        "clusters"
+      ]
+    },
+    "Id": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    }
+  }
+}

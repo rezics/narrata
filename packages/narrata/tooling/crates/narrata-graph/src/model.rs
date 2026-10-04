@@ -1,10 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
+use serde::{Deserialize, Serialize};
+
 /// Bounds make integer coordinate ranges and edge multiplicities provable.
 pub const MAX_NODES: usize = 1_000_000;
 pub const MAX_EDGES: usize = 4_000_000;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Id(pub [u8; 16]);
 
 impl Id {
@@ -13,7 +17,8 @@ impl Id {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct ClusterId(pub [u8; 16]);
 
 impl ClusterId {
@@ -21,6 +26,41 @@ impl ClusterId {
         Self(value.to_be_bytes())
     }
 }
+
+macro_rules! json_identity {
+    ($type:ident, $prefix:literal, $pattern:literal) => {
+        impl From<$type> for String {
+            fn from(value: $type) -> Self {
+                format!("{}{}", $prefix, hex::encode(value.0))
+            }
+        }
+
+        impl TryFrom<String> for $type {
+            type Error = narrata_kernel::identity::IdParseError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                let id = Self(narrata_kernel::identity::text::parse(&value, $prefix)?);
+                if String::from(id) != value {
+                    return Err(Self::Error::InvalidHex);
+                }
+                Ok(id)
+            }
+        }
+
+        impl JsonSchema for $type {
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                stringify!($type).into()
+            }
+
+            fn json_schema(_: &mut SchemaGenerator) -> Schema {
+                json_schema!({ "type": "string", "pattern": $pattern })
+            }
+        }
+    };
+}
+
+json_identity!(Id, "node:", "^node:[0-9a-f]{32}$");
+json_identity!(ClusterId, "cluster:", "^cluster:[0-9a-f]{32}$");
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -58,7 +98,8 @@ pub struct Edge {
     pub kind: EdgeKind,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EndingClass {
     Unspecified,
     Success,

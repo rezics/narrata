@@ -4,15 +4,15 @@ use crate::{Analysis, Layout, NodeKind, model::CheckedGraph};
 
 pub const TILE_ELEMENT_LIMIT: usize = 2000;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum DetailLevel {
     Work,
     Cluster,
     Node,
 }
 
-/// Structure-of-arrays working representation. A future wire codec can pack
-/// each vector as a little-endian byte string without per-element JS objects.
+/// Structure-of-arrays representation, packed by `wire` into little-endian
+/// byte strings without per-element JS objects.
 /// Coordinates are i32; cluster frames carry the exact i64 world translation.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Columns {

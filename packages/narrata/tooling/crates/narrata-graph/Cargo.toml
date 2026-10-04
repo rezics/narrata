@@ -9,10 +9,14 @@ repository.workspace = true
 
 [dependencies]
 thiserror.workspace = true
+narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1" }
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
 
 [dev-dependencies]
-narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1" }
-serde_json.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true
