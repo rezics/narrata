@@ -607,10 +607,12 @@ dependencies = [
 name = "narrata-store-sqlite"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "hex",
  "narrata-core",
  "narrata-store",
  "narrata-testkit",
  "rusqlite",
+ "serde_json",
  "thiserror",
 ]
 

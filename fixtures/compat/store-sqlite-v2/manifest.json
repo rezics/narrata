@@ -1,0 +1,232 @@
+{
+  "artifacts": {
+    "save-v2.sqlite3": {
+      "sha256": "677e3e1622f42bea737d785efee44cc44a42163f92ab37ef8f3ea9bbf0533907"
+    }
+  },
+  "build_provenance": {
+    "command": "cargo run -p narrata-store-sqlite --example emit_store_v2_fixture -- fixtures/compat/store-sqlite-v2",
+    "source": "generator:recorded-query-v0",
+    "writer": "narrata-store-sqlite/0.1.0-alpha.1 schema v2"
+  },
+  "contents": {
+    "archives": [],
+    "catalogs": [
+      {
+        "coverage": {
+          "from_baseline": "commit:cac43a9d085c8d19426cf5152ba3557931d131be925a943f435da77ed131782a"
+        },
+        "event": "catalog-event:0ee812d9a8ad36773ee9af6af3df92e0fb254c46c1c91d8f273f15e5c4dadfc9",
+        "revision": 6,
+        "timeline": "execution:00000000000000000000000000005632"
+      }
+    ],
+    "compound_saves": [],
+    "effects": [
+      {
+        "capability": "host.query",
+        "capability_version": 1,
+        "delivery": "RecordedQuery",
+        "effect": "effect:0c7fc916c0a6da869381d9c59d20652d71c82c732c3ff846649874c77a037470",
+        "execution": "execution:00000000000000000000000000005632",
+        "origin_commit": "commit:3e5a5ecee2cea6f8a895c5f15319e7acb48f1e6c9055912a966e0cc9bdff744d",
+        "request_digest": "effect-request:9d1e2d6f2420a3b8d8501d6302b61b0d7f0c712215a8a95fe57e9de3f40e2a60",
+        "rewind": "ReuseRecordedResponse",
+        "status": {
+          "fence": 1,
+          "response": "object:297b8f4295b0eb1783718f9db89816652849f7581680bbd97eb923179228894c",
+          "state": "completed"
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "commit": "commit:3e5a5ecee2cea6f8a895c5f15319e7acb48f1e6c9055912a966e0cc9bdff744d",
+        "execution": "execution:00000000000000000000000000005632",
+        "input": "input:00000000000000000000000000000001",
+        "parent": "commit:cac43a9d085c8d19426cf5152ba3557931d131be925a943f435da77ed131782a",
+        "payload": "input-payload:f4f66e986157b40c540a8d290ba1e7512682a3c4398b0e8ee0cb31a4dbf9663a"
+      }
+    ],
+    "ledger_fences": [
+      {
+        "execution": "execution:00000000000000000000000000005632",
+        "fence": 1
+      }
+    ],
+    "objects": [
+      {
+        "id": "object:0ee812d9a8ad36773ee9af6af3df92e0fb254c46c1c91d8f273f15e5c4dadfc9",
+        "inserted_at": 8,
+        "kind": 6,
+        "schema": 1,
+        "sha256": "b3b67964e10b28f671cb0533bc4fc55ca8dc1b40fb0262baf6c3fdaef125e4ab"
+      },
+      {
+        "id": "object:297b8f4295b0eb1783718f9db89816652849f7581680bbd97eb923179228894c",
+        "inserted_at": 4,
+        "kind": 9,
+        "schema": 1,
+        "sha256": "4866291f41e7021c56bd4e2622150aa630114ce5bdfe69dd853e3b758543dfea"
+      },
+      {
+        "id": "object:2b863e76d5e8bece7e5b197ae37dc8ec5e7d9fa3ce7ec92fe420c6b80a43b255",
+        "inserted_at": 2,
+        "kind": 3,
+        "schema": 1,
+        "sha256": "3ec7171d52f98591c19b743b6d451d25defefd8807309cfd81dbade466ef20ac"
+      },
+      {
+        "id": "object:3e5a5ecee2cea6f8a895c5f15319e7acb48f1e6c9055912a966e0cc9bdff744d",
+        "inserted_at": 2,
+        "kind": 5,
+        "schema": 1,
+        "sha256": "d715909555a6125493b76a7733151fe78d7c4c5704d04decd94296c30eec2d69"
+      },
+      {
+        "id": "object:4b82bdb684d727cddef3a4a31d96f247804af443c6020f2106dd57e35902c011",
+        "inserted_at": 6,
+        "kind": 6,
+        "schema": 1,
+        "sha256": "9da5f5b13afca2a60a42f8c4050f805c6833eb8624d7a0d4d72e83cfdb7cf194"
+      },
+      {
+        "id": "object:5dcac3289c6d22d32495cb5a9e43c8d43533820233eb6bb1d3659832115ba256",
+        "inserted_at": 1,
+        "kind": 6,
+        "schema": 1,
+        "sha256": "27f77e1e9e53de3e02bdd3cb74ad0cd00b38e5e23739884306db41efafe1d2d0"
+      },
+      {
+        "id": "object:6027fcfda863df0d6e83695dec742a6ac846b5587268b6f5911cb6a8c6efc9d5",
+        "inserted_at": 5,
+        "kind": 6,
+        "schema": 1,
+        "sha256": "39f420ad61483bd065c512171121112b8680202f7a6631afa185d6c23b0c9b81"
+      },
+      {
+        "id": "object:6b76592ad0945d0f94383017bf39ea5f8bdc0ab46e1c9ca307cb20119f5287e7",
+        "inserted_at": 2,
+        "kind": 2,
+        "schema": 0,
+        "sha256": "74e38aacd541cace1ccba1fbbe9643d26a15cb6a9435a8ade348204a894f4954"
+      },
+      {
+        "id": "object:73682ea8791ee6ec0775a9e897266cb399b1919621fc52b19c292118fbcf695b",
+        "inserted_at": 7,
+        "kind": 6,
+        "schema": 1,
+        "sha256": "e37b9d3209919eaa97a73eff670c3630fe109aa634cf4a13277e4045f273641d"
+      },
+      {
+        "id": "object:7bf5fe7f7ed55a43014d76df51c1c80f6881b23e45f595dc8e1d0c86eb04d27c",
+        "inserted_at": 2,
+        "kind": 6,
+        "schema": 1,
+        "sha256": "265eb43d5f7f1aac5582413bfb671878e82659803eda9238653af0a7e90bcacd"
+      },
+      {
+        "id": "object:930c8a102bad36eec0b214e307b13afb7004cc73343a642721e3b5435b49e0ea",
+        "inserted_at": 1,
+        "kind": 2,
+        "schema": 0,
+        "sha256": "1cc732137d09de081e3398ecc0742b5149f62fe1ae7d40b4f44f3b6006744967"
+      },
+      {
+        "id": "object:a78a1a728cf8477a1be3e49ec8ff181e6d468d009f7be2d5a2649dfe1e7a8fc3",
+        "inserted_at": 1,
+        "kind": 1,
+        "schema": 0,
+        "sha256": "333b755fd69d6a3e7fdd16fe25dddaac4b5415d14696eb80350940a2fe2a979c"
+      },
+      {
+        "id": "object:cac43a9d085c8d19426cf5152ba3557931d131be925a943f435da77ed131782a",
+        "inserted_at": 1,
+        "kind": 5,
+        "schema": 1,
+        "sha256": "e9494b8a8acd493c4c3042b578b88d84d7a9e25a51e6706300770defe81b811b"
+      },
+      {
+        "id": "object:d380ce69e929a254c2c8e983aae075738cb2a03215d4cc4e8ced108a5936f3d3",
+        "inserted_at": 5,
+        "kind": 2,
+        "schema": 0,
+        "sha256": "08092ffdf161c2a795535f669d9f9c332753ea0b3f242e5ae0d29af0049bf9bb"
+      },
+      {
+        "id": "object:ea36ab1f8d39918ffb330dc024f4981b60e509a88d211399bc1ca844d989dba4",
+        "inserted_at": 5,
+        "kind": 5,
+        "schema": 1,
+        "sha256": "f115669be2a5734ae9c60fc64658daf0f96bbe0a0b5969a7acd8ee1a8a298abb"
+      },
+      {
+        "id": "object:f28fae17cb1a98ca58a1ea09ca66c1a3eb5c287562797df761ef5f10e0d9af87",
+        "inserted_at": 5,
+        "kind": 3,
+        "schema": 1,
+        "sha256": "d7bcf1fe938f2cff5f82d52c1583f70308d29a67da9976cb88912e36eb82da2e"
+      }
+    ],
+    "pins": [
+      {
+        "expires_at": 1000,
+        "object": "object:3e5a5ecee2cea6f8a895c5f15319e7acb48f1e6c9055912a966e0cc9bdff744d",
+        "owner": "fixture-pin"
+      },
+      {
+        "expires_at": null,
+        "object": "object:cac43a9d085c8d19426cf5152ba3557931d131be925a943f435da77ed131782a",
+        "owner": "fixture-pin"
+      }
+    ],
+    "refs": [
+      {
+        "commit": "commit:ea36ab1f8d39918ffb330dc024f4981b60e509a88d211399bc1ca844d989dba4",
+        "name": "slot-1",
+        "namespace": "saves",
+        "owner": "player",
+        "revision": 1
+      },
+      {
+        "commit": "commit:ea36ab1f8d39918ffb330dc024f4981b60e509a88d211399bc1ca844d989dba4",
+        "name": "00000000000000000000000000000001",
+        "namespace": "branches",
+        "owner": "00000000000000000000000000005632",
+        "revision": 3
+      },
+      {
+        "commit": "commit:ea36ab1f8d39918ffb330dc024f4981b60e509a88d211399bc1ca844d989dba4",
+        "name": "00000000000000000000000000000002",
+        "namespace": "branches",
+        "owner": "00000000000000000000000000005632",
+        "revision": 1
+      },
+      {
+        "commit": "commit:ea36ab1f8d39918ffb330dc024f4981b60e509a88d211399bc1ca844d989dba4",
+        "name": "mark",
+        "namespace": "bookmarks",
+        "owner": "player",
+        "revision": 1
+      },
+      {
+        "commit": "commit:ea36ab1f8d39918ffb330dc024f4981b60e509a88d211399bc1ca844d989dba4",
+        "name": "cursor",
+        "namespace": "active",
+        "owner": "v2-session",
+        "revision": 3
+      }
+    ]
+  },
+  "corpus_version": 1,
+  "format": "narrata-store-sqlite schema v2",
+  "program_artifact_id": "artifact:2b0475fee76928fa5940e1d01ee0fbf3d243bb06052dee32a1545e135e256909",
+  "session": {
+    "cursor": "commit:ea36ab1f8d39918ffb330dc024f4981b60e509a88d211399bc1ca844d989dba4",
+    "execution": "execution:00000000000000000000000000005632",
+    "genesis": "commit:cac43a9d085c8d19426cf5152ba3557931d131be925a943f435da77ed131782a",
+    "name": "v2-session",
+    "pending_effect_commit": "commit:3e5a5ecee2cea6f8a895c5f15319e7acb48f1e6c9055912a966e0cc9bdff744d",
+    "selected_branch": "branch:00000000000000000000000000000002"
+  }
+}

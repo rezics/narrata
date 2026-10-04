@@ -14,7 +14,9 @@ rusqlite.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+hex.workspace = true
 narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
+serde_json.workspace = true
 
 [lints]
 workspace = true
