@@ -4,6 +4,9 @@ version = "0.0.0"
 publish = false
 edition = "2024"
 
+# Keep the excluded harness local when a worktree is nested in another workspace.
+[workspace]
+
 [package.metadata]
 cargo-fuzz = true
 

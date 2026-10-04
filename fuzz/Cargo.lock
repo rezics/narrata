@@ -167,6 +167,7 @@ name = "narrata-core"
 version = "0.1.0-alpha.1"
 dependencies = [
  "hex",
+ "narrata-kernel",
  "serde",
  "serde_json",
  "sha2",
@@ -182,6 +183,15 @@ dependencies = [
  "narrata-protocol",
  "narrata-store",
  "narrata-testkit",
+]
+
+[[package]]
+name = "narrata-kernel"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "hex",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]
