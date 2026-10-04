@@ -163,7 +163,8 @@ describe('Goals', () => {
   test('a manager may change only its own Goal\'s tasks', () => {
     expect(ownerRefusal({ id: 'G-010', goal: 'narrative-core' }, 'kernel-and-saves')).toContain('belongs to Goal narrative-core');
     expect(ownerRefusal({ id: 'G-010', goal: 'narrative-core' }, 'narrative-core')).toBeUndefined();
-    expect(ownerRefusal({ id: 'G-010', goal: 'narrative-core' }, undefined)).toBeUndefined();
+    // An explicit undefined would fall back to the caller's own GOAL_ID, so an unset one is passed as ''.
+    expect(ownerRefusal({ id: 'G-010', goal: 'narrative-core' }, '')).toBeUndefined();
   });
 });
 
