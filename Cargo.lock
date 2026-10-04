@@ -530,6 +530,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-history"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "hex",
+ "narrata-history",
+ "narrata-kernel",
+ "narrata-storage",
+ "narrata-storage-sqlite",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "narrata-kernel"
 version = "0.1.0-alpha.1"
 dependencies = [

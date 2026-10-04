@@ -1,0 +1,28 @@
+[package]
+name = "narrata-history"
+description = "Commit history for Narrata domains over the storage contract: checked objects, refs, GC, checkpoint bundles and sessions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# The counter domain of tests, benchmarks and conformance corpora.
+testing = []
+
+[dependencies]
+hex.workspace = true
+narrata-kernel = { path = "../narrata-kernel", version = "=0.1.0-alpha.1" }
+narrata-storage = { path = "../narrata-storage", version = "=0.1.0-alpha.1" }
+thiserror.workspace = true
+
+[dev-dependencies]
+narrata-history = { path = ".", features = ["testing"] }
+narrata-storage = { path = "../narrata-storage", version = "=0.1.0-alpha.1", features = ["testing"] }
+narrata-storage-sqlite = { path = "../narrata-storage-sqlite", version = "=0.1.0-alpha.1" }
+serde_json.workspace = true
+tempfile = "3.27.0"
+
+[lints]
+workspace = true
