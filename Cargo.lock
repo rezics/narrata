@@ -559,6 +559,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-storage"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "narrata-storage",
+ "proptest",
+ "thiserror",
+]
+
+[[package]]
+name = "narrata-storage-sqlite"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "criterion",
+ "narrata-storage",
+ "rusqlite",
+ "tempfile",
+]
+
+[[package]]
 name = "narrata-store"
 version = "0.1.0-alpha.1"
 dependencies = [

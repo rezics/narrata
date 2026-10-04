@@ -1,0 +1,22 @@
+[package]
+name = "narrata-storage"
+description = "Narrow storage backend contract for Narrata: immutable objects, revisioned keys, atomic batches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# Conformance suite, fault injection and call counting for backend tests.
+testing = ["dep:proptest"]
+
+[dependencies]
+proptest = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+narrata-storage = { path = ".", features = ["testing"] }
+
+[lints]
+workspace = true
