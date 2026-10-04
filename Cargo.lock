@@ -594,12 +594,14 @@ dependencies = [
  "criterion",
  "hex",
  "narrata-core",
- "narrata-store-sqlite",
+ "narrata-storage",
+ "narrata-storage-sqlite",
  "narrata-testkit",
  "proptest",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror",
 ]
 
@@ -609,11 +611,13 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "hex",
  "narrata-core",
+ "narrata-storage",
+ "narrata-storage-sqlite",
  "narrata-store",
  "narrata-testkit",
  "rusqlite",
  "serde_json",
- "thiserror",
+ "tempfile",
 ]
 
 [[package]]

@@ -9,11 +9,13 @@ use thiserror::Error;
 use crate::{
     ArchiveMutation, ArchivedBookmark, ArchivedBranchRef, ArchivedSaveRef, ArchivedSessionView,
     BranchId, CatalogMutation, CatalogRefKey, CheckedObject, CheckpointBundleManifestV1,
-    CommitCauseV1, CommitTransaction, CommitV1, CompoundSaveManifestV1, HostTimelineManifestV1,
-    ManifestError, ObjectDescriptor, RefKey, RefMutation, RefName, RefRevision, SaveStore,
-    StoreError, TimelineArchiveManifestV1, TimelineArchiveRefKey, TimelineCatalogEventKind,
-    TimelineCatalogEventV1, TimelineCoverage, TimelineSession, TransitionReceiptV1,
+    CommitTransaction, CommitV1, ManifestError, ObjectDescriptor, RefKey, RefMutation, RefName,
+    RefRevision, RefScope, SaveStore, StoreError, TimelineArchiveManifestV1, TimelineArchiveRefKey,
+    TimelineCatalogEventKind, TimelineCatalogEventV1, TimelineCoverage, TimelineSession,
+    TransitionReceiptV1,
+    graph::{Reference, references},
     manifest::{CHECKPOINT_MANIFEST_SCHEMA_V1, TIMELINE_ARCHIVE_MANIFEST_SCHEMA_V1},
+    scan_all,
 };
 
 const CHECKPOINT_MAGIC: &[u8; 8] = b"NARCPB1\0";
@@ -95,8 +97,8 @@ impl CheckpointBundle {
         root: CommitId,
         receiver_has: &BTreeSet<ObjectId>,
     ) -> Result<Self, BundleError> {
-        let objects = object_map(store)?;
-        let closure = closure(&objects, &[object_id(root.as_bytes())])?;
+        let objects = stored_closure(store, &[object_id(root.as_bytes())])?;
+        let closure = objects.keys().copied().collect::<BTreeSet<_>>();
         let descriptors = descriptors(&objects, &closure)?;
         let transmitted = closure
             .iter()
@@ -167,7 +169,6 @@ impl CheckpointBundle {
                 next: Some(self.manifest.root),
             }],
             observed_at,
-            import_transaction: true,
             ..CommitTransaction::default()
         })?;
         outcome
@@ -188,7 +189,6 @@ impl TimelineArchiveBundle {
         let catalog = store
             .read_catalog_head(&CatalogRefKey::new(execution))?
             .ok_or(BundleError::Timeline("complete recording is not enabled"))?;
-        let objects = object_map(store)?;
         let mut branch_heads = Vec::new();
         let mut save_refs = Vec::new();
         let mut bookmarks = Vec::new();
@@ -196,8 +196,16 @@ impl TimelineArchiveBundle {
             object_id(catalog.event.as_bytes()),
             object_id(catalog.coverage.baseline().as_bytes()),
         ];
-        for (key, value) in store.list_refs()? {
-            let commit = match objects.get(&object_id(value.commit.as_bytes())) {
+        let refs = scan_all(
+            |after| store.scan_refs(&RefScope::All, after, u32::MAX),
+            |(key, _)| key.clone(),
+        )?;
+        let targets = refs
+            .iter()
+            .map(|(_, value)| object_id(value.commit.as_bytes()))
+            .collect::<Vec<_>>();
+        for ((key, value), target) in refs.into_iter().zip(store.get_objects(&targets)?) {
+            let commit = match target {
                 Some(object) if object.kind() == ObjectKind::Commit => {
                     CommitV1::decode(object.payload())
                         .map_err(|_| BundleError::Timeline("invalid Commit"))?
@@ -242,7 +250,8 @@ impl TimelineArchiveBundle {
         save_refs.dedup();
         bookmarks.sort();
         bookmarks.dedup();
-        let closure = closure(&objects, &roots)?;
+        let objects = stored_closure(store, &roots)?;
+        let closure = objects.keys().copied().collect::<BTreeSet<_>>();
         let object_descriptors = descriptors(&objects, &closure)?;
         let active = active.map(|value| ArchivedSessionView {
             selected_branch: value.selected_branch,
@@ -407,7 +416,6 @@ impl TimelineArchiveBundle {
                 next: Some(manifest_id),
             }],
             observed_at,
-            import_transaction: true,
             ..CommitTransaction::default()
         })?;
         Ok(manifest_id)
@@ -676,12 +684,23 @@ fn gather_available(
         .cloned()
         .map(|object| (object.id(), object))
         .collect::<BTreeMap<_, _>>();
+    let stored_ids = descriptors
+        .iter()
+        .map(|descriptor| descriptor.id)
+        .filter(|id| !incoming.contains_key(id))
+        .collect::<Vec<_>>();
+    let mut stored = stored_ids
+        .iter()
+        .copied()
+        .zip(store.get_objects(&stored_ids)?)
+        .collect::<BTreeMap<_, _>>();
     let mut available = BTreeMap::new();
     for descriptor in descriptors {
         let object = match incoming.get(&descriptor.id).cloned() {
             Some(object) => object,
-            None => store
-                .get_object(descriptor.id)?
+            None => stored
+                .remove(&descriptor.id)
+                .flatten()
                 .ok_or(BundleError::MissingObject(descriptor.id))?,
         };
         if object.kind() != descriptor.kind
@@ -695,11 +714,65 @@ fn gather_available(
     Ok(available)
 }
 
-fn object_map(store: &impl SaveStore) -> Result<BTreeMap<ObjectId, CheckedObject>, BundleError> {
-    Ok(store
-        .list_objects()?
+/// The closure of `roots` read from the store, one reference level per read.
+fn stored_closure(
+    store: &impl SaveStore,
+    roots: &[ObjectId],
+) -> Result<BTreeMap<ObjectId, CheckedObject>, BundleError> {
+    let mut objects = BTreeMap::new();
+    let mut programs = BTreeMap::new();
+    let mut frontier = roots.to_vec();
+    while !frontier.is_empty() {
+        let wanted = frontier
+            .drain(..)
+            .filter(|id| !objects.contains_key(id))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if objects.len() + wanted.len() > 1_000_000 {
+            return Err(BundleError::Limit("closure objects"));
+        }
+        for (id, object) in wanted.iter().zip(store.get_objects(&wanted)?) {
+            let object = object.ok_or(BundleError::MissingObject(*id))?;
+            // The Program index is a hint: the object it names must hold the artifact.
+            if let Some(artifact) = programs.get(id)
+                && load_program(object.bytes(), &ProgramLoadLimits::default())
+                    .map_or(true, |program| program.artifact_id() != *artifact)
+            {
+                return Err(BundleError::Timeline("Program Artifact is missing"));
+            }
+            for reference in closure_references(&object)? {
+                frontier.push(match reference {
+                    Reference::Object { id, .. } => id,
+                    Reference::Program(artifact) => {
+                        let program = store
+                            .find_program(artifact)?
+                            .ok_or(BundleError::Timeline("Program Artifact is missing"))?;
+                        programs.insert(program, artifact);
+                        program
+                    }
+                });
+            }
+            objects.insert(*id, object);
+        }
+    }
+    Ok(objects)
+}
+
+/// References that belong to a bundle closure. Manifest descriptors describe a closure and are
+/// not part of one.
+fn closure_references(object: &CheckedObject) -> Result<Vec<Reference>, BundleError> {
+    Ok(references(object)?
         .into_iter()
-        .map(|object| (object.id(), object))
+        .filter(|reference| {
+            !matches!(
+                reference,
+                Reference::Object {
+                    descriptor: true,
+                    ..
+                }
+            )
+        })
         .collect())
 }
 
@@ -707,6 +780,14 @@ fn closure(
     objects: &BTreeMap<ObjectId, CheckedObject>,
     roots: &[ObjectId],
 ) -> Result<BTreeSet<ObjectId>, BundleError> {
+    let mut programs = BTreeMap::<ProgramArtifactId, ObjectId>::new();
+    for (id, object) in objects {
+        if object.kind() == ObjectKind::Program
+            && let Ok(program) = load_program(object.bytes(), &ProgramLoadLimits::default())
+        {
+            programs.entry(program.artifact_id()).or_insert(*id);
+        }
+    }
     let mut marked = BTreeSet::new();
     let mut queue = VecDeque::from(roots.to_vec());
     while let Some(id) = queue.pop_front() {
@@ -717,87 +798,16 @@ fn closure(
             return Err(BundleError::Limit("closure objects"));
         }
         let object = objects.get(&id).ok_or(BundleError::MissingObject(id))?;
-        queue.extend(edges(objects, object)?);
+        for reference in closure_references(object)? {
+            queue.push_back(match reference {
+                Reference::Object { id, .. } => id,
+                Reference::Program(artifact) => *programs
+                    .get(&artifact)
+                    .ok_or(BundleError::Timeline("Program Artifact is missing"))?,
+            });
+        }
     }
     Ok(marked)
-}
-
-fn edges(
-    objects: &BTreeMap<ObjectId, CheckedObject>,
-    object: &CheckedObject,
-) -> Result<Vec<ObjectId>, BundleError> {
-    let mut values = Vec::new();
-    match object.kind() {
-        ObjectKind::Commit => {
-            let commit = CommitV1::decode(object.payload())
-                .map_err(|_| BundleError::Timeline("invalid Commit"))?;
-            values.extend(commit.parent.map(|id| object_id(id.as_bytes())));
-            values.push(object_id(commit.snapshot.as_bytes()));
-            if let CommitCauseV1::RuntimeTransition(receipt) = commit.cause {
-                values.push(object_id(receipt.as_bytes()));
-            }
-            values.push(find_program(objects, commit.program)?);
-        }
-        ObjectKind::TimelineCatalogEvent => {
-            let event = TimelineCatalogEventV1::decode(object.payload())
-                .map_err(|_| BundleError::Timeline("invalid Catalog Event"))?;
-            values.extend(event.previous.map(|id| object_id(id.as_bytes())));
-            values.extend(
-                event
-                    .referenced_commits()
-                    .iter()
-                    .map(|id| object_id(id.as_bytes())),
-            );
-        }
-        ObjectKind::CheckpointBundleManifest => {
-            let manifest = CheckpointBundleManifestV1::decode(object.payload())?;
-            values.push(object_id(manifest.root.as_bytes()));
-            values.extend(manifest.optional_host_manifest);
-        }
-        ObjectKind::TimelineArchiveManifest => {
-            let manifest = TimelineArchiveManifestV1::decode(object.payload())?;
-            values.push(object_id(manifest.catalog_head.as_bytes()));
-            values.push(object_id(manifest.coverage.baseline().as_bytes()));
-            values.extend(manifest.host_timeline);
-        }
-        ObjectKind::CompoundSaveManifest => {
-            let manifest = CompoundSaveManifestV1::decode(object.payload())
-                .map_err(|_| BundleError::Timeline("invalid Compound Save"))?;
-            values.push(object_id(manifest.narrative.as_bytes()));
-        }
-        ObjectKind::HostTimelineManifest => {
-            let manifest = HostTimelineManifestV1::decode(object.payload())
-                .map_err(|_| BundleError::Timeline("invalid Host Timeline"))?;
-            values.extend(
-                manifest
-                    .entries
-                    .iter()
-                    .map(|entry| object_id(entry.narrative.as_bytes())),
-            );
-        }
-        ObjectKind::Program
-        | ObjectKind::Snapshot
-        | ObjectKind::Receipt
-        | ObjectKind::Value
-        | ObjectKind::EffectResponse => {}
-    }
-    Ok(values)
-}
-
-fn find_program(
-    objects: &BTreeMap<ObjectId, CheckedObject>,
-    id: ProgramArtifactId,
-) -> Result<ObjectId, BundleError> {
-    objects
-        .iter()
-        .filter(|(_, object)| object.kind() == ObjectKind::Program)
-        .find_map(|(object_id, object)| {
-            load_program(object.bytes(), &ProgramLoadLimits::default())
-                .ok()
-                .filter(|program| program.artifact_id() == id)
-                .map(|_| *object_id)
-        })
-        .ok_or(BundleError::Timeline("Program Artifact is missing"))
 }
 
 fn descriptors(

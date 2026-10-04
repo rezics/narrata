@@ -1,5 +1,8 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use std::{collections::BTreeMap, sync::Arc};
 
 use narrata_core::{
@@ -17,13 +20,14 @@ use narrata_core::{
     },
 };
 use narrata_store::{
-    BranchId, CommitCauseV1, FaultPoint, InitialRecordingMode, MemoryStore, MigrationRegistry,
-    ProgramRegistry, RefKey, RefName, SaveStore, SessionCoordinator, apply_migration, load_commit,
+    BranchId, CommitCauseV1, InitialRecordingMode, MigrationRegistry, ProgramRegistry, RefKey,
+    RefName, SaveStore, SessionCoordinator, apply_migration, load_commit,
 };
 use narrata_testkit::generator::branch_call_choice_v0;
 use narrata_testkit::generator::hello_v0;
 use narrata_testkit::generator::recorded_query_v0;
 use narrata_testkit::generator::statechart_parallel_history_v0;
+use support::{Backend, assert_atomic, image};
 
 fn programs() -> (
     Arc<narrata_core::CheckedProgram>,
@@ -69,11 +73,12 @@ fn programs() -> (
     (source, target, migration)
 }
 
-fn source_store(
+fn source_store<S: SaveStore>(
+    store: S,
     source: Arc<narrata_core::CheckedProgram>,
-) -> (MemoryStore, narrata_core::CommitId) {
+) -> (S, narrata_core::CommitId) {
     let mut coordinator = SessionCoordinator::create(
-        MemoryStore::new(),
+        store,
         source,
         ExecutionId::from_u128(1),
         RefName::new("session").unwrap(),
@@ -92,11 +97,10 @@ fn source_store(
     (coordinator.into_store(), result.commit)
 }
 
-#[test]
-fn migration_creates_child_commit_preserves_source_and_continues() {
+fn migration_creates_child_commit_preserves_source_and_continues<B: Backend>() {
     let (source, target, migration) = programs();
-    let (mut store, source_commit) = source_store(source.clone());
-    let source_objects = store.list_objects().unwrap();
+    let (mut store, source_commit) = source_store(B::store(), source.clone());
+    let before = image(store.backend());
     let mut registry = MigrationRegistry::new();
     registry.register(migration).unwrap();
     let mut programs = ProgramRegistry::new();
@@ -124,10 +128,12 @@ fn migration_creates_child_commit_preserves_source_and_continues() {
         store.read_ref(&migrated_ref).unwrap().unwrap().commit,
         applied.commit
     );
+    let after = image(store.backend());
     assert!(
-        source_objects
+        before
+            .objects
             .iter()
-            .all(|object| store.get_object(object.id()).unwrap().is_some())
+            .all(|object| after.objects.contains(object))
     );
     let loaded = load_commit(&store, applied.commit, &target).unwrap();
     assert_eq!(loaded.commit.parent, Some(source_commit));
@@ -142,43 +148,40 @@ fn migration_creates_child_commit_preserves_source_and_continues() {
     ));
 }
 
-#[test]
-fn migration_fault_does_not_publish_objects_or_ref() {
+fn migration_fault_does_not_publish_objects_or_ref<B: Backend>() {
     let (source, target, migration) = programs();
-    let (mut store, source_commit) = source_store(source.clone());
-    let before = store.list_objects().unwrap();
     let mut registry = MigrationRegistry::new();
     registry.register(migration).unwrap();
     let mut programs = ProgramRegistry::new();
-    programs.register(source);
+    programs.register(source.clone());
     programs.register(target.clone());
     let target_ref = RefKey::save(
         RefName::new("player").unwrap(),
         RefName::new("faulted").unwrap(),
     );
-    store.inject_fault(Some(FaultPoint::RefCas));
-    assert!(
-        apply_migration(
-            &mut store,
-            &registry,
-            &programs,
-            source_commit,
-            target.artifact_id(),
-            None,
-            MigrationOptions::default(),
-            target_ref.clone(),
-            None,
-            3,
-            &Default::default(),
-        )
-        .is_err()
+    let (_, source_commit) = source_store(B::store(), source.clone());
+    assert_atomic(
+        || source_store(B::faulty(), source.clone()).0,
+        |store| store,
+        |store| {
+            apply_migration(
+                store,
+                &registry,
+                &programs,
+                source_commit,
+                target.artifact_id(),
+                None,
+                MigrationOptions::default(),
+                target_ref.clone(),
+                None,
+                3,
+                &Default::default(),
+            )
+        },
     );
-    assert_eq!(store.list_objects().unwrap(), before);
-    assert!(store.read_ref(&target_ref).unwrap().is_none());
 }
 
-#[test]
-fn automatic_path_selection_rejects_ambiguity() {
+fn automatic_path_selection_rejects_ambiguity<B: Backend>() {
     let (source, target, first) = programs();
     let mut registry = MigrationRegistry::new();
     registry.register(first).unwrap();
@@ -202,8 +205,7 @@ fn automatic_path_selection_rejects_ambiguity() {
     ));
 }
 
-#[test]
-fn flow_scoped_instruction_and_local_relocations_do_not_cross_wires() {
+fn flow_scoped_instruction_and_local_relocations_do_not_cross_wires<B: Backend>() {
     let mut source_artifact = branch_call_choice_v0();
     let callee = &mut source_artifact.flows[1];
     callee.entry = InstructionId::from_u128(1);
@@ -368,8 +370,7 @@ fn flow_scoped_instruction_and_local_relocations_do_not_cross_wires() {
     );
 }
 
-#[test]
-fn lossy_recovery_and_barrier_crossing_require_separate_confirmation() {
+fn lossy_recovery_and_barrier_crossing_require_separate_confirmation<B: Backend>() {
     let (source, target, _) = programs();
     let state = transition(
         source.clone(),
@@ -451,8 +452,7 @@ fn lossy_recovery_and_barrier_crossing_require_separate_confirmation() {
     assert!(report.is_lossy());
 }
 
-#[test]
-fn pending_effect_rekey_requires_confirmation_and_reports_new_identity() {
+fn pending_effect_rekey_requires_confirmation_and_reports_new_identity<B: Backend>() {
     let source_artifact = recorded_query_v0().unwrap();
     let source = load_program(
         &encode_program_artifact(&source_artifact),
@@ -556,8 +556,7 @@ fn pending_effect_rekey_requires_confirmation_and_reports_new_identity() {
     assert!(report.rekeyed_pending_effect);
 }
 
-#[test]
-fn statechart_pending_effect_migrates_without_spurious_rekey_when_identity_is_stable() {
+fn statechart_pending_effect_migrates_without_spurious_rekey_when_identity_is_stable<B: Backend>() {
     let source_artifact = statechart_parallel_history_v0().unwrap();
     let source = load_program(
         &encode_program_artifact(&source_artifact),
@@ -632,3 +631,13 @@ fn transition(
         other => panic!("unexpected transition outcome: {other:?}"),
     }
 }
+
+backend_tests!(
+    migration_creates_child_commit_preserves_source_and_continues,
+    migration_fault_does_not_publish_objects_or_ref,
+    automatic_path_selection_rejects_ambiguity,
+    flow_scoped_instruction_and_local_relocations_do_not_cross_wires,
+    lossy_recovery_and_barrier_crossing_require_separate_confirmation,
+    pending_effect_rekey_requires_confirmation_and_reports_new_identity,
+    statechart_pending_effect_migrates_without_spurious_rekey_when_identity_is_stable,
+);

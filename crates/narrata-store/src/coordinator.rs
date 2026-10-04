@@ -2,12 +2,12 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use narrata_core::{
     CapabilityId, CheckedProgram, CommitId, DiagnosticId, EffectId, EffectResponseV0, ExecutionId,
-    HostCapabilities, InputId, NegotiatedCapabilities, ObjectId, ProgramArtifactId, ReceiptId,
-    ReconcileScene, SnapshotId, TimelineArchiveManifestId, TimelineCatalogEventId,
+    HostCapabilities, InputId, NegotiatedCapabilities, ObjectId, ReceiptId, ReconcileScene,
+    SnapshotId, TimelineArchiveManifestId, TimelineCatalogEventId,
     codec::ObjectKind,
-    limits::{MacrostepLimits, ProgramLoadLimits, SnapshotLoadLimits},
+    limits::{MacrostepLimits, SnapshotLoadLimits},
     negotiate_capabilities,
-    program::{encode_program_artifact, load_program},
+    program::encode_program_artifact,
     runtime::{
         CheckedRuntimeInput, DraftResult, RuntimeFault, RuntimeStateV0, SliceBudget, SliceOutcome,
         TransitionStartError, begin_transition_with_parent_commit, new_execution,
@@ -26,9 +26,9 @@ use crate::{
     EffectOutcomeRecord, EffectStoreError, FederatedSaveVerifier, HostSnapshotRef,
     HostSnapshotVerifier, HostTimelineManifestV1, InputIdConflict, InputRecord, LeaseId,
     LedgerStatus, NameError, RecordedEffectResponseV1, RefKey, RefMutation, RefName, RefRevision,
-    RefValue, SaveStore, StoreError, TimelineArchiveBundle, TimelineArchiveRefKey,
+    RefScope, RefValue, SaveStore, StoreError, TimelineArchiveBundle, TimelineArchiveRefKey,
     TimelineCatalogEventKind, TimelineCatalogEventV1, TimelineCoverage, TimelineOperationId,
-    TimelineRecordingMode, TransitionReceiptV1,
+    TimelineRecordingMode, TransitionReceiptV1, scan_all,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -262,7 +262,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
             ..CommitTransaction::default()
         };
         let (recording, catalog_revision) = match recording {
-            InitialRecordingMode::Standard => (TimelineRecordingMode::Standard, None),
+            InitialRecordingMode::Standard => (TimelineRecordingMode::Standard, false),
             InitialRecordingMode::Complete => {
                 let coverage = TimelineCoverage::FromBaseline {
                     baseline: commit_id,
@@ -290,21 +290,38 @@ impl<S: SaveStore> SessionCoordinator<S> {
                     next: Some(event_id),
                     coverage,
                 });
-                (
-                    TimelineRecordingMode::Complete { coverage },
-                    Some(RefRevision::initial()),
-                )
+                (TimelineRecordingMode::Complete { coverage }, true)
             }
         };
-        store.commit(transaction)?;
+        let outcome = store.commit(transaction)?;
+        let revision = |key: &RefKey| {
+            outcome
+                .refs
+                .get(key)
+                .and_then(|value| *value)
+                .map(|value| value.revision)
+                .ok_or(CoordinatorError::MissingRef)
+        };
+        let branch_revision = revision(&branch_key)?;
+        let active_revision = revision(&session_key)?;
+        let catalog_revision = catalog_revision
+            .then(|| {
+                outcome
+                    .catalogs
+                    .get(&CatalogRefKey::new(execution))
+                    .and_then(|value| *value)
+                    .map(|value| value.revision)
+                    .ok_or(CoordinatorError::MissingRef)
+            })
+            .transpose()?;
         Ok(Self {
             store,
             program,
             execution,
             session_key,
             branch_key,
-            branch_revision: RefRevision::initial(),
-            active_revision: RefRevision::initial(),
+            branch_revision,
+            active_revision,
             catalog_revision,
             recording,
             timeline: TimelineSession {
@@ -940,19 +957,18 @@ impl<S: SaveStore> SessionCoordinator<S> {
     }
 
     pub fn redo_candidates(&self) -> Result<Vec<CommitId>, CoordinatorError> {
-        let mut values = self
-            .store
-            .list_objects()?
-            .into_iter()
-            .filter(|object| object.kind() == ObjectKind::Commit)
-            .filter_map(|object| {
-                CommitV1::decode(object.payload())
-                    .ok()
-                    .filter(|commit| commit.parent == Some(self.timeline.cursor))
-                    .map(|_| CommitId::from_bytes(*object.id().as_bytes()))
-            })
-            .collect::<Vec<_>>();
-        values.sort_unstable();
+        let cursor = self.timeline.cursor;
+        let children = scan_all(
+            |after| self.store.child_commits(cursor, after, u32::MAX),
+            |child| *child,
+        )?;
+        // The child index is a hint; only Commits that name the cursor as parent count.
+        let mut values = Vec::with_capacity(children.len());
+        for child in children {
+            if read_commit(&self.store, child)?.parent == Some(cursor) {
+                values.push(child);
+            }
+        }
         Ok(values)
     }
 
@@ -1611,7 +1627,11 @@ impl<S: SaveStore> SessionCoordinator<S> {
     }
 
     fn ensure_barriers_allow(&self, target: &LoadedCommit) -> Result<(), CoordinatorError> {
-        for entry in self.store.list_effects(self.execution)? {
+        let entries = scan_all(
+            |after| self.store.scan_effects(self.execution, after, u32::MAX),
+            |entry| entry.effect,
+        )?;
+        for entry in entries {
             if entry.rewind != narrata_core::RewindPolicy::Barrier {
                 continue;
             }
@@ -1646,7 +1666,11 @@ impl<S: SaveStore> SessionCoordinator<S> {
             baseline: self.timeline.cursor,
         };
         let mut initial_refs = Vec::new();
-        for (key, value) in self.store.list_refs()? {
+        let refs = scan_all(
+            |after| self.store.scan_refs(&RefScope::All, after, u32::MAX),
+            |(key, _)| key.clone(),
+        )?;
+        for (key, value) in refs {
             let Ok(commit) = read_commit(&self.store, value.commit) else {
                 continue;
             };
@@ -1840,53 +1864,7 @@ pub fn load_commit(
     {
         return Err(CoordinatorError::IncompatibleCommit);
     }
-    validate_ancestor_closure(store, id, commit.execution, commit.program)?;
     Ok(LoadedCommit { id, commit, state })
-}
-
-fn validate_ancestor_closure(
-    store: &impl SaveStore,
-    start: CommitId,
-    execution: ExecutionId,
-    program: ProgramArtifactId,
-) -> Result<(), CoordinatorError> {
-    let mut seen = BTreeSet::new();
-    let mut current = Some(start);
-    while let Some(id) = current {
-        if !seen.insert(id) {
-            return Err(CoordinatorError::Commit("Commit parent cycle".to_owned()));
-        }
-        if seen.len() > 1_000_000 {
-            return Err(StoreError::Limit("Commit ancestry").into());
-        }
-        let commit = read_commit(store, id)?;
-        if commit.execution != execution || (id == start && commit.program != program) {
-            return Err(CoordinatorError::IncompatibleCommit);
-        }
-        current = match (commit.parent, commit.cause) {
-            (None, CommitCauseV1::Genesis) => None,
-            (Some(parent), CommitCauseV1::RuntimeTransition(_)) => {
-                let parent_commit = read_commit(store, parent)?;
-                if parent_commit.execution != execution || parent_commit.program != commit.program {
-                    return Err(CoordinatorError::IncompatibleCommit);
-                }
-                Some(parent)
-            }
-            (Some(parent), CommitCauseV1::Migration(_)) => {
-                let parent_commit = read_commit(store, parent)?;
-                if parent_commit.execution != execution || parent_commit.program == commit.program {
-                    return Err(CoordinatorError::IncompatibleCommit);
-                }
-                Some(parent)
-            }
-            _ => {
-                return Err(CoordinatorError::Commit(
-                    "Commit cause/parent shape".to_owned(),
-                ));
-            }
-        };
-    }
-    Ok(())
 }
 
 fn ensure_ancestor(
@@ -2083,24 +2061,6 @@ fn deterministic_operation(domain: &[u8], source: &[u8]) -> TimelineOperationId 
     let mut bytes = [0; 16];
     bytes.copy_from_slice(&digest[..16]);
     TimelineOperationId::from_bytes(bytes)
-}
-
-#[allow(dead_code)]
-fn find_program_object(
-    store: &impl SaveStore,
-    id: ProgramArtifactId,
-) -> Result<CheckedObject, CoordinatorError> {
-    store
-        .list_objects()?
-        .into_iter()
-        .filter(|object| object.kind() == ObjectKind::Program)
-        .find_map(|object| {
-            load_program(object.bytes(), &ProgramLoadLimits::default())
-                .ok()
-                .filter(|program| program.artifact_id() == id)
-                .map(|_| object)
-        })
-        .ok_or(CoordinatorError::IncompatibleCommit)
 }
 
 #[allow(dead_code)]

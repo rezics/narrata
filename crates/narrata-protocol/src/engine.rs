@@ -21,10 +21,11 @@ use narrata_core::{
 };
 use narrata_store::{
     ArchivedBranchRef, ArchivedRefSnapshot, BranchId, BundleLimits, CatalogMutation, CatalogRefKey,
-    CheckedObject, CheckpointBundle, CommitCauseV1, CommitTransaction, CommitV1, InputRecord,
-    MemoryStore, RefKey, RefMutation, RefName, RefRevision, STORED_RECEIPT_SCHEMA_V1, SaveStore,
-    TimelineArchiveBundle, TimelineCatalogEventKind, TimelineCatalogEventV1, TimelineCoverage,
-    TimelineImportMapping, TimelineOperationId, TimelineSession, TransitionReceiptV1, load_commit,
+    CheckedObject, CheckpointBundle, CommitCauseV1, CommitOutcome, CommitTransaction, CommitV1,
+    InputRecord, MemoryStore, RefKey, RefMutation, RefName, RefRevision, STORED_RECEIPT_SCHEMA_V1,
+    SaveStore, TimelineArchiveBundle, TimelineCatalogEventKind, TimelineCatalogEventV1,
+    TimelineCoverage, TimelineImportMapping, TimelineOperationId, TimelineSession,
+    TransitionReceiptV1, load_commit,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -260,7 +261,7 @@ impl ProtocolEngine {
         let catalog_event = recording_started(execution, branch, commit)?;
         let catalog_event_id =
             narrata_core::TimelineCatalogEventId::from_bytes(*catalog_event.id().as_bytes());
-        store
+        let outcome = store
             .commit(CommitTransaction {
                 objects: vec![
                     program_object,
@@ -297,11 +298,11 @@ impl ProtocolEngine {
             state,
             pending: None,
             branch,
+            branch_revision: outcome_ref_revision(&outcome, &branch_key)?,
+            active_revision: outcome_ref_revision(&outcome, &active_key)?,
+            catalog_revision: outcome_catalog_revision(&outcome, execution)?,
             branch_key,
             active_key,
-            branch_revision: RefRevision::initial(),
-            active_revision: RefRevision::initial(),
-            catalog_revision: RefRevision::initial(),
             coverage,
         })?;
         Ok(response::Body::SessionCreated(dto::SessionCreated {
@@ -328,7 +329,7 @@ impl ProtocolEngine {
         let root = bundle.manifest.root;
         let mut store = MemoryStore::new();
         let target = protocol_active_key()?;
-        bundle
+        let active = bundle
             .import(&mut store, target.clone(), None, 0)
             .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
         let loaded = load_commit(&store, root, &program)
@@ -347,7 +348,7 @@ impl ProtocolEngine {
         let catalog_event = recording_started(execution, branch, root)?;
         let catalog_event_id =
             narrata_core::TimelineCatalogEventId::from_bytes(*catalog_event.id().as_bytes());
-        store
+        let outcome = store
             .commit(CommitTransaction {
                 objects: vec![catalog_event],
                 refs: vec![RefMutation {
@@ -372,11 +373,11 @@ impl ProtocolEngine {
             state: Arc::new(loaded.state),
             pending: None,
             branch,
+            branch_revision: outcome_ref_revision(&outcome, &branch_key)?,
             branch_key,
             active_key: target,
-            branch_revision: RefRevision::initial(),
-            active_revision: RefRevision::initial(),
-            catalog_revision: RefRevision::initial(),
+            active_revision: active.revision,
+            catalog_revision: outcome_catalog_revision(&outcome, execution)?,
             coverage,
         })?;
         Ok(response::Body::SessionCreated(dto::SessionCreated {
@@ -1056,6 +1057,32 @@ fn protocol_active_key() -> Result<RefKey, ProtocolDiagnostic> {
     let name =
         RefName::new("protocol").map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
     RefKey::active(name).map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))
+}
+
+fn outcome_ref_revision(
+    outcome: &CommitOutcome,
+    key: &RefKey,
+) -> Result<RefRevision, ProtocolDiagnostic> {
+    outcome
+        .refs
+        .get(key)
+        .and_then(|value| *value)
+        .map(|value| value.revision)
+        .ok_or_else(|| {
+            ProtocolDiagnostic::missing(format!("Ref {} outcome is missing", key.storage_key()))
+        })
+}
+
+fn outcome_catalog_revision(
+    outcome: &CommitOutcome,
+    execution: ExecutionId,
+) -> Result<RefRevision, ProtocolDiagnostic> {
+    outcome
+        .catalogs
+        .get(&CatalogRefKey::new(execution))
+        .and_then(|value| *value)
+        .map(|value| value.revision)
+        .ok_or_else(|| ProtocolDiagnostic::missing("Catalog outcome is missing"))
 }
 
 fn required_ref_revision(

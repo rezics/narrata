@@ -1,25 +1,25 @@
 use std::collections::BTreeMap;
 
 use narrata_core::{
-    CommitId, CompoundSaveManifestId, ExecutionId, InputId, InputPayloadDigest, ObjectId,
-    TimelineArchiveManifestId, TimelineCatalogEventId,
+    CommitId, CompoundSaveManifestId, EffectId, ExecutionId, InputId, InputPayloadDigest, ObjectId,
+    ProgramArtifactId, TimelineArchiveManifestId, TimelineCatalogEventId,
 };
+use narrata_storage::{Revision, StorageError};
 use thiserror::Error;
 
 use crate::{
     CatalogRefKey, CheckedObject, CompoundSaveRefKey, EffectClaim, EffectClaimResult,
     EffectLedgerEntry, EffectOutcomeRecord, EffectStoreError, LeaseId, LedgerFence, RefKey,
-    TimelineArchiveRefKey, TimelineCoverage, TimelineOperationId,
+    RefName, RefNamespace, TimelineArchiveRefKey, TimelineCoverage,
 };
 
+/// The backend revision at which a Ref, Catalog Head, archive or Compound Save was last written.
+///
+/// Revisions are store-wide and never reused (ADR 0014); only their equality is meaningful.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RefRevision(u64);
 
 impl RefRevision {
-    pub const fn initial() -> Self {
-        Self(1)
-    }
-
     pub const fn from_u64(value: u64) -> Option<Self> {
         if value == 0 { None } else { Some(Self(value)) }
     }
@@ -28,11 +28,12 @@ impl RefRevision {
         self.0
     }
 
-    pub fn next(self) -> Result<Self, StoreError> {
-        self.0
-            .checked_add(1)
-            .and_then(Self::from_u64)
-            .ok_or(StoreError::RevisionOverflow)
+    pub(crate) const fn from_revision(revision: Revision) -> Self {
+        Self(revision.get())
+    }
+
+    pub(crate) fn revision(self) -> Option<Revision> {
+        Revision::new(self.0)
     }
 }
 
@@ -113,30 +114,6 @@ pub struct InputIdConflict {
     pub proposed: InputRecord,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PutOutcome {
-    Inserted,
-    AlreadyPresent,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum FaultPoint {
-    SnapshotWrite,
-    ReceiptWrite,
-    CommitWrite,
-    EdgeIndexWrite,
-    RefCas,
-    CatalogEventWrite,
-    CatalogHeadCas,
-    ArchiveRefCas,
-    TransactionCommit,
-    GcMark,
-    GcSweep,
-    BundleImportRef,
-    LedgerClaim,
-    LedgerOutcome,
-}
-
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum StoreError {
     #[error("object {0} was not found")]
@@ -157,8 +134,6 @@ pub enum StoreError {
     CompoundSaveConflict(Box<CompoundSaveConflict>),
     #[error(transparent)]
     InputConflict(Box<InputIdConflict>),
-    #[error("Ref revision overflow")]
-    RevisionOverflow,
     #[error("configured store limit exceeded: {0}")]
     Limit(&'static str),
     #[error("storage is busy")]
@@ -169,8 +144,8 @@ pub enum StoreError {
     Io(String),
     #[error("storage database is corrupt: {0}")]
     CorruptStore(String),
-    #[error("injected transaction fault at {0:?}")]
-    InjectedFault(FaultPoint),
+    #[error(transparent)]
+    Storage(StorageError),
     #[error(transparent)]
     Effect(Box<EffectStoreError>),
 }
@@ -202,6 +177,20 @@ impl From<CompoundSaveConflict> for StoreError {
 impl From<InputIdConflict> for StoreError {
     fn from(value: InputIdConflict) -> Self {
         Self::InputConflict(Box::new(value))
+    }
+}
+
+impl From<StorageError> for StoreError {
+    fn from(value: StorageError) -> Self {
+        match value {
+            StorageError::Busy | StorageError::Conflict(_) => Self::Busy,
+            StorageError::Full => Self::Full,
+            StorageError::Io(message) => Self::Io(message),
+            StorageError::Corrupt(message) => Self::CorruptStore(message),
+            other @ (StorageError::Limit(_)
+            | StorageError::Invalid(_)
+            | StorageError::Format(_)) => Self::Storage(other),
+        }
     }
 }
 
@@ -258,7 +247,6 @@ pub struct CommitTransaction {
     pub pins: Vec<Pin>,
     pub remove_pins: Vec<(String, ObjectId)>,
     pub observed_at: u64,
-    pub import_transaction: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -307,48 +295,124 @@ pub struct IntegrityIssue {
     pub diagnostic: String,
 }
 
+/// One page of a scan, in key order. `more` is set when the scan stopped at its limit.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Page<T> {
+    pub items: Vec<T>,
+    pub more: bool,
+}
+
+/// Which Refs a scan visits.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RefScope {
+    All,
+    Namespace(RefNamespace),
+    Owner(RefNamespace, RefName),
+}
+
+/// Reads every page of a scan. `page` receives the key to resume after.
+pub fn scan_all<T, K>(
+    mut page: impl FnMut(Option<&K>) -> Result<Page<T>, StoreError>,
+    resume: impl Fn(&T) -> K,
+) -> Result<Vec<T>, StoreError> {
+    let mut items = Vec::new();
+    let mut after = None;
+    loop {
+        let next = page(after.as_ref())?;
+        let more = next.more;
+        after = next.items.last().map(&resume);
+        items.extend(next.items);
+        if !more || after.is_none() {
+            return Ok(items);
+        }
+    }
+}
+
+/// Persistent saves: immutable checked objects, revisioned roots and the Effect ledger.
+///
+/// Scans take a page limit, which the store lowers to what its backend reads at once.
 pub trait SaveStore {
     fn get_object(&self, id: ObjectId) -> Result<Option<CheckedObject>, StoreError>;
-    fn list_objects(&self) -> Result<Vec<CheckedObject>, StoreError>;
+    fn get_objects(&self, ids: &[ObjectId]) -> Result<Vec<Option<CheckedObject>>, StoreError>;
+    /// The stored Program object with this artifact identity.
+    fn find_program(&self, artifact: ProgramArtifactId) -> Result<Option<ObjectId>, StoreError>;
     fn read_ref(&self, key: &RefKey) -> Result<Option<RefValue>, StoreError>;
-    fn list_refs(&self) -> Result<Vec<(RefKey, RefValue)>, StoreError>;
+    fn scan_refs(
+        &self,
+        scope: &RefScope,
+        after: Option<&RefKey>,
+        limit: u32,
+    ) -> Result<Page<(RefKey, RefValue)>, StoreError>;
     fn read_catalog_head(
         &self,
         key: &CatalogRefKey,
     ) -> Result<Option<CatalogHeadRefValue>, StoreError>;
-    fn list_catalog_heads(&self) -> Result<Vec<(CatalogRefKey, CatalogHeadRefValue)>, StoreError>;
+    fn scan_catalog_heads(
+        &self,
+        after: Option<&CatalogRefKey>,
+        limit: u32,
+    ) -> Result<Page<(CatalogRefKey, CatalogHeadRefValue)>, StoreError>;
     fn read_timeline_archive(
         &self,
         key: &TimelineArchiveRefKey,
     ) -> Result<Option<TimelineArchiveRefValue>, StoreError>;
-    fn list_timeline_archives(
+    fn scan_timeline_archives(
         &self,
-    ) -> Result<Vec<(TimelineArchiveRefKey, TimelineArchiveRefValue)>, StoreError>;
+        timeline: Option<ExecutionId>,
+        after: Option<&TimelineArchiveRefKey>,
+        limit: u32,
+    ) -> Result<Page<(TimelineArchiveRefKey, TimelineArchiveRefValue)>, StoreError>;
     fn read_compound_save(
         &self,
         key: &CompoundSaveRefKey,
     ) -> Result<Option<CompoundSaveRefValue>, StoreError>;
-    fn list_compound_saves(
+    fn scan_compound_saves(
         &self,
-    ) -> Result<Vec<(CompoundSaveRefKey, CompoundSaveRefValue)>, StoreError>;
+        owner: Option<&RefName>,
+        after: Option<&CompoundSaveRefKey>,
+        limit: u32,
+    ) -> Result<Page<(CompoundSaveRefKey, CompoundSaveRefValue)>, StoreError>;
     fn read_input(
         &self,
         execution: ExecutionId,
         input: InputId,
     ) -> Result<Option<InputRecord>, StoreError>;
-    fn list_pins(&self) -> Result<Vec<Pin>, StoreError>;
+    fn scan_pins(
+        &self,
+        after: Option<&(String, ObjectId)>,
+        limit: u32,
+    ) -> Result<Page<Pin>, StoreError>;
     fn read_effect(
         &self,
         execution: ExecutionId,
-        effect: narrata_core::EffectId,
+        effect: EffectId,
     ) -> Result<Option<EffectLedgerEntry>, StoreError>;
-    fn list_effects(&self, execution: ExecutionId) -> Result<Vec<EffectLedgerEntry>, StoreError>;
+    fn scan_effects(
+        &self,
+        execution: ExecutionId,
+        after: Option<&EffectId>,
+        limit: u32,
+    ) -> Result<Page<EffectLedgerEntry>, StoreError>;
     fn current_ledger_fence(&self, execution: ExecutionId) -> Result<LedgerFence, StoreError>;
+    /// Commits whose parent is `parent`, by Commit ID.
+    fn child_commits(
+        &self,
+        parent: CommitId,
+        after: Option<&CommitId>,
+        limit: u32,
+    ) -> Result<Page<CommitId>, StoreError>;
+    /// Commits of one Execution, by turn and then Commit ID.
+    fn timeline_commits(
+        &self,
+        execution: ExecutionId,
+        after: Option<&(u64, CommitId)>,
+        limit: u32,
+    ) -> Result<Page<(u64, CommitId)>, StoreError>;
     fn claim_effect(&mut self, claim: EffectClaim) -> Result<EffectClaimResult, StoreError>;
     fn renew_effect_lease(
         &mut self,
         execution: ExecutionId,
-        effect: narrata_core::EffectId,
+        effect: EffectId,
         lease: LeaseId,
         now: u64,
         expires_at: u64,
@@ -360,99 +424,25 @@ pub trait SaveStore {
     fn mark_effect_compensated(
         &mut self,
         execution: ExecutionId,
-        original: narrata_core::EffectId,
-        by_effect: narrata_core::EffectId,
+        original: EffectId,
+        by_effect: EffectId,
     ) -> Result<EffectLedgerEntry, StoreError>;
     fn commit(&mut self, transaction: CommitTransaction) -> Result<CommitOutcome, StoreError>;
     fn collect(&mut self, policy: RetentionPolicy) -> Result<GcReport, StoreError>;
     fn integrity_scan(&self) -> Result<Vec<IntegrityIssue>, StoreError>;
 }
 
-pub(crate) fn check_expected_ref(
-    key: &RefKey,
-    expected: Option<RefRevision>,
-    actual: Option<RefValue>,
-    proposed: Option<CommitId>,
-) -> Result<(), StoreError> {
-    if actual.map(|value| value.revision) == expected {
-        Ok(())
-    } else {
-        Err(RefConflict {
-            key: key.storage_key(),
-            expected,
-            actual,
-            proposed,
-        }
-        .into())
-    }
+/// A whole store's domain state, for moving saves between layouts.
+#[derive(Clone, Debug, Default)]
+pub struct StoreContents {
+    /// Objects with the time they were last observed.
+    pub objects: Vec<(CheckedObject, u64)>,
+    pub refs: Vec<(RefKey, CommitId)>,
+    pub catalogs: Vec<(CatalogRefKey, TimelineCatalogEventId, TimelineCoverage)>,
+    pub archives: Vec<(TimelineArchiveRefKey, TimelineArchiveManifestId)>,
+    pub compound_saves: Vec<(CompoundSaveRefKey, CompoundSaveManifestId)>,
+    pub inputs: Vec<InputRecord>,
+    pub pins: Vec<Pin>,
+    pub effects: Vec<EffectLedgerEntry>,
+    pub ledger_fences: Vec<(ExecutionId, LedgerFence)>,
 }
-
-pub(crate) fn check_expected_catalog(
-    key: &CatalogRefKey,
-    expected: Option<RefRevision>,
-    actual: Option<CatalogHeadRefValue>,
-    proposed: Option<TimelineCatalogEventId>,
-) -> Result<(), StoreError> {
-    if actual.map(|value| value.revision) == expected {
-        Ok(())
-    } else {
-        Err(CatalogConflict {
-            key: key.storage_key(),
-            expected,
-            actual,
-            proposed,
-        }
-        .into())
-    }
-}
-
-pub(crate) fn check_expected_archive(
-    key: &TimelineArchiveRefKey,
-    expected: Option<RefRevision>,
-    actual: Option<TimelineArchiveRefValue>,
-    proposed: Option<TimelineArchiveManifestId>,
-) -> Result<(), StoreError> {
-    if actual.map(|value| value.revision) == expected {
-        Ok(())
-    } else {
-        Err(ArchiveConflict {
-            key: key.storage_key(),
-            expected,
-            actual,
-            proposed,
-        }
-        .into())
-    }
-}
-
-pub(crate) fn check_expected_compound_save(
-    key: &CompoundSaveRefKey,
-    expected: Option<RefRevision>,
-    actual: Option<CompoundSaveRefValue>,
-    proposed: Option<CompoundSaveManifestId>,
-) -> Result<(), StoreError> {
-    if actual.map(|value| value.revision) == expected {
-        Ok(())
-    } else {
-        Err(CompoundSaveConflict {
-            key: key.storage_key(),
-            expected,
-            actual,
-            proposed,
-        }
-        .into())
-    }
-}
-
-pub(crate) fn next_revision(current: Option<RefRevision>) -> Result<RefRevision, StoreError> {
-    current.map_or(Ok(RefRevision::initial()), RefRevision::next)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CatalogOperationRecord {
-    pub previous: Option<TimelineCatalogEventId>,
-    pub event: TimelineCatalogEventId,
-}
-
-pub(crate) type CatalogOperationIndex =
-    BTreeMap<(ExecutionId, TimelineOperationId), CatalogOperationRecord>;

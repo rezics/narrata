@@ -1,5 +1,8 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use narrata_core::{
     ExecutionId, InputId,
     program::{encode_program_artifact, load_program},
@@ -7,17 +10,17 @@ use narrata_core::{
     snapshot::state_digest,
 };
 use narrata_store::{
-    BranchId, InitialRecordingMode, MemoryStore, RefName, SessionCoordinator, inspect_timeline,
+    BranchId, InitialRecordingMode, RefName, SessionCoordinator, inspect_timeline,
     verify_receipt_replay,
 };
 use narrata_testkit::generator::hello_v0;
+use support::Backend;
 
-#[test]
-fn debugger_views_complete_timeline_and_replays_receipt() {
+fn debugger_views_complete_timeline_and_replays_receipt<B: Backend>() {
     let program = load_program(&encode_program_artifact(&hello_v0()), &Default::default()).unwrap();
     let execution = ExecutionId::from_u128(501);
     let mut coordinator = SessionCoordinator::create(
-        MemoryStore::new(),
+        B::store(),
         program.clone(),
         execution,
         RefName::new("debug-session").unwrap(),
@@ -49,3 +52,5 @@ fn debugger_views_complete_timeline_and_replays_receipt() {
     assert_eq!(verified.receipt, committed.receipt);
     assert_eq!(verified.next_state, state_digest(&committed.state));
 }
+
+backend_tests!(debugger_views_complete_timeline_and_replays_receipt,);

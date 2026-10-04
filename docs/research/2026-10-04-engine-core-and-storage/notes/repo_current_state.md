@@ -184,7 +184,7 @@ There **is** a real storage trait boundary (`SaveStore`) with a behavioural refe
   - `write_state` executes `DELETE FROM object_edges; … DELETE FROM objects;` and re-INSERTs **all** objects and edges.
   - Source: [lib.rs:278-357, 762-800](../../../../crates/narrata-store-sqlite/src/lib.rs)
 - **Edge recomputation:** for every Commit, it scans all Program objects and **fully decodes and validates each one** (`load_program`) to find the matching artifact. Without a match it fails with `InvalidGraph("Program edge")`. — [lib.rs:948-977](../../../../crates/narrata-store-sqlite/src/lib.rs)
-- `MemoryStore` uses `objects: BTreeMap<ObjectId, StoredObject>`. Its export form `MemoryStoreState` is `objects: Vec<(CheckedObject, u64)>`. — [crates/narrata-store/src/memory.rs:38-52](../../../../crates/narrata-store/src/memory.rs)
+- `MemoryStore` uses `objects: BTreeMap<ObjectId, StoredObject>`. Its export form `MemoryStoreState` is `objects: Vec<(CheckedObject, u64)>`. — `crates/narrata-store/src/memory.rs:38-52` (removed by ADR 0014; see commit `d116af9`)
 - ADR 0006 states the intent: "`MemoryStore` 是独立于 SQLite 表布局的行为参考；`SqliteStore` 在 `BEGIN IMMEDIATE` 的一致性视图中应用同一 checked transaction" (`MemoryStore` is a behavioural reference independent of the SQLite table layout; `SqliteStore` applies the same checked transaction inside a `BEGIN IMMEDIATE` consistent view). — [docs/adr/0006-stage-2-persistence-boundary.md](../../../adr/0006-stage-2-persistence-boundary.md)
 
 **Full-history walks (IMPL)**

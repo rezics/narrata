@@ -19,7 +19,6 @@ use narrata_store::{
     MigrationRegistry, ProgramRegistry, RefKey, RefName, RefRevision, apply_migration,
     dry_run_migration,
 };
-use narrata_store_sqlite::SqliteStore;
 use serde::Deserialize;
 
 use super::read_bytes;
@@ -89,7 +88,7 @@ fn execute(args: &[String], apply: bool) -> Result<(), String> {
         allow_effect_rekey: flags.switch("--confirm-effect-rekey"),
         allow_cross_barrier_recovery: flags.switch("--confirm-barrier"),
     };
-    let mut store = SqliteStore::open(store_path).map_err(|error| error.to_string())?;
+    let mut store = narrata_store_sqlite::open(store_path).map_err(|error| error.to_string())?;
     if apply {
         let owner = RefName::new(flags.required_one("--ref-owner")?.to_owned())
             .map_err(|error| error.to_string())?;

@@ -1,5 +1,8 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use std::sync::Arc;
 
 use narrata_core::{
@@ -9,10 +12,11 @@ use narrata_core::{
 use narrata_store::{
     BranchId, CompoundSaveRefKey, CoordinatorError, FederatedRestoreAvailability,
     FederatedSaveVerifier, HostSnapshotRef, HostSnapshotVerifier, HostTimelineEntry,
-    HostTimelineManifestV1, InitialRecordingMode, LedgerFence, MemoryStore, RefName, SaveStore,
-    SessionCoordinator, TimelineCoverage,
+    HostTimelineManifestV1, InitialRecordingMode, LedgerFence, RefName, SaveStore,
+    SessionCoordinator, Store, TimelineCoverage,
 };
 use narrata_testkit::generator::hello_v0;
+use support::Backend;
 
 struct ExactVerifier {
     digest: HostSnapshotDigest,
@@ -52,10 +56,10 @@ fn snapshot(reference: &str, digest: u8) -> HostSnapshotRef {
     .unwrap()
 }
 
-fn coordinator() -> SessionCoordinator<MemoryStore> {
+fn coordinator<B: Backend>() -> SessionCoordinator<Store<B::Inner>> {
     let program = load_program(&encode_program_artifact(&hello_v0()), &Default::default()).unwrap();
     SessionCoordinator::create(
-        MemoryStore::new(),
+        B::store(),
         Arc::clone(&program),
         ExecutionId::from_u128(20),
         RefName::new("federated-session").unwrap(),
@@ -66,9 +70,8 @@ fn coordinator() -> SessionCoordinator<MemoryStore> {
     .unwrap()
 }
 
-#[test]
-fn compound_save_validates_host_before_atomic_ref_publish() {
-    let mut coordinator = coordinator();
+fn compound_save_validates_host_before_atomic_ref_publish<B: Backend>() {
+    let mut coordinator = coordinator::<B>();
     let owner = RefName::new("player").unwrap();
     let slot = RefName::new("slot").unwrap();
     let key = CompoundSaveRefKey::new(owner.clone(), slot.clone());
@@ -170,9 +173,8 @@ fn compound_save_validates_host_before_atomic_ref_publish() {
     assert_eq!(coordinator.timeline(), before);
 }
 
-#[test]
-fn host_timeline_only_advertises_verified_joint_restore_points() {
-    let coordinator = coordinator();
+fn host_timeline_only_advertises_verified_joint_restore_points<B: Backend>() {
+    let coordinator = coordinator::<B>();
     let baseline = coordinator.timeline().cursor;
     let host = snapshot("baseline", 8);
     let manifest = HostTimelineManifestV1::checked(
@@ -205,3 +207,8 @@ fn host_timeline_only_advertises_verified_joint_restore_points() {
         FederatedRestoreAvailability::NarrativeOnly
     );
 }
+
+backend_tests!(
+    compound_save_validates_host_before_atomic_ref_publish,
+    host_timeline_only_advertises_verified_joint_restore_points,
+);

@@ -12,8 +12,8 @@ use narrata_core::{
 use thiserror::Error;
 
 use crate::{
-    CheckedObject, CommitCauseV1, CommitV1, RefKey, SaveStore, StoreError, TimelineCoverage,
-    TransitionReceiptV1,
+    CheckedObject, CommitCauseV1, CommitV1, RefKey, RefScope, SaveStore, StoreError,
+    TimelineCoverage, TransitionReceiptV1, scan_all,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,13 +38,23 @@ pub fn inspect_timeline(
     store: &impl SaveStore,
     execution: ExecutionId,
 ) -> Result<TimelineDebugView, StoreError> {
+    let indexed = scan_all(
+        |after| store.timeline_commits(execution, after, u32::MAX),
+        |entry| *entry,
+    )?;
+    let ids = indexed
+        .iter()
+        .map(|(_, commit)| ObjectId::from_bytes(*commit.as_bytes()))
+        .collect::<Vec<_>>();
     let mut nodes = Vec::new();
-    for object in store.list_objects()? {
+    for (id, object) in ids.iter().zip(store.get_objects(&ids)?) {
+        let object = object.ok_or(StoreError::MissingObject(*id))?;
         if object.kind() != ObjectKind::Commit {
-            continue;
+            return Err(StoreError::ObjectKind(*id));
         }
         let commit = CommitV1::decode(object.payload())
             .map_err(|error| StoreError::Corrupt(object.id(), error.to_string()))?;
+        // The index is a hint; its entries must name Commits of this Execution.
         if commit.execution == execution {
             nodes.push(TimelineDebugNode {
                 id: CommitId::from_bytes(*object.id().as_bytes()),
@@ -62,7 +72,11 @@ pub fn inspect_timeline(
     }
     nodes.sort_by_key(|node| (node.turn, node.id));
     let mut refs = Vec::new();
-    for (key, value) in store.list_refs()? {
+    let stored = scan_all(
+        |after| store.scan_refs(&RefScope::All, after, u32::MAX),
+        |(key, _)| key.clone(),
+    )?;
+    for (key, value) in stored {
         let object = store.get_object(ObjectId::from_bytes(*value.commit.as_bytes()))?;
         if object
             .and_then(|object| CommitV1::decode(object.payload()).ok())
@@ -154,9 +168,17 @@ pub fn verify_receipt_chain(
     {
         return Err(ReceiptVerificationError::Invalid("state digest"));
     }
+    let children = scan_all(
+        |after| store.child_commits(receipt.parent, after, u32::MAX),
+        |child| *child,
+    )?
+    .into_iter()
+    .map(|child| ObjectId::from_bytes(*child.as_bytes()))
+    .collect::<Vec<_>>();
     let matching_commits = store
-        .list_objects()?
+        .get_objects(&children)?
         .into_iter()
+        .flatten()
         .filter(|object| object.kind() == ObjectKind::Commit)
         .filter_map(|object| CommitV1::decode(object.payload()).ok())
         .filter(|commit| {

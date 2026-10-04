@@ -10,16 +10,19 @@ repository.workspace = true
 [dependencies]
 hex.workspace = true
 narrata-core = { path = "../narrata-core", version = "=0.1.0-alpha.1" }
+narrata-storage = { path = "../../packages/narrata/kernel/crates/narrata-storage", version = "=0.1.0-alpha.1" }
 sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 criterion = "0.7.0"
 proptest.workspace = true
+narrata-storage = { path = "../../packages/narrata/kernel/crates/narrata-storage", version = "=0.1.0-alpha.1", features = ["testing"] }
+narrata-storage-sqlite = { path = "../../packages/narrata/kernel/crates/narrata-storage-sqlite", version = "=0.1.0-alpha.1" }
 narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
-narrata-store-sqlite = { path = "../narrata-store-sqlite", version = "=0.1.0-alpha.1" }
 serde.workspace = true
 serde_json.workspace = true
+tempfile = "3.27.0"
 
 [[bench]]
 name = "persistence"

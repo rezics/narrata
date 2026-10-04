@@ -1,5 +1,8 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use std::{path::PathBuf, sync::Arc};
 
 use narrata_core::{
@@ -7,20 +10,18 @@ use narrata_core::{
     program::{encode_program_artifact, load_program},
     runtime::CheckedRuntimeInput,
 };
-use narrata_store::{
-    BranchId, InitialRecordingMode, MemoryStore, RefName, SaveStore, SessionCoordinator,
-};
+use narrata_store::{BranchId, InitialRecordingMode, RefName, SaveStore, SessionCoordinator};
 use narrata_testkit::generator::branch_call_choice_v0;
+use support::Backend;
 
-#[test]
-fn initial_and_normal_commit_bytes_match_golden_vectors() {
+fn initial_and_normal_commit_bytes_match_golden_vectors<B: Backend>() {
     let program = load_program(
         &encode_program_artifact(&branch_call_choice_v0()),
         &Default::default(),
     )
     .unwrap();
     let mut coordinator = SessionCoordinator::create(
-        MemoryStore::new(),
+        B::store(),
         Arc::clone(&program),
         ExecutionId::from_u128(1),
         RefName::new("session").unwrap(),
@@ -58,3 +59,5 @@ fn fixture_path(name: &str) -> PathBuf {
         .join("fixtures/codec")
         .join(name)
 }
+
+backend_tests!(initial_and_normal_commit_bytes_match_golden_vectors,);

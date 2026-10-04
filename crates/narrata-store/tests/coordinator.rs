@@ -1,18 +1,22 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use std::{collections::BTreeSet, sync::Arc};
 
 use narrata_core::{
-    ChoiceId, ExecutionId, InputId,
+    ExecutionId, InputId,
     program::{encode_program_artifact, load_program},
     runtime::{CheckedRuntimeInput, PendingInteractionV0},
 };
 use narrata_store::{
-    BranchId, CheckpointBundle, InitialRecordingMode, MemoryStore, RefKey, RefName, RefRevision,
-    SaveResult, SaveStore, SessionCoordinator, TimelineArchiveBundle, TimelineImportMapping,
+    BranchId, CheckpointBundle, InitialRecordingMode, RefKey, RefName, RefRevision, SaveResult,
+    SaveStore, SessionCoordinator, Store, TimelineArchiveBundle, TimelineImportMapping,
     TimelineOperationId,
 };
 use narrata_testkit::generator::branch_call_choice_v0;
+use support::{Backend, image};
 
 fn program() -> Arc<narrata_core::CheckedProgram> {
     load_program(
@@ -22,9 +26,9 @@ fn program() -> Arc<narrata_core::CheckedProgram> {
     .unwrap()
 }
 
-fn coordinator(recording: InitialRecordingMode) -> SessionCoordinator<MemoryStore> {
+fn coordinator<B: Backend>(recording: InitialRecordingMode) -> SessionCoordinator<Store<B::Inner>> {
     SessionCoordinator::create(
-        MemoryStore::new(),
+        B::store(),
         program(),
         ExecutionId::from_u128(1),
         RefName::new("session").unwrap(),
@@ -35,9 +39,8 @@ fn coordinator(recording: InitialRecordingMode) -> SessionCoordinator<MemoryStor
     .unwrap()
 }
 
-#[test]
-fn commit_rewind_replay_and_fork_preserve_both_futures() {
-    let mut coordinator = coordinator(InitialRecordingMode::Standard);
+fn commit_rewind_replay_and_fork_preserve_both_futures<B: Backend>() {
+    let mut coordinator = coordinator::<B>(InitialRecordingMode::Standard);
     let genesis = coordinator.timeline().cursor;
     let first = coordinator
         .dispatch(
@@ -93,9 +96,8 @@ fn commit_rewind_replay_and_fork_preserve_both_futures() {
     );
 }
 
-#[test]
-fn save_uses_cas_and_checkpoint_round_trips() {
-    let mut coordinator = coordinator(InitialRecordingMode::Standard);
+fn save_uses_cas_and_checkpoint_round_trips<B: Backend>() {
+    let mut coordinator = coordinator::<B>(InitialRecordingMode::Standard);
     let result = coordinator
         .dispatch(
             CheckedRuntimeInput::start(InputId::from_u128(1)),
@@ -133,7 +135,7 @@ fn save_uses_cas_and_checkpoint_round_trips() {
         CheckpointBundle::export(coordinator.store(), result.commit, &BTreeSet::new()).unwrap();
     let encoded = bundle.to_bytes().unwrap();
     let decoded = CheckpointBundle::from_bytes(&encoded, Default::default()).unwrap();
-    let mut imported = MemoryStore::new();
+    let mut imported = B::store();
     let target = RefKey::save(
         RefName::new("other").unwrap(),
         RefName::new("slot").unwrap(),
@@ -147,9 +149,8 @@ fn save_uses_cas_and_checkpoint_round_trips() {
     );
 }
 
-#[test]
-fn complete_timeline_archive_round_trips_catalog_and_session() {
-    let mut coordinator = coordinator(InitialRecordingMode::Complete);
+fn complete_timeline_archive_round_trips_catalog_and_session<B: Backend>() {
+    let mut coordinator = coordinator::<B>(InitialRecordingMode::Complete);
     let first = coordinator
         .dispatch(
             CheckedRuntimeInput::start(InputId::from_u128(1)),
@@ -204,7 +205,7 @@ fn complete_timeline_archive_round_trips_catalog_and_session() {
         .collect(),
         session_name: Some(RefName::new("imported-session").unwrap()),
     };
-    let mut imported = MemoryStore::new();
+    let mut imported = B::store();
     archive.import(&mut imported, mapping, 5).unwrap();
     assert!(
         imported
@@ -216,9 +217,8 @@ fn complete_timeline_archive_round_trips_catalog_and_session() {
     );
 }
 
-#[test]
-fn complete_save_delete_is_a_tombstone_until_catalog_root_is_removed() {
-    let mut coordinator = coordinator(InitialRecordingMode::Complete);
+fn complete_save_delete_is_a_tombstone_until_catalog_root_is_removed<B: Backend>() {
+    let mut coordinator = coordinator::<B>(InitialRecordingMode::Complete);
     coordinator
         .dispatch(
             CheckedRuntimeInput::start(InputId::from_u128(1)),
@@ -249,7 +249,7 @@ fn complete_save_delete_is_a_tombstone_until_catalog_root_is_removed() {
             4,
         )
         .unwrap();
-    let before = coordinator.store().list_objects().unwrap().len();
+    let before = image(coordinator.store().backend());
     let report = coordinator
         .store_mut()
         .collect(narrata_store::RetentionPolicy {
@@ -258,13 +258,39 @@ fn complete_save_delete_is_a_tombstone_until_catalog_root_is_removed() {
             dry_run: false,
         })
         .unwrap();
-    assert_eq!(coordinator.store().list_objects().unwrap().len(), before);
+    assert_eq!(image(coordinator.store().backend()).objects, before.objects);
     assert!(report.removed.values().all(|value| value.objects == 0));
 }
 
-#[test]
-fn revision_is_opaque_and_nonzero() {
+fn revision_is_opaque_and_nonzero<B: Backend>() {
     assert_eq!(RefRevision::from_u64(0), None);
-    assert_eq!(RefRevision::initial().get(), 1);
-    let _ = ChoiceId::from_u128(1);
+    let mut coordinator = coordinator::<B>(InitialRecordingMode::Standard);
+    let active = RefKey::active(RefName::new("session").unwrap()).unwrap();
+    let revision = |coordinator: &SessionCoordinator<Store<B::Inner>>| {
+        coordinator
+            .store()
+            .read_ref(&active)
+            .unwrap()
+            .unwrap()
+            .revision
+    };
+    let created = revision(&coordinator);
+    assert_ne!(created.get(), 0);
+    assert_eq!(RefRevision::from_u64(created.get()), Some(created));
+    coordinator
+        .dispatch(
+            CheckedRuntimeInput::start(InputId::from_u128(1)),
+            Default::default(),
+            2,
+        )
+        .unwrap();
+    assert_ne!(revision(&coordinator), created);
 }
+
+backend_tests!(
+    commit_rewind_replay_and_fork_preserve_both_futures,
+    save_uses_cas_and_checkpoint_round_trips,
+    complete_timeline_archive_round_trips_catalog_and_session,
+    complete_save_delete_is_a_tombstone_until_catalog_root_is_removed,
+    revision_is_opaque_and_nonzero,
+);

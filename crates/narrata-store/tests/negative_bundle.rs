@@ -1,5 +1,8 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use std::{collections::BTreeSet, sync::Arc};
 
 use narrata_core::{
@@ -8,19 +11,20 @@ use narrata_core::{
     runtime::CheckedRuntimeInput,
 };
 use narrata_store::{
-    BranchId, BundleError, BundleLimits, CheckpointBundle, InitialRecordingMode, MemoryStore,
-    RefName, SessionCoordinator,
+    BranchId, BundleError, BundleLimits, CheckpointBundle, InitialRecordingMode, RefName,
+    SessionCoordinator,
 };
 use narrata_testkit::generator::branch_call_choice_v0;
+use support::Backend;
 
-fn bytes() -> Vec<u8> {
+fn bytes<B: Backend>() -> Vec<u8> {
     let program = load_program(
         &encode_program_artifact(&branch_call_choice_v0()),
         &Default::default(),
     )
     .unwrap();
     let mut coordinator = SessionCoordinator::create(
-        MemoryStore::new(),
+        B::store(),
         Arc::clone(&program),
         ExecutionId::from_u128(1),
         RefName::new("session").unwrap(),
@@ -42,9 +46,8 @@ fn bytes() -> Vec<u8> {
         .unwrap()
 }
 
-#[test]
-fn truncation_hash_corruption_wrong_tag_and_limits_are_rejected() {
-    let valid = bytes();
+fn truncation_hash_corruption_wrong_tag_and_limits_are_rejected<B: Backend>() {
+    let valid = bytes::<B>();
     for length in [0, 1, 7, 8, valid.len() / 2, valid.len() - 1] {
         assert!(CheckpointBundle::from_bytes(&valid[..length], Default::default()).is_err());
     }
@@ -67,3 +70,5 @@ fn truncation_hash_corruption_wrong_tag_and_limits_are_rejected() {
         Err(BundleError::Limit("total bytes"))
     ));
 }
+
+backend_tests!(truncation_hash_corruption_wrong_tag_and_limits_are_rejected,);

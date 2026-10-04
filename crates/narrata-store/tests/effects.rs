@@ -1,5 +1,8 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use std::sync::Arc;
 
 use narrata_core::{
@@ -8,13 +11,18 @@ use narrata_core::{
     program::{encode_program_artifact, load_program},
     runtime::{CheckedRuntimeInput, DraftResult},
 };
+use narrata_storage::{
+    StorageBackend, StorageError,
+    testing::{Fault, FaultInjecting, FaultPlan, Primitive, Trigger},
+};
 use narrata_store::{
     BranchId, CommitTransaction, CoordinatorError, EffectClaim, EffectClaimResult, EffectOutcome,
-    EffectOutcomeRecord, EffectStoreError, FaultPoint, InitialRecordingMode, LeaseId, LedgerFence,
-    LedgerStatus, MemoryStore, RecordedEffectResponseV1, RefMutation, RefName, RetentionPolicy,
-    SaveStore, SessionCoordinator, StoreError,
+    EffectOutcomeRecord, EffectStoreError, InitialRecordingMode, LeaseId, LedgerFence,
+    LedgerStatus, RecordedEffectResponseV1, RefMutation, RefName, RetentionPolicy, SaveStore,
+    SessionCoordinator, Store, StoreError,
 };
 use narrata_testkit::generator::{barrier_command_v0, recorded_query_v0, scene_reconcile_v0};
+use support::{Backend, assert_atomic, effects, refs};
 
 fn checked_query_program() -> Arc<narrata_core::CheckedProgram> {
     load_program(
@@ -24,12 +32,13 @@ fn checked_query_program() -> Arc<narrata_core::CheckedProgram> {
     .unwrap()
 }
 
-fn coordinator(
+fn coordinator<S: SaveStore>(
+    store: S,
     program: Arc<narrata_core::CheckedProgram>,
     execution: u128,
-) -> SessionCoordinator<MemoryStore> {
+) -> SessionCoordinator<S> {
     SessionCoordinator::create_with_capabilities(
-        MemoryStore::new(),
+        store,
         program,
         ExecutionId::from_u128(execution),
         RefName::new(format!("effect-session-{execution}")).unwrap(),
@@ -41,7 +50,9 @@ fn coordinator(
     .unwrap()
 }
 
-fn dispatch_pending(coordinator: &mut SessionCoordinator<MemoryStore>) -> narrata_core::EffectId {
+fn dispatch_pending<S: SaveStore>(
+    coordinator: &mut SessionCoordinator<S>,
+) -> narrata_core::EffectId {
     let committed = coordinator
         .dispatch(
             CheckedRuntimeInput::start(InputId::from_u128(1)),
@@ -65,11 +76,10 @@ fn dispatch_pending(coordinator: &mut SessionCoordinator<MemoryStore>) -> narrat
     request.id
 }
 
-#[test]
-fn required_capability_is_negotiated_before_execution() {
+fn required_capability_is_negotiated_before_execution<B: Backend>() {
     let program = checked_query_program();
     let result = SessionCoordinator::create(
-        MemoryStore::new(),
+        B::store(),
         program,
         ExecutionId::from_u128(1),
         RefName::new("missing-capability").unwrap(),
@@ -83,15 +93,14 @@ fn required_capability_is_negotiated_before_execution() {
     ));
 }
 
-#[test]
-fn recorded_query_survives_crash_and_replay_without_redispatch() {
+fn recorded_query_survives_crash_and_replay_without_redispatch<B: Backend>() {
     let program = checked_query_program();
     let host = builtin_host_capabilities().unwrap();
     let execution = ExecutionId::from_u128(2);
     let session = RefName::new("query-crash").unwrap();
     let branch = BranchId::from_u128(1);
     let mut coordinator = SessionCoordinator::create_with_capabilities(
-        MemoryStore::new(),
+        B::store(),
         Arc::clone(&program),
         execution,
         session.clone(),
@@ -148,7 +157,7 @@ fn recorded_query_survives_crash_and_replay_without_redispatch() {
         .unwrap()
         .unwrap();
     assert!(replay.reused);
-    assert_eq!(recovered.store().list_effects(execution).unwrap().len(), 1);
+    assert_eq!(effects(recovered.store(), execution).len(), 1);
     assert_eq!(
         recovered
             .store()
@@ -156,13 +165,12 @@ fn recorded_query_survives_crash_and_replay_without_redispatch() {
             .unwrap()
             .unwrap()
             .request_digest,
-        recovered.store().list_effects(execution).unwrap()[0].request_digest
+        effects(recovered.store(), execution)[0].request_digest
     );
 }
 
-#[test]
-fn leases_expire_and_request_identity_cannot_be_rebound() {
-    let mut coordinator = coordinator(checked_query_program(), 3);
+fn leases_expire_and_request_identity_cannot_be_rebound<B: Backend>() {
+    let mut coordinator = coordinator(B::store(), checked_query_program(), 3);
     dispatch_pending(&mut coordinator);
     let first = LeaseId::from_u128(1);
     let second = LeaseId::from_u128(2);
@@ -210,10 +218,9 @@ fn leases_expire_and_request_identity_cannot_be_rebound() {
     ));
 }
 
-#[test]
-fn unknown_outcome_stops_catchup_and_all_other_input() {
+fn unknown_outcome_stops_catchup_and_all_other_input<B: Backend>() {
     let execution = ExecutionId::from_u128(4);
-    let mut coordinator = coordinator(checked_query_program(), 4);
+    let mut coordinator = coordinator(B::store(), checked_query_program(), 4);
     dispatch_pending(&mut coordinator);
     let lease = LeaseId::from_u128(1);
     coordinator.claim_pending_effect(lease, 2, 20).unwrap();
@@ -238,14 +245,13 @@ fn unknown_outcome_stops_catchup_and_all_other_input() {
     ));
 }
 
-#[test]
-fn completed_barrier_blocks_rewind_before_cursor_mutation() {
+fn completed_barrier_blocks_rewind_before_cursor_mutation<B: Backend>() {
     let program = load_program(
         &encode_program_artifact(&barrier_command_v0().unwrap()),
         &Default::default(),
     )
     .unwrap();
-    let mut coordinator = coordinator(program, 5);
+    let mut coordinator = coordinator(B::store(), program, 5);
     let genesis = coordinator.timeline().cursor;
     dispatch_pending(&mut coordinator);
     let lease = LeaseId::from_u128(1);
@@ -268,30 +274,47 @@ fn completed_barrier_blocks_rewind_before_cursor_mutation() {
     );
 }
 
-#[test]
-fn ledger_fault_windows_are_atomic_and_recoverable() {
+fn ledger_fault_windows_are_atomic_and_recoverable<B: Backend>() {
     let execution = ExecutionId::from_u128(6);
-    let mut coordinator = coordinator(checked_query_program(), 6);
-    dispatch_pending(&mut coordinator);
     let lease = LeaseId::from_u128(1);
-
-    coordinator
-        .store_mut()
-        .inject_fault(Some(FaultPoint::LedgerClaim));
-    assert!(coordinator.claim_pending_effect(lease, 2, 20).is_err());
-    assert!(
+    let pending = || {
+        let mut coordinator = coordinator(B::faulty(), checked_query_program(), 6);
+        dispatch_pending(&mut coordinator);
         coordinator
-            .store()
-            .list_effects(execution)
-            .unwrap()
-            .is_empty()
-    );
-    coordinator.store_mut().inject_fault(None);
-    coordinator.claim_pending_effect(lease, 2, 20).unwrap();
+    };
+    let claimed = || {
+        let mut coordinator = pending();
+        coordinator.claim_pending_effect(lease, 2, 20).unwrap();
+        coordinator
+    };
+    let completed = || {
+        let mut coordinator = claimed();
+        coordinator
+            .complete_pending_effect(lease, Value::I64(11), 3)
+            .unwrap();
+        coordinator
+    };
+    assert_atomic(pending, faulty_store, |coordinator| {
+        coordinator.claim_pending_effect(lease, 2, 20)
+    });
+    assert_atomic(claimed, faulty_store, |coordinator| {
+        coordinator.complete_pending_effect(lease, Value::I64(11), 3)
+    });
+    assert_atomic(completed, faulty_store, |coordinator| {
+        coordinator.recover_pending_effect(Default::default(), 5)
+    });
 
+    // A failed outcome write leaves the claim in place, and the same call succeeds once the
+    // backend recovers.
+    let mut coordinator = claimed();
+    let fail_writes = FaultPlan::new().at(
+        Trigger::Nth(Primitive::Apply, 1),
+        Fault::Before(StorageError::Io("injected".to_owned())),
+    );
     coordinator
         .store_mut()
-        .inject_fault(Some(FaultPoint::LedgerOutcome));
+        .backend_mut()
+        .set_plan(fail_writes.clone());
     assert!(
         coordinator
             .complete_pending_effect(lease, Value::I64(11), 3)
@@ -302,24 +325,28 @@ fn ledger_fault_windows_are_atomic_and_recoverable() {
         LedgerFence::zero()
     );
     assert!(matches!(
-        coordinator.store().list_effects(execution).unwrap()[0].status,
+        effects(coordinator.store(), execution)[0].status,
         LedgerStatus::Claimed { .. }
     ));
-    coordinator.store_mut().inject_fault(None);
+    coordinator
+        .store_mut()
+        .backend_mut()
+        .set_plan(FaultPlan::new());
     coordinator
         .complete_pending_effect(lease, Value::I64(11), 4)
         .unwrap();
 
-    coordinator
-        .store_mut()
-        .inject_fault(Some(FaultPoint::CommitWrite));
+    coordinator.store_mut().backend_mut().set_plan(fail_writes);
     assert!(
         coordinator
             .recover_pending_effect(Default::default(), 5)
             .is_err()
     );
     assert!(coordinator.state().pending_effect().is_some());
-    coordinator.store_mut().inject_fault(None);
+    coordinator
+        .store_mut()
+        .backend_mut()
+        .set_plan(FaultPlan::new());
     assert!(
         coordinator
             .recover_pending_effect(Default::default(), 6)
@@ -328,15 +355,20 @@ fn ledger_fault_windows_are_atomic_and_recoverable() {
     );
 }
 
-#[test]
-fn scene_is_reconciled_from_one_committed_snapshot() {
+fn faulty_store<B: StorageBackend>(
+    coordinator: &mut SessionCoordinator<Store<FaultInjecting<B>>>,
+) -> &mut Store<FaultInjecting<B>> {
+    coordinator.store_mut()
+}
+
+fn scene_is_reconciled_from_one_committed_snapshot<B: Backend>() {
     let program = load_program(
         &encode_program_artifact(&scene_reconcile_v0().unwrap()),
         &Default::default(),
     )
     .unwrap();
     let mut coordinator = SessionCoordinator::create(
-        MemoryStore::new(),
+        B::store(),
         program,
         ExecutionId::from_u128(7),
         RefName::new("scene-snapshot").unwrap(),
@@ -360,10 +392,9 @@ fn scene_is_reconciled_from_one_committed_snapshot() {
     assert_eq!(restored.state.scene, committed.reconcile_scene.target);
 }
 
-#[test]
-fn compensation_preserves_the_original_fact_and_links_a_new_effect() {
+fn compensation_preserves_the_original_fact_and_links_a_new_effect<B: Backend>() {
     let execution = ExecutionId::from_u128(8);
-    let coordinator = coordinator(checked_query_program(), 8);
+    let coordinator = coordinator(B::store(), checked_query_program(), 8);
     let origin_commit = coordinator.timeline().cursor;
     let mut store = coordinator.into_store();
     let command = CapabilityId::new("host.command").unwrap();
@@ -447,13 +478,12 @@ fn compensation_preserves_the_original_fact_and_links_a_new_effect() {
             && by_effect == compensator
             && compensation_fence == LedgerFence::from_u64(2)
     ));
-    assert_eq!(store.list_effects(execution).unwrap().len(), 2);
+    assert_eq!(effects(&store, execution).len(), 2);
 }
 
-#[test]
-fn ledger_origin_and_response_remain_gc_roots_without_timeline_refs() {
+fn ledger_origin_and_response_remain_gc_roots_without_timeline_refs<B: Backend>() {
     let execution = ExecutionId::from_u128(9);
-    let mut coordinator = coordinator(checked_query_program(), 9);
+    let mut coordinator = coordinator(B::store(), checked_query_program(), 9);
     let effect = dispatch_pending(&mut coordinator);
     let origin = coordinator.timeline().cursor;
     let lease = LeaseId::from_u128(1);
@@ -463,7 +493,7 @@ fn ledger_origin_and_response_remain_gc_roots_without_timeline_refs() {
         .unwrap();
     let response = completed.status.response().unwrap();
     let mut store = coordinator.into_store();
-    let refs = store.list_refs().unwrap();
+    let refs = refs(&store);
     store
         .commit(CommitTransaction {
             refs: refs
@@ -494,3 +524,15 @@ fn ledger_origin_and_response_remain_gc_roots_without_timeline_refs() {
     assert!(store.get_object(response).unwrap().is_some());
     assert!(store.read_effect(execution, effect).unwrap().is_some());
 }
+
+backend_tests!(
+    required_capability_is_negotiated_before_execution,
+    recorded_query_survives_crash_and_replay_without_redispatch,
+    leases_expire_and_request_identity_cannot_be_rebound,
+    unknown_outcome_stops_catchup_and_all_other_input,
+    completed_barrier_blocks_rewind_before_cursor_mutation,
+    ledger_fault_windows_are_atomic_and_recoverable,
+    scene_is_reconciled_from_one_committed_snapshot,
+    compensation_preserves_the_original_fact_and_links_a_new_effect,
+    ledger_origin_and_response_remain_gc_roots_without_timeline_refs,
+);

@@ -1,9 +1,7 @@
 use std::{collections::BTreeMap, str::FromStr};
 
-use narrata_core::{CommitId, ExecutionId, codec::ObjectKind, program::load_program};
-use narrata_store::{
-    BranchId, CommitCauseV1, CommitV1, RefName, SaveStore, SessionCoordinator, TimelineOperationId,
-};
+use narrata_core::{ExecutionId, program::load_program};
+use narrata_store::{BranchId, RefName, SessionCoordinator, TimelineOperationId, inspect_timeline};
 use narrata_store_sqlite::SqliteStore;
 
 use super::read_bytes;
@@ -22,35 +20,18 @@ pub(crate) fn run(command: &str, args: &[String]) -> Result<(), String> {
 fn log(args: &[String]) -> Result<(), String> {
     let (path, flags) = parse(args)?;
     let execution = parse_execution(required(&flags, "--execution")?)?;
-    let store = SqliteStore::open(path).map_err(|error| error.to_string())?;
-    let mut commits = store
-        .list_objects()
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .filter(|object| object.kind() == ObjectKind::Commit)
-        .filter_map(|object| {
-            CommitV1::decode(object.payload())
-                .ok()
-                .filter(|commit| commit.execution == execution)
-                .map(|commit| (CommitId::from_bytes(*object.id().as_bytes()), commit))
-        })
-        .collect::<Vec<_>>();
-    commits.sort_by_key(|(id, commit)| (commit.turn, *id));
-    for (id, commit) in commits {
-        let cause = match commit.cause {
-            CommitCauseV1::Genesis => "genesis",
-            CommitCauseV1::RuntimeTransition(_) => "transition",
-            CommitCauseV1::Migration(_) => "migration",
-        };
-        let parent = commit
+    let store = narrata_store_sqlite::open(path).map_err(|error| error.to_string())?;
+    let view = inspect_timeline(&store, execution).map_err(|error| error.to_string())?;
+    for node in view.nodes {
+        let parent = node
             .parent
             .map_or_else(|| "-".to_owned(), |value| short(&value.to_string()));
         println!(
             "turn={} commit={} parent={} cause={}",
-            commit.turn.0,
-            short(&id.to_string()),
+            node.turn,
+            short(&node.id.to_string()),
             parent,
-            cause
+            node.cause
         );
     }
     Ok(())
@@ -127,7 +108,7 @@ fn open(
     let bytes = read_bytes(required(flags, "--program")?)?;
     let program = load_program(&bytes, &Default::default()).map_err(|error| error.to_string())?;
     SessionCoordinator::open(
-        SqliteStore::open(path).map_err(|error| error.to_string())?,
+        narrata_store_sqlite::open(path).map_err(|error| error.to_string())?,
         program,
         execution,
         session,

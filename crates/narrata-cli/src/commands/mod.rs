@@ -3,6 +3,7 @@ mod inspect;
 mod migrate;
 mod replay;
 mod run;
+mod store;
 mod timeline;
 mod validate;
 
@@ -23,12 +24,14 @@ pub(crate) fn run(args: Vec<String>) -> Result<(), String> {
         [command, rest @ ..] if command == "conformance" => conformance::directory(rest),
         [group, command, rest @ ..] if group == "timeline" => timeline::run(command, rest),
         [group, command, rest @ ..] if group == "migrate" => migrate::run(command, rest),
+        [group, command, rest @ ..] if group == "store" => store::run(command, rest),
         _ => Err(usage()),
     }
 }
 
 fn usage() -> String {
-    "usage:\n  narrata program validate <artifact>\n  narrata program inspect <artifact> [--json]\n  narrata run <artifact> --execution <execution-id> --inputs <trace.json> [--trace] [--json]\n  narrata snapshot inspect <snapshot> --program <artifact>\n  narrata replay <fixture.json>\n  narrata conformance <fixture-directory>\n  narrata timeline log <store> --execution <execution-id>\n  narrata timeline rewind|redo <store> --program <artifact> --execution <id> --session <name> --branch <id> --steps <n>\n  narrata timeline fork <store> --program <artifact> --execution <id> --session <name> --branch <selected> --new-branch <id> --operation <id>\n  narrata timeline bookmark <store> --program <artifact> --execution <id> --session <name> --branch <id> --owner <name> --name <name> --operation <id>\n  narrata migrate inspect <source-program> <target-program> --descriptor <migration.json> [--path <id,...>]\n  narrata migrate dry-run|apply <store> --source <program> --target <program> --descriptor <migration.json> --commit <id> [--program <intermediate>]".to_owned()
+    "usage:\n  narrata program validate <artifact>\n  narrata program inspect <artifact> [--json]\n  narrata run <artifact> --execution <execution-id> --inputs <trace.json> [--trace] [--json]\n  narrata snapshot inspect <snapshot> --program <artifact>\n  narrata replay <fixture.json>\n  narrata conformance <fixture-directory>\n  narrata timeline log <store> --execution <execution-id>\n  narrata timeline rewind|redo <store> --program <artifact> --execution <id> --session <name> --branch <id> --steps <n>\n  narrata timeline fork <store> --program <artifact> --execution <id> --session <name> --branch <selected> --new-branch <id> --operation <id>\n  narrata timeline bookmark <store> --program <artifact> --execution <id> --session <name> --branch <id> --owner <name> --name <name> --operation <id>\n  narrata migrate inspect <source-program> <target-program> --descriptor <migration.json> [--path <id,...>]\n  narrata migrate dry-run|apply <store> --source <program> --target <program> --descriptor <migration.json> --commit <id> [--program <intermediate>]
+  narrata store migrate-v2 <schema-v2-store> <new-store>".to_owned()
 }
 
 pub(crate) fn read_bytes(path: &str) -> Result<Vec<u8>, String> {

@@ -1,5 +1,8 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use std::sync::Arc;
 
 use narrata_core::{
@@ -8,20 +11,20 @@ use narrata_core::{
     runtime::{CheckedRuntimeInput, DraftResult},
 };
 use narrata_store::{
-    BranchId, EffectClaimResult, InitialRecordingMode, LeaseId, MemoryStore, RefName, SaveStore,
+    BranchId, EffectClaimResult, InitialRecordingMode, LeaseId, RefName, SaveStore,
     SessionCoordinator, TransitionReceiptV1,
 };
 use narrata_testkit::generator::statechart_parallel_history_v0;
+use support::Backend;
 
-#[test]
-fn statechart_effects_commit_before_dispatch_and_rewind_exactly() {
+fn statechart_effects_commit_before_dispatch_and_rewind_exactly<B: Backend>() {
     let program = load_program(
         &encode_program_artifact(&statechart_parallel_history_v0().unwrap()),
         &Default::default(),
     )
     .unwrap();
     let mut coordinator = SessionCoordinator::create_with_capabilities(
-        MemoryStore::new(),
+        B::store(),
         Arc::clone(&program),
         ExecutionId::from_u128(700),
         RefName::new("statechart-session").unwrap(),
@@ -106,3 +109,5 @@ fn statechart_effects_commit_before_dispatch_and_rewind_exactly() {
     assert_eq!(replay.commit, pause.commit);
     assert_eq!(replay.state, pause.state);
 }
+
+backend_tests!(statechart_effects_commit_before_dispatch_and_rewind_exactly,);

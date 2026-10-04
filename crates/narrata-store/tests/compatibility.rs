@@ -1,5 +1,8 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
+#[macro_use]
+mod support;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
@@ -18,10 +21,11 @@ use narrata_core::{
     snapshot::restore_snapshot,
 };
 use narrata_store::{
-    BundleLimits, CheckedObject, CheckpointBundle, CommitV1, MemoryStore, RefKey, RefName,
+    BundleLimits, CheckedObject, CheckpointBundle, CommitV1, RefKey, RefName,
     TimelineArchiveBundle, TransitionReceiptV1, load_commit,
 };
 use serde::Deserialize;
+use support::Backend;
 
 #[derive(Deserialize)]
 struct Manifest {
@@ -42,8 +46,7 @@ struct Expected {
     text: String,
 }
 
-#[test]
-fn frozen_stage5_corpus_loads_imports_and_continues() {
+fn frozen_stage5_corpus_loads_imports_and_continues<B: Backend>() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("fixtures/compat/stage5-v0");
@@ -100,7 +103,7 @@ fn frozen_stage5_corpus_loads_imports_and_continues() {
         checkpoint.manifest.root,
         CommitId::from_str(&manifest.commit_id).unwrap()
     );
-    let mut store = MemoryStore::new();
+    let mut store = B::store();
     let active = RefKey::active(RefName::new("compat-loaded").unwrap()).unwrap();
     checkpoint.import(&mut store, active, None, 0).unwrap();
     let loaded = load_commit(&store, commit_object.commit_id().unwrap(), &program).unwrap();
@@ -143,3 +146,5 @@ fn frozen_stage5_corpus_loads_imports_and_continues() {
             .contains(&ObjectId::from_bytes(*commit_object.id().as_bytes()))
     );
 }
+
+backend_tests!(frozen_stage5_corpus_loads_imports_and_continues,);

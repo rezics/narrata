@@ -1,6 +1,6 @@
 [package]
 name = "narrata-store-sqlite"
-description = "Crash-safe SQLite SaveStore adapter for Narrata"
+description = "SQLite save stores for Narrata: the save engine over the row-level SQLite backend"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,14 +9,16 @@ repository.workspace = true
 
 [dependencies]
 narrata-core = { path = "../narrata-core", version = "=0.1.0-alpha.1" }
+narrata-storage = { path = "../../packages/narrata/kernel/crates/narrata-storage", version = "=0.1.0-alpha.1" }
+narrata-storage-sqlite = { path = "../../packages/narrata/kernel/crates/narrata-storage-sqlite", version = "=0.1.0-alpha.1" }
 narrata-store = { path = "../narrata-store", version = "=0.1.0-alpha.1" }
 rusqlite.workspace = true
-thiserror.workspace = true
 
 [dev-dependencies]
 hex.workspace = true
 narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
 serde_json.workspace = true
+tempfile = "3.27.0"
 
 [lints]
 workspace = true

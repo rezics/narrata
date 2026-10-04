@@ -60,6 +60,25 @@ impl CheckedObject {
         })
     }
 
+    /// For bytes whose envelope was inspected and whose identity was recomputed by the caller.
+    pub(crate) const fn from_verified(
+        id: ObjectId,
+        kind: ObjectKind,
+        schema: u16,
+        bytes: Arc<[u8]>,
+    ) -> Self {
+        Self {
+            id,
+            kind,
+            schema,
+            bytes,
+        }
+    }
+
+    pub(crate) fn shared_bytes(&self) -> Arc<[u8]> {
+        Arc::clone(&self.bytes)
+    }
+
     pub const fn id(&self) -> ObjectId {
         self.id
     }
