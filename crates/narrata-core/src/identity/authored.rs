@@ -1,41 +1,4 @@
-use std::{fmt, str::FromStr};
-
-use super::{IdParseError, text};
-
-macro_rules! authored_id {
-    ($name:ident, $prefix:literal) => {
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub struct $name([u8; 16]);
-
-        impl $name {
-            pub const fn from_bytes(bytes: [u8; 16]) -> Self {
-                Self(bytes)
-            }
-
-            pub const fn from_u128(value: u128) -> Self {
-                Self(value.to_be_bytes())
-            }
-
-            pub const fn as_bytes(&self) -> &[u8; 16] {
-                &self.0
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(formatter, concat!($prefix, "{}"), hex::encode(self.0))
-            }
-        }
-
-        impl FromStr for $name {
-            type Err = IdParseError;
-
-            fn from_str(input: &str) -> Result<Self, Self::Err> {
-                text::parse(input, $prefix).map(Self)
-            }
-        }
-    };
-}
+use narrata_kernel::authored_id;
 
 authored_id!(ProgramId, "program:");
 authored_id!(ExecutionId, "execution:");

@@ -6,7 +6,6 @@ use narrata_core::{
     codec::{ObjectKind, decode_envelope, encode_envelope},
     limits::DecodeLimits,
 };
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -120,15 +119,11 @@ impl CheckedObject {
 }
 
 pub fn object_id(kind: ObjectKind, schema: u16, canonical_payload: &[u8]) -> ObjectId {
-    let mut hasher = Sha256::new();
-    hasher.update(b"narrata-object\0");
-    hasher.update(kind.code().to_be_bytes());
-    hasher.update(schema.to_be_bytes());
-    hasher.update(canonical_payload);
-    let digest = hasher.finalize();
-    let mut bytes = [0; 32];
-    bytes.copy_from_slice(&digest);
-    ObjectId::from_bytes(bytes)
+    ObjectId::from_bytes(narrata_core::codec::object_id(
+        kind.code(),
+        schema,
+        canonical_payload,
+    ))
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

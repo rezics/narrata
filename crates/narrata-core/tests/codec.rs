@@ -66,3 +66,31 @@ proptest! {
         prop_assert_eq!(decode_canonical_value(&encoded, &Default::default()).unwrap(), value);
     }
 }
+
+#[test]
+fn kernel_kind_codes_remain_closed_at_the_core_boundary() {
+    use narrata_core::codec::{ObjectKind, encode_envelope, inspect_envelope};
+
+    for code in [0, 12, u16::MAX] {
+        let mut bytes = narrata_kernel::codec::encode_envelope(code, 0, &[0]);
+        assert!(narrata_kernel::codec::inspect_envelope(&bytes, &Default::default()).is_ok());
+        assert_eq!(
+            inspect_envelope(&bytes, &Default::default()).unwrap_err(),
+            DecodeError::Envelope("unknown object kind")
+        );
+        // Kind validation retains its original precedence over payload checks.
+        bytes[56] ^= 1;
+        assert_eq!(
+            inspect_envelope(&bytes, &Default::default()).unwrap_err(),
+            DecodeError::Envelope("unknown object kind")
+        );
+    }
+    for code in 1..=11 {
+        let kind = ObjectKind::from_code(code).unwrap();
+        let bytes = encode_envelope(kind, 0, &[0]);
+        assert_eq!(
+            inspect_envelope(&bytes, &Default::default()).unwrap().kind,
+            kind
+        );
+    }
+}

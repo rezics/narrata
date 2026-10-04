@@ -2,8 +2,7 @@
 
 mod authored;
 mod derived;
-mod text;
 
 pub use authored::*;
 pub use derived::*;
-pub use text::IdParseError;
+pub use narrata_kernel::{authored_id, derived_id, identity::IdParseError};

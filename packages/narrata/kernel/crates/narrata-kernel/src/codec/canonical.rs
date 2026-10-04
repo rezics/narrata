@@ -1,16 +1,18 @@
 use super::DecodeError;
 
+/// Writes minimal, definite-length CBOR primitives. The schema encoder chooses
+/// container contents and field order; use `decode_checked` to verify a payload.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct CborWriter {
+pub struct CborWriter {
     bytes: Vec<u8>,
 }
 
 impl CborWriter {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn into_bytes(self) -> Vec<u8> {
+    pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
 
@@ -37,11 +39,11 @@ impl CborWriter {
         }
     }
 
-    pub(crate) fn unsigned(&mut self, value: u64) {
+    pub fn unsigned(&mut self, value: u64) {
         self.head(0, value);
     }
 
-    pub(crate) fn signed(&mut self, value: i64) {
+    pub fn signed(&mut self, value: i64) {
         if value >= 0 {
             self.unsigned(value as u64);
         } else {
@@ -49,45 +51,49 @@ impl CborWriter {
         }
     }
 
-    pub(crate) fn bytes(&mut self, value: &[u8]) {
+    pub fn bytes(&mut self, value: &[u8]) {
         self.head(2, value.len() as u64);
         self.bytes.extend_from_slice(value);
     }
 
-    pub(crate) fn text(&mut self, value: &str) {
+    pub fn text(&mut self, value: &str) {
         self.head(3, value.len() as u64);
         self.bytes.extend_from_slice(value.as_bytes());
     }
 
-    pub(crate) fn array(&mut self, length: u64) {
+    pub fn array(&mut self, length: u64) {
         self.head(4, length);
     }
 
-    pub(crate) fn map(&mut self, length: u64) {
+    pub fn map(&mut self, length: u64) {
         self.head(5, length);
     }
 
-    pub(crate) fn boolean(&mut self, value: bool) {
+    pub fn boolean(&mut self, value: bool) {
         self.bytes.push(if value { 0xf5 } else { 0xf4 });
     }
 
-    pub(crate) fn null(&mut self) {
+    pub fn null(&mut self) {
         self.bytes.push(0xf6);
     }
 }
 
+/// Reads minimal, definite-length CBOR primitives with explicit string limits.
+/// Schema decoders enforce field sets, key order and collection/depth budgets,
+/// and call `finish` to reject trailing bytes. `decode_checked` provides a full
+/// structural preflight and canonical round-trip check around such a decoder.
 #[derive(Clone, Debug)]
-pub(crate) struct CborReader<'a> {
+pub struct CborReader<'a> {
     bytes: &'a [u8],
     offset: usize,
 }
 
 impl<'a> CborReader<'a> {
-    pub(crate) fn new(bytes: &'a [u8]) -> Self {
+    pub fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
     }
 
-    pub(crate) fn finish(self) -> Result<(), DecodeError> {
+    pub fn finish(self) -> Result<(), DecodeError> {
         if self.offset == self.bytes.len() {
             Ok(())
         } else {
@@ -179,11 +185,11 @@ impl<'a> CborReader<'a> {
         }
     }
 
-    pub(crate) fn unsigned(&mut self) -> Result<u64, DecodeError> {
+    pub fn unsigned(&mut self) -> Result<u64, DecodeError> {
         self.expect_major(0)
     }
 
-    pub(crate) fn signed(&mut self) -> Result<i64, DecodeError> {
+    pub fn signed(&mut self) -> Result<i64, DecodeError> {
         let (major, value) = self.head()?;
         match major {
             0 => i64::try_from(value).map_err(|_| DecodeError::IntegerOverflow),
@@ -198,7 +204,7 @@ impl<'a> CborReader<'a> {
         }
     }
 
-    pub(crate) fn bytes(&mut self, max: u64) -> Result<&'a [u8], DecodeError> {
+    pub fn bytes(&mut self, max: u64) -> Result<&'a [u8], DecodeError> {
         let length = self.expect_major(2)?;
         if length > max {
             return Err(DecodeError::Limit("byte string length"));
@@ -207,7 +213,7 @@ impl<'a> CborReader<'a> {
         self.take(length)
     }
 
-    pub(crate) fn bytes_exact<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
+    pub fn bytes_exact<const N: usize>(&mut self) -> Result<[u8; N], DecodeError> {
         let bytes = self.bytes(N as u64)?;
         if bytes.len() != N {
             return Err(DecodeError::Schema("fixed byte string length"));
@@ -217,7 +223,7 @@ impl<'a> CborReader<'a> {
         Ok(result)
     }
 
-    pub(crate) fn text(&mut self, max: u64) -> Result<&'a str, DecodeError> {
+    pub fn text(&mut self, max: u64) -> Result<&'a str, DecodeError> {
         let length = self.expect_major(3)?;
         if length > max {
             return Err(DecodeError::Limit("text string length"));
@@ -226,15 +232,15 @@ impl<'a> CborReader<'a> {
         std::str::from_utf8(self.take(length)?).map_err(|_| DecodeError::InvalidUtf8)
     }
 
-    pub(crate) fn array_len(&mut self) -> Result<u64, DecodeError> {
+    pub fn array_len(&mut self) -> Result<u64, DecodeError> {
         self.expect_major(4)
     }
 
-    pub(crate) fn map_len(&mut self) -> Result<u64, DecodeError> {
+    pub fn map_len(&mut self) -> Result<u64, DecodeError> {
         self.expect_major(5)
     }
 
-    pub(crate) fn boolean(&mut self) -> Result<bool, DecodeError> {
+    pub fn boolean(&mut self) -> Result<bool, DecodeError> {
         match self.byte()? {
             0xf4 => Ok(false),
             0xf5 => Ok(true),
@@ -242,7 +248,7 @@ impl<'a> CborReader<'a> {
         }
     }
 
-    pub(crate) fn optional<T>(
+    pub fn optional<T>(
         &mut self,
         decode: impl FnOnce(&mut Self) -> Result<T, DecodeError>,
     ) -> Result<Option<T>, DecodeError> {
@@ -253,6 +259,49 @@ impl<'a> CborReader<'a> {
             }
             Some(_) => decode(self).map(Some),
             None => Err(DecodeError::UnexpectedEnd),
+        }
+    }
+
+    // Used by the iterative checked-decode preflight, without allocating strings
+    // or collections from untrusted lengths.
+    pub(super) fn structural_item(
+        &mut self,
+        max_string_bytes: u64,
+        max_collection_items: u64,
+    ) -> Result<Option<(u64, bool)>, DecodeError> {
+        let (major, value) = self.head()?;
+        match major {
+            0 => Ok(None),
+            1 => {
+                i64::try_from(-1_i128 - i128::from(value))
+                    .map_err(|_| DecodeError::IntegerOverflow)?;
+                Ok(None)
+            }
+            2 | 3 => {
+                if value > max_string_bytes {
+                    return Err(DecodeError::Limit("string bytes"));
+                }
+                let length = usize::try_from(value).map_err(|_| DecodeError::LengthOverflow)?;
+                let bytes = self.take(length)?;
+                if major == 3 {
+                    std::str::from_utf8(bytes).map_err(|_| DecodeError::InvalidUtf8)?;
+                }
+                Ok(None)
+            }
+            4 | 5 => {
+                if value > max_collection_items {
+                    return Err(DecodeError::Limit("collection items"));
+                }
+                let is_map = major == 5;
+                let remaining = if is_map {
+                    value.checked_mul(2).ok_or(DecodeError::LengthOverflow)?
+                } else {
+                    value
+                };
+                Ok(Some((remaining, is_map)))
+            }
+            7 if matches!(value, 20..=22) => Ok(None),
+            _ => Err(DecodeError::Unsupported("CBOR item outside profile")),
         }
     }
 }

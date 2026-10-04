@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "packages/narrata/kernel/crates/narrata-kernel",
   "crates/narrata-core",
   "crates/narrata-store",
   "crates/narrata-store-sqlite",

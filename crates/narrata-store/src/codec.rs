@@ -24,215 +24,83 @@ pub enum WireError {
     Limit(&'static str),
 }
 
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Writer {
-    bytes: Vec<u8>,
-}
+// The kernel owns the byte profile; this adapter preserves the store wire API
+// and its existing error variants and messages.
+pub(crate) use narrata_core::codec::CborWriter as Writer;
+use narrata_core::codec::{CborReader, DecodeError};
 
-impl Writer {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    pub(crate) fn into_bytes(self) -> Vec<u8> {
-        self.bytes
-    }
-
-    fn head(&mut self, major: u8, value: u64) {
-        let prefix = major << 5;
-        match value {
-            0..=23 => self.bytes.push(prefix | value as u8),
-            24..=0xff => {
-                self.bytes.push(prefix | 24);
-                self.bytes.push(value as u8);
-            }
-            0x100..=0xffff => {
-                self.bytes.push(prefix | 25);
-                self.bytes.extend_from_slice(&(value as u16).to_be_bytes());
-            }
-            0x1_0000..=0xffff_ffff => {
-                self.bytes.push(prefix | 26);
-                self.bytes.extend_from_slice(&(value as u32).to_be_bytes());
-            }
-            _ => {
-                self.bytes.push(prefix | 27);
-                self.bytes.extend_from_slice(&value.to_be_bytes());
-            }
+impl From<DecodeError> for WireError {
+    fn from(error: DecodeError) -> Self {
+        match error {
+            DecodeError::UnexpectedEnd => Self::UnexpectedEnd,
+            DecodeError::TrailingBytes => Self::TrailingBytes,
+            DecodeError::LengthOverflow => Self::LengthOverflow,
+            DecodeError::IntegerOverflow => Self::IntegerOverflow,
+            DecodeError::Type { expected, actual } => Self::Type { expected, actual },
+            DecodeError::Unsupported(_) => Self::Unsupported,
+            DecodeError::NonCanonical(_) => Self::NonCanonical,
+            DecodeError::InvalidUtf8 => Self::InvalidUtf8,
+            DecodeError::Schema(message) => Self::Schema(message),
+            DecodeError::Limit("byte string length") => Self::Limit("byte string"),
+            DecodeError::Limit("text string length") => Self::Limit("text string"),
+            DecodeError::Limit(message) => Self::Limit(message),
+            DecodeError::Envelope(message) => Self::Schema(message),
+            DecodeError::UnsupportedVersion { .. } => Self::Unsupported,
         }
-    }
-
-    pub(crate) fn unsigned(&mut self, value: u64) {
-        self.head(0, value);
-    }
-
-    pub(crate) fn bytes(&mut self, value: &[u8]) {
-        self.head(2, value.len() as u64);
-        self.bytes.extend_from_slice(value);
-    }
-
-    pub(crate) fn text(&mut self, value: &str) {
-        self.head(3, value.len() as u64);
-        self.bytes.extend_from_slice(value.as_bytes());
-    }
-
-    pub(crate) fn array(&mut self, length: u64) {
-        self.head(4, length);
-    }
-
-    pub(crate) fn map(&mut self, length: u64) {
-        self.head(5, length);
-    }
-
-    pub(crate) fn null(&mut self) {
-        self.bytes.push(0xf6);
     }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Reader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
+pub(crate) struct Reader<'a>(CborReader<'a>);
 
 impl<'a> Reader<'a> {
     pub(crate) fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
+        Self(CborReader::new(bytes))
     }
 
     pub(crate) fn finish(self) -> Result<(), WireError> {
-        if self.offset == self.bytes.len() {
-            Ok(())
-        } else {
-            Err(WireError::TrailingBytes)
-        }
-    }
-
-    fn byte(&mut self) -> Result<u8, WireError> {
-        let value = self
-            .bytes
-            .get(self.offset)
-            .copied()
-            .ok_or(WireError::UnexpectedEnd)?;
-        self.offset = self.offset.saturating_add(1);
-        Ok(value)
-    }
-
-    fn take(&mut self, length: usize) -> Result<&'a [u8], WireError> {
-        let end = self
-            .offset
-            .checked_add(length)
-            .ok_or(WireError::LengthOverflow)?;
-        let value = self
-            .bytes
-            .get(self.offset..end)
-            .ok_or(WireError::UnexpectedEnd)?;
-        self.offset = end;
-        Ok(value)
-    }
-
-    fn head(&mut self) -> Result<(u8, u64), WireError> {
-        let initial = self.byte()?;
-        let major = initial >> 5;
-        let additional = initial & 0x1f;
-        let value = match additional {
-            0..=23 => u64::from(additional),
-            24 => {
-                let value = u64::from(self.byte()?);
-                if value < 24 {
-                    return Err(WireError::NonCanonical);
-                }
-                value
-            }
-            25 => {
-                let bytes = self.take(2)?;
-                let value = u64::from(u16::from_be_bytes([bytes[0], bytes[1]]));
-                if value <= 0xff {
-                    return Err(WireError::NonCanonical);
-                }
-                value
-            }
-            26 => {
-                let bytes = self.take(4)?;
-                let value = u64::from(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
-                if value <= 0xffff {
-                    return Err(WireError::NonCanonical);
-                }
-                value
-            }
-            27 => {
-                let bytes = self.take(8)?;
-                let value = u64::from_be_bytes([
-                    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-                ]);
-                if value <= 0xffff_ffff {
-                    return Err(WireError::NonCanonical);
-                }
-                value
-            }
-            _ => return Err(WireError::Unsupported),
-        };
-        Ok((major, value))
-    }
-
-    fn major(&mut self, expected: u8) -> Result<u64, WireError> {
-        let (actual, value) = self.head()?;
-        if actual == expected {
-            Ok(value)
-        } else {
-            Err(WireError::Type { expected, actual })
-        }
+        self.0.finish().map_err(Into::into)
     }
 
     pub(crate) fn unsigned(&mut self) -> Result<u64, WireError> {
-        self.major(0)
+        self.0.unsigned().map_err(Into::into)
     }
 
     pub(crate) fn bytes(&mut self, max: u64) -> Result<&'a [u8], WireError> {
-        let length = self.major(2)?;
-        if length > max {
-            return Err(WireError::Limit("byte string"));
-        }
-        self.take(usize::try_from(length).map_err(|_| WireError::LengthOverflow)?)
+        self.0.bytes(max).map_err(Into::into)
     }
 
     pub(crate) fn bytes_exact<const N: usize>(&mut self) -> Result<[u8; N], WireError> {
-        let bytes = self.bytes(N as u64)?;
-        if bytes.len() != N {
-            return Err(WireError::Schema("fixed byte string length"));
-        }
-        let mut result = [0; N];
-        result.copy_from_slice(bytes);
-        Ok(result)
+        self.0.bytes_exact().map_err(Into::into)
     }
 
     pub(crate) fn text(&mut self, max: u64) -> Result<&'a str, WireError> {
-        let length = self.major(3)?;
-        if length > max {
-            return Err(WireError::Limit("text string"));
-        }
-        let bytes = self.take(usize::try_from(length).map_err(|_| WireError::LengthOverflow)?)?;
-        std::str::from_utf8(bytes).map_err(|_| WireError::InvalidUtf8)
+        self.0.text(max).map_err(Into::into)
     }
 
     pub(crate) fn array(&mut self) -> Result<u64, WireError> {
-        self.major(4)
+        self.0.array_len().map_err(Into::into)
     }
 
     pub(crate) fn map(&mut self) -> Result<u64, WireError> {
-        self.major(5)
+        self.0.map_len().map_err(Into::into)
     }
 
     pub(crate) fn optional<T>(
         &mut self,
         decode: impl FnOnce(&mut Self) -> Result<T, WireError>,
     ) -> Result<Option<T>, WireError> {
-        match self.bytes.get(self.offset).copied() {
-            Some(0xf6) => {
-                self.offset = self.offset.saturating_add(1);
-                Ok(None)
-            }
-            Some(_) => decode(self).map(Some),
-            None => Err(WireError::UnexpectedEnd),
+        // The kernel consumes the null marker and leaves non-null values for the
+        // store's schema decoder, whose failures retain their original type.
+        if self
+            .0
+            .optional(|_| Ok(()))
+            .map_err(WireError::from)?
+            .is_none()
+        {
+            Ok(None)
+        } else {
+            decode(self).map(Some)
         }
     }
 }
@@ -258,5 +126,43 @@ pub(crate) fn key(reader: &mut Reader<'_>, expected: u64) -> Result<(), WireErro
         Ok(())
     } else {
         Err(WireError::Schema("map key order"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kernel_adapter_preserves_store_error_variants_and_limits() {
+        assert_eq!(
+            Reader::new(&[0x18, 0]).unsigned(),
+            Err(WireError::NonCanonical)
+        );
+        assert_eq!(Reader::new(&[0x9f]).array(), Err(WireError::Unsupported));
+        assert_eq!(
+            Reader::new(&[0x42, 0, 1]).bytes(1),
+            Err(WireError::Limit("byte string"))
+        );
+        assert_eq!(
+            Reader::new(&[0x62, b'a', b'b']).text(1),
+            Err(WireError::Limit("text string"))
+        );
+        assert_eq!(
+            Reader::new(&[0x61, 0xff]).text(1),
+            Err(WireError::InvalidUtf8)
+        );
+        assert_eq!(
+            Reader::new(&[]).optional(Reader::unsigned),
+            Err(WireError::UnexpectedEnd)
+        );
+        assert_eq!(Reader::new(&[0xf6]).optional(Reader::unsigned), Ok(None));
+        let mut reader = Reader::new(&[1]);
+        assert_eq!(reader.optional(Reader::unsigned), Ok(Some(1)));
+        assert_eq!(reader.finish(), Ok(()));
+        assert_eq!(
+            Reader::new(&[0]).optional::<()>(|_| Err(WireError::Schema("domain"))),
+            Err(WireError::Schema("domain"))
+        );
     }
 }
