@@ -7,7 +7,7 @@
 
 | 工具 | 版本 | 用途 | 记录在 |
 | --- | --- | --- | --- |
-| Rust | 1.98.0，组件 clippy、rustfmt，目标 `wasm32-wasip1`；Web 构建另需 `wasm32-unknown-unknown` | 引擎、CLI、绑定 | `rust-toolchain.toml` |
+| Rust | 1.98.0，组件 clippy、rustfmt，目标 `wasm32-wasip1`；Web 构建与 `check:g2` 另需 `wasm32-unknown-unknown` | 引擎、CLI、绑定 | `rust-toolchain.toml` |
 | PowerShell | 7.x | 现有 gate 脚本 `scripts/check-*.ps1` | 本页 |
 | Node.js / npm | CI 用 24，本机 26 | `examples/gamebook-web`、TypeScript 绑定 | `.github/workflows/ci.yml` |
 | Playwright | 1.63.0 | Web 阅读器的浏览器回归 | `examples/gamebook-web/package.json` |

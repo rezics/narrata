@@ -3,4 +3,5 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 cargo bench -p narrata-store --bench persistence
 cargo bench -p narrata-store --bench history
+cargo bench -p narrata-storage-sqlite --bench backend
 cargo bench -p narrata-testkit --bench kernel
