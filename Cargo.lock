@@ -548,6 +548,10 @@ name = "narrata-kernel"
 version = "0.1.0-alpha.1"
 dependencies = [
  "hex",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
  "sha2",
  "thiserror",
 ]

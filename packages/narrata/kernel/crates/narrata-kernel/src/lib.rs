@@ -4,4 +4,5 @@
 //! supported object kind codes belong to the domain using them.
 
 pub mod codec;
+pub mod content;
 pub mod identity;
