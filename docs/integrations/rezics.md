@@ -98,6 +98,7 @@ Jena 是单写者（TDB2），写入经过带回执的命令模块，适合每�
 | R9 | 发布时保存 Narrata 构件到对象存储并写入语义摘要 | 发布、Jena | 新增 profile | 提出 |
 | R10 | 互动小说路由懒加载 Narrata npm 包与 Wasm；作者图视图依赖 sigma.js | apps/web | 新依赖，首个 Wasm | 提出 |
 | R11 | 解析器随"章节 Post"调整，Occurrence 仍可解析到当前文本修订 | 文本、Occurrence | REZICS 自身的 Work 分层工作 | 提出 |
+| R12 | 内容大纲：按 Occurrence 返回块 ID 的顺序与 `narrata-choice` 标记块所在位置，不含正文；Narrata 发布时据此检查锚点与标记块一致性（[ADR 0013](../adr/0013-r2-text-free-node-format.md) §4） | 文本、API | 只读投影，可由已有文档结构导出 | 提出 |
 
 除 R1 需要新增一种阅读模式并触及多个阅读模块外，其余都是增加能力，不要求重做现有设计。
 
