@@ -517,6 +517,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-graph"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "narrata-kernel",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "narrata-kernel"
 version = "0.1.0-alpha.1"
 dependencies = [

@@ -1,0 +1,18 @@
+[package]
+name = "narrata-graph"
+description = "Deterministic publication-time narrative graph analysis and layout"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1" }
+serde_json.workspace = true
+
+[lints]
+workspace = true
