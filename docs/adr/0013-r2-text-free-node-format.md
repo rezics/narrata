@@ -64,12 +64,17 @@ CBOR map 只用递增的无符号整数键（ADR 0003）；字段编号由实现
 - 节点在图 `nodes` 中的键、选择点的 `key`、选项的 `key` 是作者别名，规则同 R1 标识符。源稿中
   的边仍按别名书写，编译后全部变成 ID。别名进入名字表，不进入清单与程序块：改别名不改变
   `artifact_id`，只改变源稿摘要与 lock。图名与包实例别名是组合结构，属于构件身份。
-- 删除留墓碑：包源稿的 `tombstones` 列出已删除的 ID。工具在 `compose` 时与上一次的构件比较，
-  为消失的 ID 追加墓碑并报告；`--locked` 时需要追加即失败。存活 ID 与墓碑重合是编译错误。
-  构件清单引用全作品的墓碑集；`lookup(id)` 返回存活位置、`deleted` 或 `unknown`，供迁移与诊断
-  使用。
-- 动态结构的 ID 由运行时派生：取 `digest_bytes("narrata.nodes.proposal-id", 1, 父提交 ‖ u16 序号)`
-  的前 16 字节，并按 UUIDv8 设置版本与变体位。派生 ID 记录在 Input 中，解码时复核。
+- 删除留墓碑：包源稿的 `tombstones` 列出已删除的 ID。存活 ID 与墓碑重合是编译错误。
+- `compose` 与上一次的构件比较：
+  - 为消失的 ID 追加墓碑并报告；
+  - 墓碑只增不减，删掉旧墓碑是错误；
+  - 存活 ID 的归属（节点所在图、选择点所在节点、选项所在选择点）改变也是错误：移动或复制
+    必须换新 ID（决定 3）。
+
+  `--locked` 时需要追加墓碑即失败；没有上一次构件时这些比较跳过并报告。
+- 构件清单引用全作品的墓碑集。工具侧的 `lookup(id)` 扫描构件，返回存活位置、`deleted` 或
+  `unknown`，供迁移与诊断使用；运行时的寻址始终是 `(GraphRef, NodeId)`，不需要全局索引。
+- 动态结构的 ID 由运行时派生（§5），记录在 Input 中，解码时复核。
 
 ### 4. 节点词汇与选择模型
 
@@ -84,36 +89,59 @@ Option      = { id, key, label?: ContentRef, visible_if?, enabled_if?, reason?: 
                 outcome: local { reply?: Segment, rejoin?: AnchorId } | branch { target: NodeId } }
 ```
 
-- 选择点按文档顺序排列。进入段落时呈现 `body.first … 第一个选择点的 placement`（无选择点时到
-  `body.last`）；在选择点 k 选择后依次执行所选选项的效果，呈现各自的 `reply`，再呈现
-  `rejoin … 选择点 k+1 的 placement`，到达下一个选择点；分支结果进入目标节点。最后一个选择点
-  之后的流程（或没有选择点的段落）继续到 `next`；可能走到段落末尾却没有 `next` 是编译错误。
-- 只有最后一个选择点的局部选项可以省略 `rejoin`，表示继续到正文末尾。局部结果要求段落有
-  `body`，`reply` 必须与 `body` 在同一内容单元。
-- 多选（`max > 1`）的选项必须全部是局部结果并共享同一 `rejoin`；效果与回应按选项顺序执行，
-  整个选择是一个 Input。`0 ≤ min ≤ max ≤ 选项数`，`min = 0` 只允许全部为局部结果的选择点。
-  可见且可选的选项少于 `max(min, 1)` 时运行时报 `no_actions`。
+- **正文切片与段。** 正文是 `body.unit` 中从 `body.first`（省略时为单元开头）到 `body.last`
+  （省略时为单元末尾）的块，`Segment` 两端都包含在内。设 `P(k)` 为选择点 k 的 `placement`；
+  只有最后一个选择点可以省略它，省略表示放在 `body.last` 之后。
+- **呈现顺序。**
+  - 进入段落时先呈现 `title`，再呈现首段：有选择点时为 `[body.first, P(0)]`，没有选择点时为
+    整个正文。没有 `body` 的段落没有首段。
+  - 在选择点 k 选择分支结果时，进入目标节点。
+  - 选择局部结果时，依次呈现所选选项的 `reply`，再呈现尾段：下一个选择点存在时为
+    `[rejoin, P(k+1)]`，否则为 `[rejoin, body.last]`。然后到达下一个选择点，或走到段落末尾。
+  - `rejoin` 省略表示尾段为空。中间的选择点省略它，就直接到达下一个选择点；最后一个选择点
+    省略它，就不再呈现正文。
+- **正文内的顺序约束。** 按文档顺序：`body.first ≤ P(0)`，每个 `reply` 落在 `P(k)` 与 `rejoin`
+  之间（两端都不含），`rejoin ≤ P(k+1)`，且所有块都在正文切片内。这保证未选的回应永远不会被
+  呈现。局部结果要求段落有 `body`，`reply` 必须与 `body` 在同一内容单元。
+- 段落走到末尾（没有选择点，或最后一个选择点做了局部选择）后继续到 `next`。可能走到末尾却
+  没有 `next` 是编译错误。
+- **基数。** `1 ≤ max ≤ 选项数`，`0 ≤ min ≤ max`。多选（`max > 1`）或允许不选（`min = 0`）时，
+  所有选项都必须是局部结果并共享同一个 `rejoin`（或都省略）；不选就走这个 `rejoin`。
+- **可用性。** 可见且可选的选项少于 `min` 时，运行时报 `no_actions`。`min = 0` 且没有可用选项
+  时自动跳过：效果等同于选择空集，不产生交互。
+- **求值时机。** 选择的每个选项都按父 State 校验可见与可选；然后按选项顺序执行全部效果；
+  再按选项顺序呈现回应，参数按执行完效果后的 State 求值。任何一步失败，整个 Input 撤回。
 - 有两个以上选项的选择点，每个选项都必须有 `label`。
 - R1 的 `content` 节点等价于一个只有单个分支选项的选择点，`decision` 等价于末尾一个全部为分支
   选项的选择点。
-- 编译器看不到文档，锚点顺序只能在有**内容大纲**时检查：内容方提供不含正文的
-  `{ 单元: { blocks: [AnchorId], markers: { AnchorId: ChoicePointId } } }`，编译时据此报告锚点不存在、
-  顺序错误、回应不在 placement 与 rejoin 之间、标记块与 `placement` 不一致或重复。这些是诊断
-  而不是错误：内容方可能稍后修正。没有大纲时这些检查跳过，解析时宿主得到 `incompatible`。
+- **内容大纲。** 编译器看不到文档，正文内的顺序约束只能在有内容大纲时检查。大纲由内容方提供，
+  不含正文：`{ 单元: { blocks: [AnchorId], markers: { AnchorId: ChoicePointId } } }`。内容方能
+  提供大纲时，`compose` 必须检查，报告锚点不存在、违反顺序约束、标记块与 `placement` 不一致
+  或重复。这些是诊断而不是错误：内容方可能稍后修正。没有大纲时这些检查跳过；运行时宿主解析器
+  遇到锚点缺失或 `first` 在 `last` 之后的段，返回 `incompatible`。
 
 ### 5. 动态选项与节点
 
-`proposals = true` 的选择点接受宿主提议。提议是一种 Input：
+`proposals = true` 的选择点接受宿主提议。
 
 ```text
 Input = choose  { choice_point, options: [OptionId] }           // 按选择点内的顺序，不重复
-      | propose { choice_point, options: [OptionDraft], nodes: [PassageDraft] }
+      | propose { choice_point, options: [Option], nodes: [Passage] }  // 已校验、已派生 ID
 ```
 
-- 草稿与作者结构同形但不含 ID；引擎按编译期规则校验（类型、引用、表达式、局部结果规则），
-  分支目标只能是本图已有节点或同一提议中的节点。
-- 通过后派生 ID，结构写入当前栈帧的叠加层（overlay），交互仍停在同一选择点；之后照常选择。
-  栈帧返回时叠加层随之消失。每个提议最多 16 个选项与 16 个节点，每个栈帧最多 256 个动态节点。
+- **请求与记录分开。** 宿主提交的是不含 ID 的提议请求（JSON），其中已有节点按 `NodeId` 引用，
+  同一请求中的新节点按请求内的临时键引用。引擎按编译期规则校验类型、引用、表达式与局部结果
+  规则，分支目标只能是本图已有节点或同一请求中的节点。通过后派生 ID、解析临时键，写成上面的
+  `propose` Input。记录的结构不含临时键或别名，所以别名不会进入 Input 或 State 的摘要。
+- **派生 ID。** 取 `digest_bytes("narrata.nodes.proposal-id", 1, 父提交 ‖ 请求的规范摘要 ‖ u16 序号)`
+  的前 16 字节（序号为大端），按 UUIDv8 设置版本与变体位。序号按一次遍历分配：先是追加的选项，
+  再是新节点，每个节点内先选择点、后其选项，都按请求中的顺序。与构件或叠加层中已有 ID 碰撞时
+  拒绝。
+- **追加语义。** 新选项追加在该选择点现有选项（静态的在前，之后按提议顺序）之后，新节点写入
+  当前栈帧的叠加层（overlay），交互仍停在同一选择点，之后照常选择。校验针对追加后的完整选择点
+  与段落：选项数上限、基数规则、局部结果规则、段落末尾规则。栈帧返回时叠加层随之消失。
+- **上限。** 每个请求最多 16 个选项与 16 个节点，每个栈帧最多 256 个动态节点。
+  `proposals = true` 的选择点没有可用选项时不报 `no_actions`，交互照常出现，以便宿主提议。
 - 回退、恢复与迁移使用 Input 中记录的结构，从不重新生成。
 
 ### 6. 会话对象
@@ -126,10 +154,17 @@ Frame  = { graph: GraphRef, node: NodeId, at?: ChoicePointId, instance: u32,
 Commit = { artifact: [u8;32], parent?: CommitId, input?: ObjectId, state: ObjectId, depth: u64 }
 ```
 
-- State 只含 ID 与标量，不含任何文字；顶层栈帧在交互处必有 `at`。`decode_state` 是构造 State 的
-  唯一途径：规范 CBOR 往返，并对照构件校验每个 ID、类型、栈帧与叠加层。
+- State 只含 ID 与标量，不含任何文字与别名。`decode_state` 是构造 State 的唯一途径：先做规范
+  CBOR 往返，再对照构件校验以下不变量。
+  - 已结束时栈为空；未结束时栈非空，顶层栈帧的节点是段落，`at` 是它（含叠加层）的选择点。
+  - 非顶层栈帧停在 `call` 节点上，该调用的目标解析为上一层栈帧的图。
+  - 实例号沿栈严格递增，且都小于 `next_instance`。
+  - 参数、局部与共享变量的键集合和类型都与声明一致。
+  - 叠加层只引用本图节点或叠加层自身的节点。
+  - 每个 ID 都存在，且不是墓碑。
 - 提交与 kernel 的节点会话提交 API 一致：提交身份是上面载荷的 object id，不含执行 ID；根提交
-  没有 `parent` 与 `input`，深度为 0。相同父提交与相同 Input 复用既有提交。
+  没有 `parent` 与 `input`，深度为 0，非根提交两者都有，深度为父提交加一。相同父提交与相同
+  Input 复用既有提交。根提交的 State 是从清单的初始状态确定性推进到第一个交互后的结果。
 - **恢复不重放。** 恢复读入对象、复核摘要、确认构件相同，再用 `decode_state` 校验。这证明状态
   对该构件良构，不证明它可经游玩到达；需要时用可选的 `verify_path` 从根重放审计。
 - `ExecutionId`（16 字节，宿主在新会话开始时铸造 UUIDv7）属于会话或引用的元数据。
@@ -144,9 +179,11 @@ Commit = { artifact: [u8;32], parent?: CommitId, input?: ObjectId, state: Object
 运行时只输出引用。view（JSON）给出：
 
 - `presentation`：自上一个交互以来要显示的项，`{ occurrence, role: title|body|reply, node,
-  content: Segment|ContentRef, args }`；某个提交的呈现由父 State 与 Input 确定性重算，不存储。
-- `interaction`：`choose { choice_point, min, max, options: [{ id, key?, label?, enabled, reason?,
-  outcome }] }` 或 `finished { outcome, title?, body? }`；结局显示由清单的 `endings` 提供。
+  content: Segment|ContentRef, args }`。某个提交的呈现不存储，而是确定性重算：非根提交由父 State
+  与 Input 重算，根提交由清单的初始状态推进到第一个交互时重算，`occurrence` 的编号方式相同。
+- `interaction`：`choose { choice_point, min, max, args, options: [{ id, key?, label?, enabled,
+  reason?, outcome }] }` 或 `finished { outcome, title?, body? }`。`args` 是段落参数在交互时的
+  值，选项文字与禁用原因用它格式化。结局显示由清单的 `endings` 提供。
 - 共享变量（含 `label?: ContentRef`）、栈帧与历史。别名仅在加载名字表时附带。
 
 ### 8. 构件：清单、程序块与打包
@@ -155,16 +192,18 @@ Commit = { artifact: [u8;32], parent?: CommitId, input?: ObjectId, state: Object
   包实例（别名、包 ID、版本）、每个图的签名、是否导出与所在块序号、块的 object id 列表、节点类型
   修订号、墓碑集 object id。
 - **程序块**：同一包实例的一个或多个图，含图头（参数、局部初值、使用的共享变量、导入签名、
-  结局集合、入口节点、标题）与按 `NodeId` 排列的检查后节点计划。调用只经清单中的签名跨块，
-  分支只在图内，因此每个块对照清单即可独立完成受检解码。
+  结局集合、入口节点、标题）与按 `NodeId` 排列的检查后节点计划，不含别名。调用只经清单中的
+  签名跨块，分支只在图内，因此每个块对照清单即可独立完成受检解码，证明块内的不变量（引用、
+  类型、调用签名、段落规则）。全作品的 ID 唯一性与墓碑由编译保证；打开完整构件的工具可以用
+  `verify_artifact` 复核。运行时按 `(GraphRef, NodeId)` 寻址，不依赖全局唯一性。
 - 运行时按需加载块：只持有清单与当前栈帧所在的块，块经内容方式（object id）校验后才使用。
   默认每个图一个块，相邻的小图可以合并；块的划分是编译策略，改变它不改变语义，但会改变
   `artifact_id`。
 - **打包容器**：单文件分发（示例作品、本地游戏）把清单、全部块、墓碑集与可选的名字表放在
   一个信封中；分发身份仍是清单的 `artifact_id`。
 - **上限**：取消全作品 4,096 节点与 4 MiB 上限，改为单个源稿包 16 MiB、单图 4,096 节点、
-  单块与清单各 4 MiB、每段落 64 个选择点、每选择点 64 个选项、每段落 32 个参数、4,096 个共享
-  变量；State 128 KiB、每个 Input 自动执行 4,096 步、调用深度 64 不变。
+  单块与清单各 4 MiB、每段落 64 个选择点、每选择点 128 个选项、每段落 256 个参数、4,096 个共享
+  变量（选项与参数上限不低于 R1，迁移的作品不会超限）；State 128 KiB、每个 Input 自动执行 4,096 步、调用深度 64 不变。
 - lock（项目清单旁的 `project.lock.json`，`format_version: 2`）记录 `artifact_id`、各包的源稿
   摘要（`digest_bytes("narrata.nodes.package-source", 1, 规范 JSON)`）与节点类型修订号。
 
@@ -179,10 +218,19 @@ language, entries: { key: { text } | { blocks: [{ id, text } | { id, choice_poin
 ### 10. R1 的读取与迁移
 
 - R1 不再执行。`narrata-book migrate-r1` 把 R1 项目与包转换为 R2 源稿和一个本地内容包：
-  抽出全部文字（含默认"继续"、"条件尚未满足"与结局页），把模板改写为命名参数，铸造 ID，
-  `content`/`decision` 改写为段落。
-- R1 存档迁移按别名把 R1 的动作在迁移后的 R2 构件上重放，并逐个比较共享变量、栈帧位置、参数与
-  局部值，一致后输出 R2 会话导出。R1 存档只能对应它自己的 R1 构件（`artifact_id` 必须匹配）。
+  - 抽出全部文字，包括默认的"继续""条件尚未满足"和结局页；
+  - 把模板改写为命名参数，名字用变量名，跨作用域重名时加 `parameter_`/`local_`/`shared_` 前缀；
+  - 铸造 ID；
+  - 把 `content`/`decision` 改写为段落：R1 节点 ID 成为节点别名，R1 选项 ID 成为选项 `key`，
+    `content` 节点唯一的选项 `key` 为 `continue`。
+- 迁移后的名字表记录 R1 构件的 `artifact_id`。R1 存档只能迁移到由它自己的 R1 构件迁移而来的
+  R2 构件，两者不符时拒绝。
+- 存档迁移的步骤：
+  1. 按存档中的顺序（父在子前）把每个保留的 R1 提交的动作经名字表映射为 Input，在 R2 构件上
+     重放，重建整棵提交树；
+  2. 逐个比较共享变量、栈帧位置、参数与局部值；
+  3. 把游标映射到对应的 R2 提交；
+  4. 输出 R2 会话导出。
 - 冻结语料：`fixtures/compat/nodes-r1/` 保存 R1 示例作品的源稿、bundle、lock、分析输出与存档，
   作为迁移测试的输入；`fixtures/compat/nodes-r2/` 在 R2 实现完成时冻结打包构件、会话导出、
   本地内容包与内容大纲。
