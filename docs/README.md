@@ -50,6 +50,7 @@
 - [0009：Stage 5 migration and protocol boundary](adr/0009-stage-5-migration-and-protocol-boundary.md)
 - [0010：Nickel adapter not published](adr/0010-nickel-adapter-not-published.md)
 - [0011：R1 节点组合与 Gamebook 会话](adr/0011-r1-node-composition.md)
+- [0012：窄存储后端契约](adr/0012-narrow-storage-backend-contract.md)
 
 ## 研究
 
