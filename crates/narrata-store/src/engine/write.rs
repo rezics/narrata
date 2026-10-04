@@ -841,7 +841,8 @@ impl<B: StorageBackend> Store<B> {
 
     /// Decides whether a batch with an unknown outcome was applied: its objects are present or
     /// absent as it asked, every key it put holds its value, the conditional ones at one shared
-    /// revision, and every key it deleted is absent. Anything else counts as not applied.
+    /// revision, and every key it deleted is absent. Anything else counts as not applied. The
+    /// read-back cannot tell which objects existed before, so all of them count as inserted.
     fn reconcile(&self, batch: &Batch) -> Result<Option<Applied>, StoreError> {
         let puts = batch
             .put_objects
