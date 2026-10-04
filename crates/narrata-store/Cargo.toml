@@ -17,11 +17,16 @@ thiserror.workspace = true
 criterion = "0.7.0"
 proptest.workspace = true
 narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
+narrata-store-sqlite = { path = "../narrata-store-sqlite", version = "=0.1.0-alpha.1" }
 serde.workspace = true
 serde_json.workspace = true
 
 [[bench]]
 name = "persistence"
+harness = false
+
+[[bench]]
+name = "history"
 harness = false
 
 [lints]
