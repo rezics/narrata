@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { anchorsOf, linksOf, slugify, stripCode } from './check.ts';
+import { resolve } from 'node:path';
+import { anchorsOf, inCheckout, linksOf, slugify, stripCode } from './check.ts';
 
 describe('slugify', () => {
   test('matches GitHub slugs for mixed-language headings', () => {
@@ -27,5 +28,15 @@ describe('linksOf', () => {
 
   test('keeps line numbers when code is stripped', () => {
     expect(stripCode('a\n```\nb\n```\nc').split('\n')).toHaveLength(5);
+  });
+});
+
+describe('inCheckout', () => {
+  test('leaves sibling repositories and the .temp scratch directory unchecked', () => {
+    const root = resolve('/repo');
+    expect(inCheckout(resolve(root, 'docs/a.md'), root)).toBe(true);
+    expect(inCheckout(resolve(root, '.template/a.md'), root)).toBe(true);
+    expect(inCheckout(resolve(root, '../lattice-axiom/a.md'), root)).toBe(false);
+    expect(inCheckout(resolve(root, '.temp/notes.md'), root)).toBe(false);
   });
 });

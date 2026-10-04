@@ -2,7 +2,7 @@
 // Usage: bun scripts/docs/check.ts [paths...]   (defaults to every tracked or untracked-but-unignored *.md)
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 export type Problem = { file: string; line: number; message: string };
 
@@ -78,6 +78,13 @@ function anchorsFor(file: string): Set<string> {
   return anchors;
 }
 
+/** Whether a link target belongs to this checkout. Sibling repositories and the untracked `.temp/` scratch directory
+ * exist in the main checkout but not in Goal worktrees or CI, so links into them are not checked. */
+export function inCheckout(destination: string, root = ROOT): boolean {
+  const path = relative(root, destination).replaceAll('\\', '/');
+  return !path.startsWith('../') && path !== '..' && !isAbsolute(path) && path !== '.temp' && !path.startsWith('.temp/');
+}
+
 export function checkFile(file: string): Problem[] {
   const problems: Problem[] = [];
   const markdown = readFileSync(file, 'utf8');
@@ -87,6 +94,7 @@ export function checkFile(file: string): Problem[] {
     const [rawPath, rawAnchor] = target.split('#', 2);
     let path = decodeURIComponent(rawPath ?? '');
     let destination = path === '' ? file : resolve(dirname(file), path);
+    if (!inCheckout(destination)) continue;
     if (path !== '' && !existsSync(destination)) {
       const withoutLine = path.replace(/:\d+(?:-\d+)?$/, ''); // `file.rs:42` style references
       if (withoutLine !== path && existsSync(resolve(dirname(file), withoutLine))) {
