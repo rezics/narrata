@@ -5,6 +5,20 @@ on:
   pull_request:
 
 jobs:
+  docs-and-scripts:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun scripts/docs/check.ts
+      # goalctl drives worker processes on the Windows host that runs the Goals.
+      - if: matrix.os == 'windows-latest'
+        run: bun test scripts
   gamebook-r1:
     strategy:
       matrix:

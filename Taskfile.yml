@@ -1,0 +1,40 @@
+version: '3'
+
+tasks:
+  check:g1:
+    desc: Stage 1 gate (fmt, clippy, workspace tests)
+    cmds: [pwsh -NoProfile -File scripts/check-g1.ps1]
+  check:g2:
+    desc: Stage 2 gate (g1 plus persistence)
+    cmds: [pwsh -NoProfile -File scripts/check-g2.ps1]
+  check:g3:
+    desc: Stage 3 gate (g2 plus effects)
+    cmds: [pwsh -NoProfile -File scripts/check-g3.ps1]
+  check:g4:
+    desc: Stage 4 gate (g3 plus statecharts)
+    cmds: [pwsh -NoProfile -File scripts/check-g4.ps1]
+  check:g5:
+    desc: Stage 5 gate (g4 plus migrations and protocol)
+    cmds: [pwsh -NoProfile -File scripts/check-g5.ps1]
+  check:r1:
+    desc: Node stack and Web Gamebook gate (Rust, Wasm, browser regressions, generated-file drift)
+    cmds: [pwsh -NoProfile -File scripts/check-r1.ps1]
+  bench:g2:
+    desc: Persistence and kernel benchmarks
+    cmds: [pwsh -NoProfile -File scripts/benchmark-g2.ps1]
+  docs:check:
+    desc: Check relative links and heading anchors in Markdown
+    cmds:
+      - 'bun scripts/docs/check.ts {{.CLI_ARGS}}'
+  test:scripts:
+    desc: Bun tests for goalctl and the docs checker
+    cmds:
+      - 'bun test scripts {{.CLI_ARGS}}'
+  goal:
+    desc: Run goalctl from the repository root. Sets GOAL_MAX_WORKERS to 3 when it is unset.
+    cmds:
+      - 'GOAL_MAX_WORKERS="${GOAL_MAX_WORKERS-3}" bun scripts/goal/goalctl.ts {{.CLI_ARGS}}'
+  goal:manager:
+    desc: Start a Goal manager (Claude Code, Opus 5.5, xhigh) in its own Windows Terminal tab; arguments are the Goal slug and optional -Model/-Effort.
+    cmds:
+      - 'pwsh -NoProfile -File scripts/goal/start-manager.ps1 {{.CLI_ARGS}}'
