@@ -492,6 +492,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-content-local"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "hex",
+ "narrata-kernel",
+ "narrata-nodes",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "narrata-core"
 version = "0.1.0-alpha.1"
 dependencies = [

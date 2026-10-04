@@ -17,6 +17,7 @@ members = [
   "packages/narrata/nodes/crates/narrata-nodes-wasm",
   "packages/narrata/tooling/crates/narrata-node-tools",
   "packages/narrata/tooling/crates/narrata-graph",
+  "packages/narrata/tooling/crates/narrata-content-local",
 ]
 exclude = ["fuzz"]
 
