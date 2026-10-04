@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SessionExport",
+  "description": "Temporary session export (ADR 0013 §6). The objects are the same envelopes a kernel store\nkeeps; switching to that store replaces only this container.",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "cursor": {
+      "$ref": "#/$defs/CommitId"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionId"
+    },
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "objects": {
+      "description": "Hexadecimal envelopes; each commit follows the input and state it references.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "artifact_id",
+    "execution",
+    "cursor",
+    "objects"
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "CommitId": {
+      "type": "string",
+      "pattern": "^commit:[0-9a-f]{64}$"
+    },
+    "ExecutionId": {
+      "type": "string",
+      "pattern": "^execution:[0-9a-f]{32}$"
+    }
+  }
+}

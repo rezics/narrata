@@ -1,75 +1,94 @@
-use std::{collections::BTreeMap, sync::Arc};
+//! Deterministic execution (ADR 0013 §4, §7). One input runs in a working copy of the parent
+//! state until the next interaction or the end of the story; any failure discards the copy.
+//! The runtime only emits references; it never reads content.
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use narrata_kernel::content::{AnchorId, Segment};
 
 use crate::{
-    Assignment, CheckedProduct, Error, FORMAT_VERSION, GraphRef, NodeAddress, NodePlan, Result,
-    Scalar, ScalarType, Scope,
-    compile::{canonical_bytes, digest},
-    expr::{self, Values},
-    parse_json,
+    Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, Program, Result, Scalar, Scope, ViewScalar,
+    expr::{Values, expect},
+    plan::{GraphRef, NameTable, Outcome, Passage, Plan},
+    state::{Finished, Frame, Input, State, check_input, check_size},
+    view::{Interaction, OptionView, OutcomeKind, PresentationItem, Presented, Role},
 };
 
-const MAX_STEPS: u32 = 4096;
-const MAX_DEPTH: usize = 64;
-const MAX_COMMITS: usize = 512;
-const MAX_REPLAY_STEPS: u64 = 1_000_000;
-const MAX_STATE_BYTES: usize = 128 * 1024;
-const MAX_RETAINED_BYTES: usize = 2 * 1024 * 1024;
-
-#[derive(Clone, Debug, Serialize)]
-struct Frame {
-    graph: GraphRef,
-    node: String,
-    instance: u32,
-    parameters: BTreeMap<String, Scalar>,
-    locals: BTreeMap<String, Scalar>,
+/// The result of running one input (or of starting the story).
+#[derive(Clone, Debug)]
+pub(crate) struct Step {
+    pub state: State,
+    pub presentation: Vec<PresentationItem>,
+    /// Whether the passage the step stops in was entered during this step, rather than
+    /// continued after a local choice.
+    pub entered: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct State {
-    shared: BTreeMap<String, Scalar>,
-    frames: Vec<Frame>,
-    next_instance: u32,
-    finished: Option<(NodeAddress, u32, String)>,
+struct Work {
+    state: State,
+    items: Vec<PresentationItem>,
+    steps: u32,
+    entered: bool,
 }
 
-impl Frame {
-    fn address(&self) -> NodeAddress {
-        NodeAddress {
-            package: self.graph.package.clone(),
-            graph: self.graph.graph.clone(),
-            node: self.node.clone(),
-        }
-    }
-}
-
-impl State {
-    fn frame(&self) -> Result<&Frame> {
-        self.frames
+impl Work {
+    fn top(&self) -> Result<&Frame> {
+        self.state
+            .frames
             .last()
             .ok_or_else(|| Error::new("finished", "session", "no active graph instance"))
     }
-    fn frame_mut(&mut self) -> Result<&mut Frame> {
-        self.frames
+
+    fn top_mut(&mut self) -> Result<&mut Frame> {
+        self.state
+            .frames
             .last_mut()
             .ok_or_else(|| Error::new("finished", "session", "no active graph instance"))
     }
+
     fn values(&self) -> Result<Values<'_>> {
-        let frame = self.frame()?;
+        let frame = self.top()?;
         Ok(Values {
             parameters: &frame.parameters,
             locals: &frame.locals,
-            shared: &self.shared,
+            shared: &self.state.shared,
         })
     }
-    fn assign(&mut self, assignments: &[Assignment]) -> Result<()> {
+
+    fn tick(&mut self) -> Result<()> {
+        self.steps += 1;
+        if self.steps > MAX_STEPS {
+            return Err(Error::new(
+                "step_limit",
+                "execution",
+                "automatic node transitions exceeded 4096 steps without an interaction",
+            ));
+        }
+        Ok(())
+    }
+
+    fn present(
+        &mut self,
+        role: Role,
+        node: NodeId,
+        content: Presented,
+        args: &BTreeMap<String, ViewScalar>,
+    ) {
+        self.items.push(PresentationItem {
+            occurrence: self.items.len() as u32,
+            role,
+            node,
+            content,
+            args: args.clone(),
+        });
+    }
+
+    fn assign(&mut self, assignments: &[crate::Assignment]) -> Result<()> {
         for assignment in assignments {
             let value = self.values()?.evaluate(&assignment.value)?;
             let target = match assignment.target.scope {
-                Scope::Local => self.frame_mut()?.locals.get_mut(&assignment.target.name),
-                Scope::Shared => self.shared.get_mut(&assignment.target.name),
+                Scope::Local => self.top_mut()?.locals.get_mut(&assignment.target.name),
+                Scope::Shared => self.state.shared.get_mut(&assignment.target.name),
                 Scope::Parameter => {
                     return Err(Error::new(
                         "readonly",
@@ -81,661 +100,467 @@ impl State {
             .ok_or_else(|| {
                 Error::new("state", "assignment", "missing checked assignment target")
             })?;
-            expr::expect(value.kind(), target.kind(), "assignment")?;
+            expect(value.kind(), target.kind(), "assignment")?;
             *target = value;
         }
         Ok(())
     }
+
+    fn args(&self, passage: &Passage) -> Result<BTreeMap<String, ViewScalar>> {
+        let values = self.values()?;
+        passage
+            .args
+            .iter()
+            .map(|(name, value)| Ok((name.clone(), values.evaluate(value)?.view())))
+            .collect()
+    }
 }
 
-#[derive(Clone)]
-struct Commit {
-    id: String,
-    parent: Option<String>,
-    action: Option<String>,
-    state: Arc<State>,
-    title: String,
-    node: NodeAddress,
-    instance: u32,
+pub(crate) struct Machine<'p> {
+    pub program: &'p Program,
 }
 
-/// Single-process reference coordinator. Host persistence must finish before publishing a new view.
-/// No I/O or external effects occur in this Gamebook profile.
-#[derive(Clone)]
-pub struct Session {
-    product: Arc<CheckedProduct>,
-    commits: Vec<Commit>,
-    index: BTreeMap<String, usize>,
-    cursor: usize,
-    last_steps: u32,
-    retained_bytes: usize,
-    retained_steps: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ActionView {
-    pub id: String,
-    pub label: String,
-    pub enabled: bool,
-    pub reason: Option<String>,
-}
-
-/// Scalar payloads are formatted strings, so 64-bit integers never lose precision in JavaScript.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct VariableView {
-    pub name: String,
-    pub label: String,
-    pub kind: ScalarType,
-    pub value: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct FrameView {
-    pub graph: GraphRef,
-    pub node: String,
-    pub instance: u32,
-    pub parameters: Vec<VariableView>,
-    pub locals: Vec<VariableView>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct HistoryView {
-    pub id: String,
-    pub parent: Option<String>,
-    pub title: String,
-    pub node: NodeAddress,
-    pub instance: u32,
-    pub current: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct SessionView {
-    pub artifact_id: String,
-    pub cursor: String,
-    pub product_title: String,
-    pub node: NodeAddress,
-    pub instance: u32,
-    pub title: String,
-    pub paragraphs: Vec<String>,
-    pub actions: Vec<ActionView>,
-    pub finished: bool,
-    pub outcome: Option<String>,
-    pub shared: Vec<VariableView>,
-    pub frames: Vec<FrameView>,
-    pub history: Vec<HistoryView>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct SavedCommit {
-    pub id: String,
-    pub parent: Option<String>,
-    pub action: Option<String>,
-    /// Full logical state. Restore validates it against both its digest and deterministic replay.
-    pub snapshot: serde_json::Value,
-}
-
-/// Bounded, fully replay-validated save for the R1 reference profile. It preserves every retained
-/// branch. It is not a legacy CheckpointBundle or an authentication/signature format.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct SaveArchive {
-    pub format_version: u16,
-    pub artifact_id: String,
-    pub commits: Vec<SavedCommit>,
-    pub cursor: String,
-}
-
-fn variables(map: &BTreeMap<String, Scalar>) -> Vec<VariableView> {
-    map.iter()
-        .map(|(name, value)| VariableView {
-            name: name.clone(),
-            label: name.clone(),
-            kind: value.kind(),
-            value: value.display(),
-        })
-        .collect()
-}
-
-impl Session {
-    pub fn new(product: Arc<CheckedProduct>) -> Result<Self> {
-        let graph = product.graph(&product.source.product.entry)?;
-        let mut state = State {
-            shared: product.source.product.shared.clone(),
+impl Machine<'_> {
+    /// The state after the manifest's initial state runs to its first interaction.
+    pub fn initial(&self) -> Result<Step> {
+        let product = &self.program.manifest().product;
+        let graph = self.program.graph(&product.entry)?;
+        let state = State {
+            shared: product
+                .shared
+                .iter()
+                .map(|(name, variable)| (name.clone(), variable.value.clone()))
+                .collect(),
             frames: vec![Frame {
-                graph: product.source.product.entry.clone(),
-                node: graph.source.entry.clone(),
+                graph: product.entry.clone(),
+                node: graph.header.entry,
+                at: None,
                 instance: 1,
-                parameters: product.source.product.arguments.clone(),
-                locals: graph.source.locals.clone(),
+                parameters: product.arguments.clone(),
+                locals: graph.header.locals.clone(),
             }],
             next_instance: 2,
             finished: None,
         };
-        let last_steps = settle(&product, &mut state)?;
-        let retained_bytes = check_state_size(&state)?;
-        let preview = render(&product, &state)?;
-        let id = digest(
-            "NARRATA-NODES-COMMIT-1",
-            &(
-                product.artifact_id(),
-                Option::<&str>::None,
-                Option::<&str>::None,
-                &state,
-            ),
-        )?;
-        let root = Commit {
-            id: id.clone(),
-            parent: None,
-            action: None,
-            state: Arc::new(state),
-            title: preview.title,
-            node: preview.node,
-            instance: preview.instance,
+        let mut work = Work {
+            state,
+            items: Vec::new(),
+            steps: 0,
+            entered: false,
         };
-        Ok(Self {
-            product,
-            commits: vec![root],
-            index: BTreeMap::from([(id, 0)]),
-            cursor: 0,
-            last_steps,
-            retained_bytes,
-            retained_steps: u64::from(last_steps),
+        self.run(&mut work)?;
+        check_size(&work.state)?;
+        Ok(Step {
+            state: work.state,
+            presentation: work.items,
+            entered: work.entered,
         })
     }
 
-    fn commit(&self) -> Result<&Commit> {
-        self.commits
-            .get(self.cursor)
-            .ok_or_else(|| Error::new("state", "cursor", "missing commit"))
-    }
-    pub fn cursor(&self) -> Result<&str> {
-        Ok(&self.commit()?.id)
-    }
-    pub fn product(&self) -> &CheckedProduct {
-        &self.product
-    }
-
-    pub fn view(&self) -> Result<SessionView> {
-        let commit = self.commit()?;
-        let preview = render(&self.product, &commit.state)?;
-        Ok(SessionView {
-            artifact_id: self.product.artifact_id().into(),
-            cursor: commit.id.clone(),
-            product_title: self.product.title().into(),
-            node: preview.node,
-            instance: preview.instance,
-            title: preview.title,
-            paragraphs: preview.paragraphs,
-            actions: preview.actions,
-            finished: preview.outcome.is_some(),
-            outcome: preview.outcome,
-            shared: variables(&commit.state.shared)
-                .into_iter()
-                .map(|mut v| {
-                    if let Some(label) = self.product.source.product.shared_labels.get(&v.name) {
-                        v.label = label.clone();
-                    }
-                    v
-                })
-                .collect(),
-            frames: commit
-                .state
-                .frames
-                .iter()
-                .map(|f| FrameView {
-                    graph: f.graph.clone(),
-                    node: f.node.clone(),
-                    instance: f.instance,
-                    parameters: variables(&f.parameters),
-                    locals: variables(&f.locals),
-                })
-                .collect(),
-            history: self
-                .commits
-                .iter()
-                .enumerate()
-                .map(|(i, c)| HistoryView {
-                    id: c.id.clone(),
-                    parent: c.parent.clone(),
-                    title: c.title.clone(),
-                    node: c.node.clone(),
-                    instance: c.instance,
-                    current: self.cursor == i,
-                })
-                .collect(),
-        })
-    }
-
-    pub fn select(&mut self, expected_commit: &str, action: &str) -> Result<SessionView> {
-        if self.cursor()? != expected_commit {
+    /// Applies an input to its parent state. Every chosen option is checked against the
+    /// parent state, then all effects run in option order, then replies are presented with
+    /// arguments evaluated after the effects.
+    pub fn choose(&self, parent: &State, input: &Input) -> Result<Step> {
+        let indices = check_input(self.program, parent, input)?;
+        let mut work = Work {
+            state: parent.clone(),
+            items: Vec::new(),
+            steps: 0,
+            entered: false,
+        };
+        work.tick()?;
+        let frame = work.top()?.clone();
+        let graph = self.program.graph(&frame.graph)?;
+        let Some(Plan::Passage(passage)) = graph.nodes.get(&frame.node) else {
             return Err(Error::new(
-                "stale_input",
-                "expected_commit",
-                "the displayed interaction is no longer current",
+                "state",
+                "input",
+                "the current node is not a passage",
             ));
-        }
-        let parent = self.commit()?.clone();
-        let mut candidate = parent.state.as_ref().clone();
-        let frame = candidate.frame()?;
-        let plan = self
-            .product
-            .graph(&frame.graph)?
-            .nodes
-            .get(&frame.node)
-            .ok_or_else(|| Error::new("state", &frame.node, "missing current node"))?
-            .clone();
-        match plan {
-            NodePlan::Content { next, .. } if action == "continue" => {
-                candidate.frame_mut()?.node = next
-            }
-            NodePlan::Decision { choices, .. } => {
-                let choice = choices
-                    .iter()
-                    .find(|c| c.id == action)
-                    .ok_or_else(|| Error::new("action", "action", "unknown choice"))?;
-                let values = candidate.values()?;
-                if !condition(&values, choice.visible_if.as_ref())?
-                    || !condition(&values, choice.enabled_if.as_ref())?
+        };
+        let (index, point) = passage
+            .choice_points
+            .iter()
+            .enumerate()
+            .find(|(_, point)| Some(point.id) == frame.at)
+            .ok_or_else(|| Error::new("state", "input", "missing current choice point"))?;
+        let chosen: Vec<_> = indices
+            .iter()
+            .filter_map(|index| point.options.get(*index))
+            .collect();
+        {
+            let values = work.values()?;
+            for option in &chosen {
+                if !values.condition(option.visible_if.as_ref())?
+                    || !values.condition(option.enabled_if.as_ref())?
                 {
                     return Err(Error::new(
                         "unavailable",
-                        "action",
-                        "choice conditions are not satisfied",
+                        "input",
+                        "option conditions are not satisfied",
                     ));
                 }
-                candidate.assign(&choice.assignments)?;
-                candidate.frame_mut()?.node = choice.target.clone();
+            }
+        }
+        for option in &chosen {
+            work.assign(&option.effects)?;
+        }
+        work.top_mut()?.at = None;
+        match chosen.as_slice() {
+            [option] if matches!(option.outcome, Outcome::Branch { .. }) => {
+                if let Outcome::Branch { target } = &option.outcome {
+                    work.top_mut()?.node = *target;
+                }
             }
             _ => {
-                return Err(Error::new(
-                    "action",
-                    "action",
-                    "action does not belong to the current interaction",
-                ));
+                let args = work.args(passage)?;
+                for option in &chosen {
+                    if let Outcome::Local {
+                        reply: Some(reply), ..
+                    } = &option.outcome
+                    {
+                        work.present(
+                            Role::Reply,
+                            frame.node,
+                            Presented::Segment(reply.clone()),
+                            &args,
+                        );
+                    }
+                }
+                // Multiple selection and min = 0 share one rejoin, so the first option's (or,
+                // for an empty selection, the choice point's) rejoin applies to all.
+                let rejoin = chosen
+                    .first()
+                    .copied()
+                    .or_else(|| point.options.first())
+                    .and_then(|option| match &option.outcome {
+                        Outcome::Local { rejoin, .. } => rejoin.clone(),
+                        Outcome::Branch { .. } => None,
+                    });
+                self.after_local(&mut work, frame.node, passage, index, rejoin)?;
             }
         }
-        let steps = settle(&self.product, &mut candidate)?;
-        let preview = render(&self.product, &candidate)?;
-        let state_bytes = check_state_size(&candidate)?;
-        let id = digest(
-            "NARRATA-NODES-COMMIT-1",
-            &(
-                self.product.artifact_id(),
-                Some(&parent.id),
-                Some(action),
-                &candidate,
-            ),
-        )?;
-        if let Some(index) = self.index.get(&id).copied() {
-            self.cursor = index;
-        } else {
-            if self.commits.len() >= MAX_COMMITS
-                || self.retained_bytes + state_bytes > MAX_RETAINED_BYTES
-                || self.retained_steps + u64::from(steps) > MAX_REPLAY_STEPS
-            {
-                return Err(Error::new(
-                    "history_limit",
-                    "session",
-                    "R1 retention limit reached (512 commits / 2 MiB snapshots / 1,000,000 replay steps); export the journey and start a new one",
-                ));
+        self.run(&mut work)?;
+        check_size(&work.state)?;
+        Ok(Step {
+            state: work.state,
+            presentation: work.items,
+            entered: work.entered,
+        })
+    }
+
+    fn run(&self, work: &mut Work) -> Result<()> {
+        loop {
+            if work.state.finished.is_some() {
+                return Ok(());
             }
-            let index = self.commits.len();
-            self.commits.push(Commit {
-                id: id.clone(),
-                parent: Some(parent.id),
-                action: Some(action.into()),
-                state: Arc::new(candidate),
-                title: preview.title,
-                node: preview.node,
-                instance: preview.instance,
-            });
-            self.index.insert(id, index);
-            self.cursor = index;
-            self.retained_bytes += state_bytes;
-            self.retained_steps += u64::from(steps);
-        }
-        self.last_steps = steps;
-        self.view()
-    }
-
-    pub fn checkout(&mut self, commit: &str) -> Result<SessionView> {
-        let index = self.index.get(commit).copied().ok_or_else(|| {
-            Error::new(
-                "reference",
-                "commit",
-                "commit is not retained in this session",
-            )
-        })?;
-        // Rendering is checked before moving the visible cursor.
-        let target = self
-            .commits
-            .get(index)
-            .ok_or_else(|| Error::new("state", "commit", "missing indexed commit"))?;
-        render(&self.product, &target.state)?;
-        self.cursor = index;
-        self.view()
-    }
-
-    pub fn save(&self) -> Result<String> {
-        let archive = SaveArchive {
-            format_version: FORMAT_VERSION,
-            artifact_id: self.product.artifact_id().into(),
-            cursor: self.cursor()?.into(),
-            commits: self
-                .commits
-                .iter()
-                .map(|c| {
-                    Ok(SavedCommit {
-                        id: c.id.clone(),
-                        parent: c.parent.clone(),
-                        action: c.action.clone(),
-                        snapshot: serde_json::to_value(c.state.as_ref())
-                            .map_err(|e| Error::new("encoding", "snapshot", e.to_string()))?,
-                    })
-                })
-                .collect::<Result<_>>()?,
-        };
-        String::from_utf8(canonical_bytes(&archive)?)
-            .map_err(|e| Error::new("encoding", "save", e.to_string()))
-    }
-
-    pub fn restore(product: Arc<CheckedProduct>, text: &str) -> Result<Self> {
-        let archive: SaveArchive = parse_json(text)?;
-        if archive.format_version != FORMAT_VERSION || archive.artifact_id != product.artifact_id()
-        {
-            return Err(Error::new(
-                "incompatible_save",
-                "artifact_id",
-                "save requires its exact node product and format",
-            ));
-        }
-        if archive.commits.is_empty() || archive.commits.len() > MAX_COMMITS {
-            return Err(Error::new(
-                "limit",
-                "commits",
-                "invalid retained history length",
-            ));
-        }
-        let mut session = Self::new(product)?;
-        let first = archive
-            .commits
-            .first()
-            .ok_or_else(|| Error::new("save", "commits", "missing root"))?;
-        if first.id != session.cursor()? || first.parent.is_some() || first.action.is_some() {
-            return Err(Error::new(
-                "save",
-                "commits[0]",
-                "root does not match the initial state",
-            ));
-        }
-        check_snapshot(
-            &first.snapshot,
-            &session.commit()?.state,
-            "commits[0].snapshot",
-        )?;
-        let mut work = u64::from(session.last_steps);
-        for (i, commit) in archive.commits.iter().enumerate().skip(1) {
-            if session.index.contains_key(&commit.id) {
-                return Err(Error::new(
-                    "duplicate",
-                    format!("commits[{i}]"),
-                    "duplicate commit",
-                ));
+            let frame = work.top()?.clone();
+            if frame.at.is_some() {
+                return Ok(());
             }
-            let parent = commit.parent.as_deref().ok_or_else(|| {
-                Error::new(
-                    "save",
-                    format!("commits[{i}]"),
-                    "non-root commit needs a parent",
-                )
+            work.tick()?;
+            let graph = self.program.graph(&frame.graph)?;
+            let plan = graph.nodes.get(&frame.node).ok_or_else(|| {
+                Error::new("state", frame.node.to_string(), "unknown checked node")
             })?;
-            let action = commit.action.as_deref().ok_or_else(|| {
-                Error::new(
-                    "save",
-                    format!("commits[{i}]"),
-                    "non-root commit needs an action",
-                )
-            })?;
-            session.checkout(parent)?;
-            session.select(parent, action)?;
-            if session.cursor()? != commit.id {
-                return Err(Error::new(
-                    "save",
-                    format!("commits[{i}]"),
-                    "replayed state does not match the commit digest",
-                ));
-            }
-            check_snapshot(
-                &commit.snapshot,
-                &session.commit()?.state,
-                &format!("commits[{i}].snapshot"),
-            )?;
-            work += u64::from(session.last_steps);
-            if work > MAX_REPLAY_STEPS {
-                return Err(Error::new(
-                    "limit",
-                    "save",
-                    "save replay exceeds the work budget",
-                ));
-            }
-        }
-        session.checkout(&archive.cursor)?;
-        Ok(session)
-    }
-}
-
-fn settle(product: &CheckedProduct, state: &mut State) -> Result<u32> {
-    for steps in 1..=MAX_STEPS {
-        let frame = state.frame()?.clone();
-        let graph = product.graph(&frame.graph)?;
-        let plan = graph
-            .nodes
-            .get(&frame.node)
-            .ok_or_else(|| Error::new("state", &frame.node, "unknown checked node"))?;
-        match plan {
-            NodePlan::Content { .. } | NodePlan::Decision { .. } => return Ok(steps),
-            NodePlan::Branch {
-                condition,
-                when_true,
-                when_false,
-            } => {
-                let next = if state.values()?.boolean(condition)? {
-                    when_true
-                } else {
-                    when_false
-                };
-                state.frame_mut()?.node = next.clone();
-            }
-            NodePlan::Mutate { assignments, next } => {
-                state.assign(assignments)?;
-                state.frame_mut()?.node = next.clone();
-                check_state_size(state)?;
-            }
-            NodePlan::Call {
-                target, arguments, ..
-            } => {
-                if state.frames.len() >= MAX_DEPTH {
-                    return Err(Error::new(
-                        "depth_limit",
-                        frame.graph.label(),
-                        "subgraph call depth exceeds 64",
-                    ));
-                }
-                let target = product.target(&frame.graph, target)?;
-                let callee = product.graph(&target)?;
-                let parameters = arguments
-                    .iter()
-                    .map(|(key, value)| Ok((key.clone(), state.values()?.evaluate(value)?)))
-                    .collect::<Result<_>>()?;
-                let instance = state.next_instance;
-                state.next_instance = instance
-                    .checked_add(1)
-                    .ok_or_else(|| Error::new("limit", "instances", "instance counter overflow"))?;
-                state.frames.push(Frame {
-                    graph: target,
-                    node: callee.source.entry.clone(),
-                    instance,
-                    parameters,
-                    locals: callee.source.locals.clone(),
-                });
-                check_state_size(state)?;
-            }
-            NodePlan::Return { outcome } => {
-                state.frames.pop();
-                if let Some(parent) = state.frames.last_mut() {
-                    let plan = product
-                        .graph(&parent.graph)?
-                        .nodes
-                        .get(&parent.node)
-                        .ok_or_else(|| Error::new("state", &parent.node, "missing call site"))?;
-                    let NodePlan::Call { on_return, .. } = plan else {
-                        return Err(Error::new("state", "return", "parent is not a call site"));
-                    };
-                    parent.node = on_return.get(outcome).cloned().ok_or_else(|| {
-                        Error::new("state", "return", "missing outcome continuation")
-                    })?;
-                } else {
-                    state.finished = Some((frame.address(), frame.instance, outcome.clone()));
-                    return Ok(steps);
-                }
-            }
-        }
-    }
-    Err(Error::new(
-        "step_limit",
-        "execution",
-        "automatic node transitions exceeded 4096 steps without an interaction",
-    ))
-}
-
-fn check_state_size(state: &State) -> Result<usize> {
-    let size = canonical_bytes(state)?.len();
-    if size > MAX_STATE_BYTES {
-        return Err(Error::new(
-            "limit",
-            "state",
-            "R1 logical state exceeds 128 KiB",
-        ));
-    }
-    Ok(size)
-}
-
-fn check_snapshot(snapshot: &serde_json::Value, state: &State, path: &str) -> Result<()> {
-    if canonical_bytes(snapshot)? != canonical_bytes(state)? {
-        return Err(Error::new(
-            "save",
-            path,
-            "snapshot does not match the checked replayed state",
-        ));
-    }
-    Ok(())
-}
-
-struct Preview {
-    node: NodeAddress,
-    instance: u32,
-    title: String,
-    paragraphs: Vec<String>,
-    actions: Vec<ActionView>,
-    outcome: Option<String>,
-}
-
-fn condition(values: &Values<'_>, expr: Option<&crate::Expr>) -> Result<bool> {
-    expr.map(|v| values.boolean(v)).unwrap_or(Ok(true))
-}
-
-fn render(product: &CheckedProduct, state: &State) -> Result<Preview> {
-    if let Some((node, instance, outcome)) = &state.finished {
-        return Ok(Preview {
-            node: node.clone(),
-            instance: *instance,
-            title: "旅程结束".into(),
-            paragraphs: vec!["这段旅程已经结束。你可以回到任一历史节点，尝试另一条路线。".into()],
-            actions: Vec::new(),
-            outcome: Some(outcome.clone()),
-        });
-    }
-    let frame = state.frame()?;
-    let plan = product
-        .graph(&frame.graph)?
-        .nodes
-        .get(&frame.node)
-        .ok_or_else(|| Error::new("state", &frame.node, "unknown node"))?;
-    let values = state.values()?;
-    let (content, actions) = match plan {
-        NodePlan::Content { content, label, .. } => (
-            content,
-            vec![ActionView {
-                id: "continue".into(),
-                label: values.render(label)?,
-                enabled: true,
-                reason: None,
-            }],
-        ),
-        NodePlan::Decision { content, choices } => {
-            let mut actions = Vec::new();
-            for choice in choices {
-                if !condition(&values, choice.visible_if.as_ref())? {
-                    continue;
-                }
-                let enabled = condition(&values, choice.enabled_if.as_ref())?;
-                actions.push(ActionView {
-                    id: choice.id.clone(),
-                    label: values.render(&choice.label)?,
-                    enabled,
-                    reason: if enabled {
-                        None
+            match plan {
+                Plan::Passage(passage) => self.enter(work, frame.node, passage)?,
+                Plan::Branch {
+                    condition,
+                    when_true,
+                    when_false,
+                } => {
+                    let next = if work.values()?.boolean(condition)? {
+                        when_true
                     } else {
-                        Some(
-                            choice
-                                .disabled_reason
-                                .as_deref()
-                                .map(|v| values.render(v))
-                                .transpose()?
-                                .unwrap_or_else(|| "条件尚未满足".into()),
-                        )
-                    },
-                });
+                        when_false
+                    };
+                    work.top_mut()?.node = *next;
+                }
+                Plan::Mutate { assignments, next } => {
+                    work.assign(assignments)?;
+                    work.top_mut()?.node = *next;
+                    check_size(&work.state)?;
+                }
+                Plan::Call {
+                    target, arguments, ..
+                } => {
+                    if work.state.frames.len() >= MAX_CALL_DEPTH {
+                        return Err(Error::new(
+                            "depth_limit",
+                            frame.graph.label(),
+                            "subgraph call depth exceeds 64",
+                        ));
+                    }
+                    let callee_ref = self.program.resolve_call(&frame.graph, target)?;
+                    let callee = self.program.graph(&callee_ref)?;
+                    let parameters = {
+                        let values = work.values()?;
+                        arguments
+                            .iter()
+                            .map(|(name, value)| Ok((name.clone(), values.evaluate(value)?)))
+                            .collect::<Result<BTreeMap<String, Scalar>>>()?
+                    };
+                    let instance = work.state.next_instance;
+                    work.state.next_instance = instance.checked_add(1).ok_or_else(|| {
+                        Error::new("limit", "instances", "instance counter overflow")
+                    })?;
+                    work.state.frames.push(Frame {
+                        graph: callee_ref,
+                        node: callee.header.entry,
+                        at: None,
+                        instance,
+                        parameters,
+                        locals: callee.header.locals.clone(),
+                    });
+                    check_size(&work.state)?;
+                }
+                Plan::Return { outcome } => {
+                    work.state.frames.pop();
+                    match work.state.frames.last_mut() {
+                        Some(parent) => {
+                            let caller = self.program.graph(&parent.graph)?;
+                            let Some(Plan::Call { on_return, .. }) = caller.nodes.get(&parent.node)
+                            else {
+                                return Err(Error::new(
+                                    "state",
+                                    "return",
+                                    "parent is not a call site",
+                                ));
+                            };
+                            parent.node = *on_return.get(outcome).ok_or_else(|| {
+                                Error::new("state", "return", "missing outcome continuation")
+                            })?;
+                        }
+                        None => {
+                            work.state.finished = Some(Finished {
+                                node: frame.node,
+                                instance: frame.instance,
+                                outcome: outcome.clone(),
+                            });
+                        }
+                    }
+                }
             }
-            if !actions.iter().any(|a| a.enabled) {
-                return Err(Error::new(
-                    "no_actions",
-                    frame.graph.label(),
-                    "decision has no available action",
-                ));
-            }
-            (content, actions)
         }
-        _ => {
+    }
+
+    /// Presents the title and the first stretch of body, then arrives at the first choice
+    /// point (or runs to the end of the passage).
+    fn enter(&self, work: &mut Work, node: NodeId, passage: &Passage) -> Result<()> {
+        work.entered = true;
+        let args = work.args(passage)?;
+        if let Some(title) = &passage.title {
+            work.present(Role::Title, node, Presented::Ref(title.clone()), &args);
+        }
+        if let Some(body) = &passage.body {
+            let last = match passage.choice_points.first() {
+                Some(point) => point.placement.clone().or_else(|| body.last.clone()),
+                None => body.last.clone(),
+            };
+            work.present(
+                Role::Body,
+                node,
+                Presented::Segment(Segment {
+                    unit: body.unit.clone(),
+                    first: body.first.clone(),
+                    last,
+                }),
+                &args,
+            );
+        }
+        self.arrive(work, node, passage, 0)
+    }
+
+    /// Presents the stretch from `rejoin` to the next choice point (or the body's end), then
+    /// arrives at the next choice point.
+    fn after_local(
+        &self,
+        work: &mut Work,
+        node: NodeId,
+        passage: &Passage,
+        index: usize,
+        rejoin: Option<AnchorId>,
+    ) -> Result<()> {
+        if let (Some(rejoin), Some(body)) = (rejoin, &passage.body) {
+            let args = work.args(passage)?;
+            let last = match passage.choice_points.get(index + 1) {
+                Some(point) => point.placement.clone().or_else(|| body.last.clone()),
+                None => body.last.clone(),
+            };
+            work.present(
+                Role::Body,
+                node,
+                Presented::Segment(Segment {
+                    unit: body.unit.clone(),
+                    first: Some(rejoin),
+                    last,
+                }),
+                &args,
+            );
+        }
+        self.arrive(work, node, passage, index + 1)
+    }
+
+    fn arrive(&self, work: &mut Work, node: NodeId, passage: &Passage, index: usize) -> Result<()> {
+        let Some(point) = passage.choice_points.get(index) else {
+            let next = passage.next.ok_or_else(|| {
+                Error::new(
+                    "state",
+                    node.to_string(),
+                    "the passage ended without a next node",
+                )
+            })?;
+            let frame = work.top_mut()?;
+            frame.node = next;
+            frame.at = None;
+            return Ok(());
+        };
+        let available = {
+            let values = work.values()?;
+            let mut count = 0_usize;
+            for option in &point.options {
+                if values.condition(option.visible_if.as_ref())?
+                    && values.condition(option.enabled_if.as_ref())?
+                {
+                    count += 1;
+                }
+            }
+            count
+        };
+        if point.min == 0 && available == 0 {
+            // Choosing nothing is the only possibility: skip without an interaction.
+            let rejoin = point
+                .options
+                .first()
+                .and_then(|option| match &option.outcome {
+                    Outcome::Local { rejoin, .. } => rejoin.clone(),
+                    Outcome::Branch { .. } => None,
+                });
+            return self.after_local(work, node, passage, index, rejoin);
+        }
+        if available < usize::from(point.min) {
+            return Err(Error::new(
+                "no_actions",
+                node.to_string(),
+                "fewer options are available than the choice point requires",
+            ));
+        }
+        work.top_mut()?.at = Some(point.id);
+        Ok(())
+    }
+
+    /// The interaction a persisted state waits at.
+    pub fn interaction(&self, state: &State, names: Option<&NameTable>) -> Result<Interaction> {
+        if let Some(finished) = &state.finished {
+            let ending = self
+                .program
+                .manifest()
+                .product
+                .endings
+                .get(&finished.outcome)
+                .cloned()
+                .unwrap_or_default();
+            return Ok(Interaction::Finished {
+                outcome: finished.outcome.clone(),
+                title: ending.title,
+                body: ending.body,
+            });
+        }
+        let frame = state
+            .frames
+            .last()
+            .ok_or_else(|| Error::new("state", "session", "no active graph instance"))?;
+        let graph = self.program.graph(&frame.graph)?;
+        let Some(Plan::Passage(passage)) = graph.nodes.get(&frame.node) else {
             return Err(Error::new(
                 "state",
-                &frame.node,
-                "session is not at an interaction boundary",
+                "session",
+                "the current node is not a passage",
+            ));
+        };
+        let point = passage
+            .choice_points
+            .iter()
+            .find(|point| Some(point.id) == frame.at)
+            .ok_or_else(|| Error::new("state", "session", "missing current choice point"))?;
+        let values = Values {
+            parameters: &frame.parameters,
+            locals: &frame.locals,
+            shared: &state.shared,
+        };
+        let args = passage
+            .args
+            .iter()
+            .map(|(name, value)| Ok((name.clone(), values.evaluate(value)?.view())))
+            .collect::<Result<_>>()?;
+        let mut options = Vec::new();
+        for option in &point.options {
+            if !values.condition(option.visible_if.as_ref())? {
+                continue;
+            }
+            let enabled = values.condition(option.enabled_if.as_ref())?;
+            options.push(OptionView {
+                id: option.id,
+                key: names
+                    .and_then(|names| names.option(&frame.graph, &option.id).map(str::to_owned)),
+                label: option.label.clone(),
+                enabled,
+                reason: if enabled { None } else { option.reason.clone() },
+                outcome: match option.outcome {
+                    Outcome::Local { .. } => OutcomeKind::Local,
+                    Outcome::Branch { .. } => OutcomeKind::Branch,
+                },
+            });
+        }
+        Ok(Interaction::Choose {
+            graph: frame.graph.clone(),
+            node: frame.node,
+            choice_point: point.id,
+            key: names.and_then(|names| {
+                names
+                    .choice_point(&frame.graph, &point.id)
+                    .map(str::to_owned)
+            }),
+            min: point.min,
+            max: point.max,
+            args,
+            options,
+        })
+    }
+
+    /// The title shown for a commit in history: the waiting passage's or the ending's.
+    pub fn title(
+        &self,
+        state: &State,
+    ) -> Result<(
+        GraphRef,
+        NodeId,
+        u32,
+        Option<narrata_kernel::content::ContentRef>,
+    )> {
+        let product = &self.program.manifest().product;
+        if let Some(finished) = &state.finished {
+            let title = product
+                .endings
+                .get(&finished.outcome)
+                .and_then(|ending| ending.title.clone());
+            return Ok((
+                product.entry.clone(),
+                finished.node,
+                finished.instance,
+                title,
             ));
         }
-    };
-    let body = product
-        .source
-        .packages
-        .get(&frame.graph.package)
-        .and_then(|p| p.content.get(content))
-        .ok_or_else(|| Error::new("state", content, "missing compiled content"))?;
-    Ok(Preview {
-        node: frame.address(),
-        instance: frame.instance,
-        title: values.render(&body.title)?,
-        paragraphs: body
-            .paragraphs
-            .iter()
-            .map(|p| values.render(p))
-            .collect::<Result<_>>()?,
-        actions,
-        outcome: None,
-    })
+        let frame = state
+            .frames
+            .last()
+            .ok_or_else(|| Error::new("state", "session", "no active graph instance"))?;
+        let graph = self.program.graph(&frame.graph)?;
+        let title = match graph.nodes.get(&frame.node) {
+            Some(Plan::Passage(passage)) => passage.title.clone(),
+            _ => None,
+        };
+        Ok((frame.graph.clone(), frame.node, frame.instance, title))
+    }
 }

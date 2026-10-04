@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Analysis",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      }
+    },
+    "graphs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GraphAnalysis"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "artifact_id",
+    "graphs",
+    "diagnostics"
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "Diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "path",
+        "message"
+      ]
+    },
+    "EdgeAnalysis": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "An option alias, an outcome name, or `true`/`false` for conditions.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/EdgeKind"
+        },
+        "label": {
+          "description": "An option label.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/NodeAddress"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "target"
+      ]
+    },
+    "EdgeKind": {
+      "type": "string",
+      "enum": [
+        "next",
+        "choice",
+        "condition",
+        "return",
+        "call"
+      ]
+    },
+    "GraphAnalysis": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "exported": {
+          "type": "boolean"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NodeAnalysis"
+          }
+        },
+        "reference": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "entry",
+        "exported",
+        "nodes"
+      ]
+    },
+    "GraphRef": {
+      "description": "A graph of one package instance. Package aliases and graph names are composition\nstructure, so unlike node aliases they are part of the artifact identity.",
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "NodeAddress": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph",
+        "node"
+      ]
+    },
+    "NodeAnalysis": {
+      "type": "object",
+      "properties": {
+        "callee": {
+          "description": "The graph a call runs.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GraphRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EdgeAnalysis"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/NodeKind"
+        },
+        "outcome": {
+          "description": "The outcome a return reports.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "A passage's title.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "edges"
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "NodeKind": {
+      "type": "string",
+      "enum": [
+        "passage",
+        "branch",
+        "mutate",
+        "call",
+        "return"
+      ]
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    }
+  }
+}

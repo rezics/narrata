@@ -6,12 +6,24 @@ use serde::{
 };
 use serde_json::Value;
 
-use crate::{Error, MAX_DOCUMENT_BYTES, Result};
+use crate::{Error, MAX_SOURCE_BYTES, Result};
 
 /// Reject duplicate object keys before serde can silently overwrite a node or binding.
+/// Documents are limited to the 16 MiB of a source package.
 pub fn parse_json<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
-    if text.len() > MAX_DOCUMENT_BYTES {
-        return Err(Error::new("limit", "$", "document exceeds 4 MiB"));
+    parse_json_limited(text, MAX_SOURCE_BYTES)
+}
+
+pub fn parse_json_limited<T: serde::de::DeserializeOwned>(
+    text: &str,
+    max_bytes: usize,
+) -> Result<T> {
+    if text.len() > max_bytes {
+        return Err(Error::new(
+            "limit",
+            "$",
+            format!("document exceeds {max_bytes} bytes"),
+        ));
     }
     let mut decoder = serde_json::Deserializer::from_str(text);
     let value = UniqueValue::deserialize(&mut decoder)

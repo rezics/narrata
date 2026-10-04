@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PackageSource",
+  "type": "object",
+  "properties": {
+    "exports": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "graphs": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/GraphSource"
+      }
+    },
+    "id": {
+      "type": "string"
+    },
+    "tombstones": {
+      "description": "Deleted IDs; they are never reused, and the list only grows.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/AuthoredId"
+      }
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "exports",
+    "graphs"
+  ],
+  "$defs": {
+    "AuthoredId": {
+      "type": "string",
+      "pattern": "^(node|choice-point|option):[0-9a-f]{32}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "GraphSource": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "description": "Alias of the entry node.",
+          "type": "string"
+        },
+        "imports": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Signature"
+          },
+          "default": {}
+        },
+        "locals": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "nodes": {
+          "description": "Keyed by node alias.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeSource"
+          }
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        },
+        "shared": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "outcomes",
+        "entry",
+        "nodes"
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "NodeSource": {
+      "type": "object",
+      "properties": {
+        "data": true,
+        "id": {
+          "description": "Minted by `narrata-book ids`; compile rejects a missing ID.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type_id",
+        "data"
+      ]
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "Scalar": {
+      "description": "A state value. `text` is data that rules compare (decision 2); translatable names travel as\n`ref`, which only supports equality.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/ContentRef"
+        }
+      ]
+    },
+    "ScalarType": {
+      "type": "string",
+      "enum": [
+        "bool",
+        "int",
+        "text",
+        "ref"
+      ]
+    },
+    "Signature": {
+      "description": "Parameters and outcomes; checked signatures keep outcomes sorted and unique.",
+      "type": "object",
+      "properties": {
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "outcomes"
+      ]
+    }
+  }
+}

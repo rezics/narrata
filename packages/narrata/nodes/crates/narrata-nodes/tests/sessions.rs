@@ -1,172 +1,522 @@
+#![allow(clippy::panic, clippy::unwrap_used)]
+
 mod support;
 
-use narrata_nodes::{SaveArchive, Session, parse_json};
-use serde_json::json;
-use support::{TestResult, click, compile_error, product, source};
+use std::sync::Arc;
 
-#[test]
-fn calls_bind_parameters_keep_locals_isolated_and_return_to_caller() -> TestResult {
-    let mut s = Session::new(product(source())?)?;
-    let first = click(&mut s, "visit")?;
-    assert_eq!(first.frames.len(), 2);
-    assert_eq!(first.instance, 2);
-    assert_eq!(first.paragraphs, vec!["阿岚，本次局部计数 1，累计 1。"]);
-    let returned = click(&mut s, "continue")?;
-    assert_eq!(returned.node.node, "start");
-    assert_eq!(returned.frames.len(), 1);
-    let second = click(&mut s, "visit")?;
-    assert_eq!(second.instance, 3);
-    assert_eq!(second.paragraphs, vec!["阿岚，本次局部计数 1，累计 2。"]);
-    Ok(())
+use narrata_kernel::content::{ContentRef, Segment};
+use narrata_nodes::{
+    Commit, Program, Scalar, Session, SessionExport, State, ViewScalar,
+    view::{Interaction, PresentationItem, Presented, Role},
+};
+use support::*;
+
+fn local(key: &str) -> ContentRef {
+    ContentRef::new("local", key).unwrap()
+}
+
+fn segment_of(unit: &str, first: Option<&str>, last: Option<&str>) -> Presented {
+    let anchor = |text: &str| text.parse().unwrap();
+    Presented::Segment(Segment {
+        unit: local(unit),
+        first: first.map(anchor),
+        last: last.map(anchor),
+    })
+}
+
+fn shown(items: &[PresentationItem]) -> Vec<(Role, Presented)> {
+    items
+        .iter()
+        .map(|item| (item.role, item.content.clone()))
+        .collect()
+}
+
+fn coins(item: &PresentationItem) -> Option<&ViewScalar> {
+    item.args.get("coins")
 }
 
 #[test]
-fn disabled_hidden_and_stale_actions_cannot_change_state() -> TestResult {
-    let mut s = Session::new(product(source())?)?;
-    let before = s.save()?;
-    let root = s.cursor()?.to_owned();
-    let view = s.view()?;
-    assert!(view.actions.iter().any(|a| a.id == "locked" && !a.enabled));
-    assert!(!view.actions.iter().any(|a| a.id == "hidden"));
-    for action in ["locked", "hidden", "missing"] {
-        assert!(s.select(&root, action).is_err());
-        assert_eq!(s.save()?, before);
-    }
-    click(&mut s, "visit")?;
-    let after = s.save()?;
+fn entering_a_passage_presents_its_title_and_the_body_up_to_the_first_choice_point() {
+    let compilation = compiled();
+    let (session, names) = session(&compilation);
+    let view = session.view(Some(&names)).unwrap();
     assert_eq!(
-        s.select(&root, "finish")
-            .err()
-            .ok_or("expected stale error")?
-            .code,
-        "stale_input"
+        shown(&view.presentation),
+        vec![
+            (Role::Title, Presented::Ref(local("main.gate.title"))),
+            (Role::Body, segment_of("main.gate", Some("b1"), Some("b1"))),
+        ]
     );
-    assert_eq!(s.save()?, after);
-    Ok(())
+    let Interaction::Choose {
+        key,
+        min,
+        max,
+        options,
+        ..
+    } = view.interaction
+    else {
+        panic!("expected a choice");
+    };
+    assert_eq!((key.as_deref(), min, max), (Some("greet"), 1, 1));
+    assert_eq!(options.len(), 2);
+    assert_eq!(view.presentation[0].occurrence, 0);
+    assert_eq!(view.presentation[1].occurrence, 1);
 }
 
 #[test]
-fn arithmetic_failure_and_automatic_cycles_abort_the_entire_action() -> TestResult {
-    let mut raw = source();
-    raw["product"]["shared"]["visits"] = json!(i64::MAX);
-    let mut s = Session::new(product(raw)?)?;
-    let before = s.save()?;
+fn a_local_choice_shows_its_reply_then_rejoins_the_same_passage() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["wave"]).unwrap();
+    let view = session.view(Some(&names)).unwrap();
     assert_eq!(
-        click(&mut s, "visit")
-            .err()
-            .ok_or("expected overflow")?
-            .to_string()
-            .split_whitespace()
-            .next(),
-        Some("overflow")
+        shown(&view.presentation),
+        vec![
+            (
+                Role::Reply,
+                segment_of("main.gate", Some("r-wave"), Some("r-wave"))
+            ),
+            (Role::Body, segment_of("main.gate", Some("b2"), Some("b2"))),
+        ]
     );
-    assert_eq!(s.save()?, before);
-    let mut raw = source();
-    raw["packages"]["camp"]["graphs"]["visit"]["nodes"]["increment"]["data"]["next"] =
-        json!("increment");
-    let mut s = Session::new(product(raw)?)?;
-    let before = s.save()?;
-    assert!(click(&mut s, "visit").is_err());
-    assert_eq!(s.save()?, before);
-    Ok(())
+    assert_eq!(
+        coins(&view.presentation[0]),
+        Some(&ViewScalar::Int("1".into()))
+    );
+    let Interaction::Choose {
+        key,
+        min,
+        max,
+        options,
+        ..
+    } = view.interaction
+    else {
+        panic!("expected a choice");
+    };
+    assert_eq!((key.as_deref(), min, max), (Some("pack"), 0, 2));
+    let map = options
+        .iter()
+        .find(|option| option.key.as_deref() == Some("map"))
+        .unwrap();
+    assert!(!map.enabled);
+    assert_eq!(map.reason, Some(local("main.gate.map.reason")));
 }
 
 #[test]
-fn save_restores_full_snapshots_all_branches_and_exact_instance() -> TestResult {
-    let p = product(source())?;
-    let mut s = Session::new(p.clone())?;
-    let root = s.cursor()?.to_owned();
-    let child = click(&mut s, "visit")?.cursor;
-    s.checkout(&root)?;
-    assert!(click(&mut s, "finish")?.finished);
-    s.checkout(&child)?;
-    let saved = s.save()?;
-    let archive: SaveArchive = parse_json(&saved)?;
-    assert_eq!(archive.commits.len(), 3);
+fn a_multiple_selection_presents_replies_in_option_order_after_all_effects() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["nod"]).unwrap();
+    choose(&mut session, &names, &["rope", "lamp"]).unwrap();
+    let view = session.view(Some(&names)).unwrap();
+    assert_eq!(
+        shown(&view.presentation),
+        vec![
+            (
+                Role::Reply,
+                segment_of("main.gate", Some("r-rope"), Some("r-rope"))
+            ),
+            (
+                Role::Reply,
+                segment_of("main.gate", Some("r-lamp"), Some("r-lamp"))
+            ),
+            (Role::Body, segment_of("main.gate", Some("b3"), Some("b4"))),
+        ]
+    );
+    // Both replies see the state after every chosen option's effects.
     assert!(
-        archive
-            .commits
+        view.presentation
             .iter()
-            .all(|c| c.snapshot.get("shared").is_some())
+            .all(|item| coins(item) == Some(&ViewScalar::Int("1".into())))
     );
+    let state = session.state().unwrap();
+    assert_eq!(state.shared.get("lamp"), Some(&Scalar::Bool(true)));
+}
+
+#[test]
+fn options_out_of_choice_point_order_are_rejected_and_leave_the_session_unchanged() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["wave"]).unwrap();
+    let before = session.cursor().unwrap();
+    let error = choose(&mut session, &names, &["lamp", "rope"])
+        .err()
+        .unwrap();
+    assert_eq!(error.code, "action");
+    let error = choose(&mut session, &names, &["rope", "rope"])
+        .err()
+        .unwrap();
+    assert_eq!(error.code, "action");
+    assert_eq!(session.cursor().unwrap(), before);
+}
+
+#[test]
+fn a_disabled_option_cannot_be_chosen() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["wave"]).unwrap();
+    let error = choose(&mut session, &names, &["map"]).err().unwrap();
+    assert_eq!(error.code, "unavailable");
+}
+
+#[test]
+fn choosing_nothing_takes_the_shared_rejoin() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["wave"]).unwrap();
+    choose(&mut session, &names, &[]).unwrap();
+    let view = session.view(Some(&names)).unwrap();
+    assert_eq!(
+        shown(&view.presentation),
+        vec![(Role::Body, segment_of("main.gate", Some("b3"), Some("b4")))]
+    );
+}
+
+#[test]
+fn a_choice_point_with_min_zero_and_no_available_option_is_skipped() {
+    let compilation = try_variant(|_, main, _| {
+        for option in 0..2 {
+            set(
+                main,
+                &format!("{GATE}/choice_points/1/options/{option}"),
+                "visible_if",
+                literal(serde_json::json!(false)),
+            );
+        }
+    })
+    .unwrap();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["wave"]).unwrap();
+    let view = session.view(Some(&names)).unwrap();
+    assert_eq!(
+        shown(&view.presentation),
+        vec![
+            (
+                Role::Reply,
+                segment_of("main.gate", Some("r-wave"), Some("r-wave"))
+            ),
+            (Role::Body, segment_of("main.gate", Some("b2"), Some("b2"))),
+            (Role::Body, segment_of("main.gate", Some("b3"), Some("b4"))),
+        ]
+    );
+    let Interaction::Choose { key, .. } = view.interaction else {
+        panic!("expected a choice");
+    };
+    assert_eq!(key.as_deref(), Some("route"));
+}
+
+#[test]
+fn too_few_available_options_report_no_actions() {
+    let compilation = try_variant(|_, main, _| {
+        *at(main, &format!("{GATE}/choice_points/1/min")) = serde_json::json!(1);
+        for option in 0..3 {
+            set(
+                main,
+                &format!("{GATE}/choice_points/1/options/{option}"),
+                "visible_if",
+                literal(serde_json::json!(false)),
+            );
+        }
+    })
+    .unwrap();
+    let (mut session, names) = session(&compilation);
+    let error = choose(&mut session, &names, &["wave"]).err().unwrap();
+    assert_eq!(error.code, "no_actions");
+}
+
+#[test]
+fn the_page_collects_everything_since_the_passage_was_entered() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["wave"]).unwrap();
+    choose(&mut session, &names, &["rope"]).unwrap();
+    let page = session.page().unwrap();
+    assert_eq!(page.len(), 6);
+    assert_eq!(page[0].role, Role::Title);
+    assert_eq!(
+        page.iter().map(|item| item.occurrence).collect::<Vec<_>>(),
+        (0..6).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_branch_ends_the_story_with_the_product_ending() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["wave"]).unwrap();
+    choose(&mut session, &names, &["rope"]).unwrap();
+    choose(&mut session, &names, &["right"]).unwrap();
+    let view = session.view(Some(&names)).unwrap();
+    let Interaction::Finished {
+        outcome,
+        title,
+        body,
+    } = view.interaction
+    else {
+        panic!("expected the end");
+    };
+    assert_eq!(outcome, "done");
+    assert_eq!(title, Some(local("ending.done")));
+    assert!(body.is_some());
+    assert!(view.presentation.is_empty());
     assert!(
-        archive
-            .commits
-            .iter()
-            .all(|c| c.snapshot.get("scene").is_none())
+        view.history
+            .last()
+            .is_some_and(|entry| entry.finished && entry.current)
     );
-    let restored = Session::restore(p, &saved)?;
-    assert_eq!(restored.view()?, s.view()?);
-    assert_eq!(restored.save()?, saved);
-    Ok(())
 }
 
 #[test]
-fn untrusted_saves_reject_tampering_unknown_parents_and_duplicate_history() -> TestResult {
-    let p = product(source())?;
-    let mut s = Session::new(p.clone())?;
-    click(&mut s, "visit")?;
-    let archive: SaveArchive = parse_json(&s.save()?)?;
-    let mut bad = archive.clone();
-    bad.commits[1].snapshot["shared"]["visits"] = json!(400);
-    assert!(Session::restore(p.clone(), &serde_json::to_string(&bad)?).is_err());
-    let mut bad = archive.clone();
-    bad.commits[1].parent = Some("unknown".into());
-    assert!(Session::restore(p.clone(), &serde_json::to_string(&bad)?).is_err());
-    let mut bad = archive.clone();
-    bad.commits.push(bad.commits[1].clone());
-    assert!(Session::restore(p.clone(), &serde_json::to_string(&bad)?).is_err());
-    let mut changed = source();
-    changed["product"]["shared"]["visits"] = json!(1);
-    assert!(Session::restore(product(changed)?, &serde_json::to_string(&archive)?).is_err());
-    Ok(())
+fn a_call_passes_a_ref_argument_and_returns_to_its_continuation() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["nod"]).unwrap();
+    choose(&mut session, &names, &[]).unwrap();
+    choose(&mut session, &names, &["left"]).unwrap();
+    let view = session.view(Some(&names)).unwrap();
+    assert_eq!(view.frames.len(), 2);
+    assert_eq!(
+        view.presentation[1].args.get("visitor"),
+        Some(&ViewScalar::Ref(local("main.visitor")))
+    );
+    assert_eq!(
+        shown(&view.presentation)[1],
+        (Role::Body, segment_of("side.talk", None, None))
+    );
+    choose(&mut session, &names, &["continue"]).unwrap();
+    let state = session.state().unwrap();
+    assert!(state.frames.is_empty());
+    assert_eq!(
+        state.finished.as_ref().map(|f| f.outcome.as_str()),
+        Some("lost")
+    );
+    assert_eq!(state.next_instance, 3);
 }
 
 #[test]
-fn repeat_replay_is_deterministic_and_reuses_existing_branch() -> TestResult {
-    let p = product(source())?;
-    let mut a = Session::new(p.clone())?;
-    let mut b = Session::new(p.clone())?;
-    for _ in 0..15 {
-        assert_eq!(click(&mut a, "visit")?, click(&mut b, "visit")?);
-        b = Session::restore(p.clone(), &b.save()?)?;
-        assert_eq!(click(&mut a, "continue")?, click(&mut b, "continue")?);
+fn a_stale_expected_commit_is_rejected() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    let root = session.cursor().unwrap();
+    let view = session.view(Some(&names)).unwrap();
+    choose(&mut session, &names, &["wave"]).unwrap();
+    let Interaction::Choose {
+        choice_point,
+        options,
+        ..
+    } = view.interaction
+    else {
+        panic!("expected a choice");
+    };
+    let error = session
+        .choose(&root, choice_point, vec![options[0].id])
+        .err()
+        .unwrap();
+    assert_eq!(error.code, "stale_input");
+}
+
+#[test]
+fn the_same_input_from_the_same_parent_reuses_the_commit() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    let root = session.cursor().unwrap();
+    choose(&mut session, &names, &["wave"]).unwrap();
+    let first = session.cursor().unwrap();
+    session.checkout(&root).unwrap();
+    choose(&mut session, &names, &["wave"]).unwrap();
+    assert_eq!(session.cursor().unwrap(), first);
+    assert_eq!(session.commits().count(), 2);
+}
+
+fn played() -> (
+    narrata_nodes::Compilation,
+    Session,
+    narrata_nodes::plan::NameTable,
+) {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["wave"]).unwrap();
+    choose(&mut session, &names, &["rope", "lamp"]).unwrap();
+    let rope = session.cursor().unwrap();
+    choose(&mut session, &names, &["right"]).unwrap();
+    session.checkout(&rope).unwrap();
+    // The last commit waits inside the called graph.
+    choose(&mut session, &names, &["left"]).unwrap();
+    session.checkout(&rope).unwrap();
+    (compilation, session, names)
+}
+
+#[test]
+fn restoring_an_export_reproduces_the_view_without_replay() {
+    let (compilation, session, names) = played();
+    let text = session.export().unwrap();
+    let (program, _) = open(&compilation.pack);
+    let restored = Session::restore(program, &text).unwrap();
+    assert_eq!(
+        restored.view(Some(&names)).unwrap(),
+        session.view(Some(&names)).unwrap()
+    );
+    assert_eq!(restored.page().ok(), session.page().ok());
+    assert_eq!(restored.export().ok(), Some(text));
+}
+
+#[test]
+fn every_commit_follows_its_input_and_state_in_the_export() {
+    let (_, session, _) = played();
+    let export: SessionExport = serde_json::from_str(&session.export().unwrap()).unwrap();
+    assert_eq!(export.format_version, 2);
+    let mut seen = std::collections::BTreeSet::new();
+    for object in &export.objects {
+        let bytes = hex::decode(object).unwrap();
+        if u16::from_be_bytes([bytes[10], bytes[11]]) == narrata_nodes::KIND_COMMIT {
+            let commit = Commit::decode(&bytes).unwrap();
+            assert!(seen.contains(&commit.state));
+            if let Some(input) = commit.input {
+                assert!(seen.contains(&input));
+            }
+        } else {
+            let payload = &bytes[56..];
+            let kind = u16::from_be_bytes([bytes[10], bytes[11]]);
+            seen.insert(narrata_nodes::ObjectId::from_bytes(
+                narrata_kernel::codec::object_id(kind, 1, payload),
+            ));
+        }
     }
-    let root = a.view()?.history.first().ok_or("missing root")?.id.clone();
-    let len = a.view()?.history.len();
-    a.checkout(&root)?;
-    click(&mut a, "visit")?;
-    assert_eq!(a.view()?.history.len(), len);
-    Ok(())
 }
 
 #[test]
-fn expression_short_circuit_and_large_integer_views_preserve_semantics() -> TestResult {
-    let mut raw = source();
-    raw["product"]["shared"]["visits"] = json!(i64::MAX);
-    raw["packages"]["main"]["graphs"]["journey"]["nodes"]["start"]["data"]["choices"][1]["enabled_if"] = json!({
-        "kind":"binary","op":"or","left":{"kind":"literal","value":true},
-        "right":{"kind":"binary","op":"gt","left":{"kind":"binary","op":"add","left":{"kind":"read","scope":"shared","name":"visits"},"right":{"kind":"literal","value":1}},"right":{"kind":"literal","value":0}}
+fn restore_rejects_an_export_of_another_artifact() {
+    let (_, session, _) = played();
+    let text = session.export().unwrap();
+    let other = try_variant(|_, main, _| {
+        *at(main, "/graphs/start/locals/visits") = serde_json::json!(7);
+    })
+    .unwrap();
+    let (program, _) = open(&other.pack);
+    let error = Session::restore(program, &text).err().unwrap();
+    assert_eq!(error.code, "incompatible_save");
+}
+
+/// Replaces the state of the last commit (a leaf) with `change(state)`, re-seals that commit
+/// and moves the cursor to it.
+fn tampered(session: &Session, change: impl FnOnce(&mut State)) -> String {
+    let mut export: SessionExport = serde_json::from_str(&session.export().unwrap()).unwrap();
+    let position = export.objects.len() - 1;
+    let mut commit =
+        Commit::decode(&hex::decode(&export.objects[position]).unwrap_or_default()).unwrap();
+    let (index, mut state) = export
+        .objects
+        .iter()
+        .enumerate()
+        .find_map(|(index, object)| {
+            let bytes = hex::decode(object).ok()?;
+            narrata_nodes::decode_state(session.program(), &bytes)
+                .ok()
+                .filter(|(_, id)| *id == commit.state)
+                .map(|(state, _)| (index, state))
+        })
+        .unwrap();
+    change(&mut state);
+    commit.state = state.id();
+    // Only the leaf references its state, so it is replaced in place.
+    export.objects[index] = hex::encode(state.envelope());
+    export.objects[position] = hex::encode(commit.envelope());
+    export.cursor = commit.id();
+    serde_json::to_string(&export).unwrap()
+}
+
+fn restore_error(session: &Session, change: impl FnOnce(&mut State)) -> String {
+    let text = tampered(session, change);
+    let program = session.program().clone();
+    Session::restore(program, &text)
+        .err()
+        .map(|e| e.code)
+        .unwrap_or_else(|| "accepted".into())
+}
+
+#[test]
+fn restore_rejects_states_with_unknown_ids() {
+    let (_, session, _) = played();
+    let unknown_node = restore_error(&session, |state| {
+        state.frames[1].node = node(99).parse().unwrap();
     });
-    let s = Session::new(product(raw)?)?;
-    assert!(
-        s.view()?
-            .actions
-            .iter()
-            .any(|a| a.id == "locked" && a.enabled)
-    );
+    assert_eq!(unknown_node, "invalid_state");
+    let unknown_point = restore_error(&session, |state| {
+        state.frames[1].at = Some(point(99).parse().unwrap());
+    });
+    assert_eq!(unknown_point, "invalid_state");
+}
+
+#[test]
+fn restore_rejects_states_outside_the_declarations() {
+    let (_, session, _) = played();
+    let wrong_type = restore_error(&session, |state| {
+        state.shared.insert("coins".into(), Scalar::Bool(true));
+    });
+    assert_eq!(wrong_type, "invalid_state");
+    let undeclared = restore_error(&session, |state| {
+        state.shared.insert("gold".into(), Scalar::Int(1));
+    });
+    assert_eq!(undeclared, "invalid_state");
+    let instance = restore_error(&session, |state| {
+        state.next_instance = 1;
+    });
+    assert_eq!(instance, "invalid_state");
+}
+
+#[test]
+fn restore_rejects_tampered_object_bytes() {
+    let (_, session, _) = played();
+    let mut export: SessionExport = serde_json::from_str(&session.export().unwrap()).unwrap();
+    let mut bytes = hex::decode(&export.objects[0]).unwrap_or_default();
+    let last = bytes.len() - 1;
+    bytes[last] ^= 1;
+    export.objects[0] = hex::encode(bytes);
+    let text = serde_json::to_string(&export).unwrap();
+    assert!(Session::restore(session.program().clone(), &text).is_err());
+}
+
+#[test]
+fn verify_path_detects_a_well_formed_but_unreachable_state() {
+    let (_, session, names) = played();
+    let text = tampered(&session, |state| {
+        state.shared.insert("coins".into(), Scalar::Int(99));
+    });
+    let restored = Session::restore(session.program().clone(), &text).unwrap();
+    let cursor = restored.cursor().unwrap();
+    let error = restored.verify_path(&cursor).err().unwrap();
+    assert_eq!(error.code, "unreachable_state");
     assert_eq!(
-        s.view()?
-            .shared
-            .iter()
-            .find(|v| v.name == "visits")
-            .ok_or("variable missing")?
-            .value,
-        i64::MAX.to_string()
+        restored.view(Some(&names)).err().map(|e| e.code).as_deref(),
+        Some("unreachable_state")
     );
-    // Also exercise the shared source helper in this integration-test binary.
-    let mut raw = source();
-    raw["format_version"] = json!(2);
-    assert_eq!(compile_error(raw)?, "version");
-    Ok(())
+    let root = restored.commits().next().map(|(id, _)| id).unwrap();
+    restored.verify_path(&root).unwrap();
+}
+
+#[test]
+fn chunks_load_only_when_a_frame_enters_their_graph() {
+    let compilation = compiled();
+    let (program, names) = open(&compilation.pack);
+    assert_eq!(program.loaded_chunks(), 0);
+    let mut session = Session::new(program.clone(), execution()).unwrap();
+    assert_eq!(program.loaded_chunks(), 1);
+    choose(&mut session, &names, &["nod"]).unwrap();
+    choose(&mut session, &names, &[]).unwrap();
+    choose(&mut session, &names, &["left"]).unwrap();
+    assert_eq!(program.loaded_chunks(), 2);
+}
+
+#[test]
+fn a_program_reads_only_the_manifest_and_requested_chunks_from_its_source() {
+    let compilation = compiled();
+    let pack = narrata_nodes::Pack::decode(&compilation.pack).unwrap();
+    let mut source = narrata_nodes::MemorySource::default();
+    for chunk in &pack.chunks {
+        source.insert(chunk.clone()).unwrap();
+    }
+    let program = Program::open(&pack.manifest, &pack.tombstones, Box::new(source)).unwrap();
+    assert_eq!(program.artifact_id(), compilation.program.artifact_id());
+    let session = Session::new(Arc::new(program), execution()).unwrap();
+    assert!(session.view(None).is_ok());
 }

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContentOutline",
+  "description": "A content provider's outline (ADR 0013 §4): block order and choice-point markers of each\ncontent unit, without text. It lets `compose` check placement order without the documents.",
+  "type": "object",
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "provider": {
+      "$ref": "#/$defs/ProviderId"
+    },
+    "units": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^\\u0000-\\u001f\\u007f-\\u009f]+$": {
+          "$ref": "#/$defs/UnitOutline"
+        }
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "provider",
+    "units"
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "UnitOutline": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "description": "Every block anchor in document order, markers included.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AnchorId"
+          }
+        },
+        "markers": {
+          "description": "Marker blocks and the choice point each one stands for.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[ -~]{1,128}$": {
+              "$ref": "#/$defs/ChoicePointId"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "blocks"
+      ]
+    }
+  }
+}

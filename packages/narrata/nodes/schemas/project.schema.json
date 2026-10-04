@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ProjectManifest",
-  "description": "The filesystem manifest is resolved by tooling, never by the deterministic runtime.",
+  "description": "Resolved by tooling, never by the deterministic runtime.",
   "type": "object",
   "properties": {
     "format_version": {
@@ -10,14 +10,26 @@
       "maximum": 65535,
       "minimum": 0
     },
+    "migrated_from_r1": {
+      "description": "The R1 artifact this work was migrated from; recorded in the name table so that R1\nsaves can only migrate onto it (ADR 0013 §10).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/R1ArtifactId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "packages": {
+      "description": "Package instance alias to a path relative to the manifest.",
       "type": "object",
       "additionalProperties": {
         "type": "string"
       }
     },
     "product": {
-      "$ref": "#/$defs/Product"
+      "$ref": "#/$defs/ProductSource"
     }
   },
   "additionalProperties": false,
@@ -27,6 +39,10 @@
     "packages"
   ],
   "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
     "Binding": {
       "type": "object",
       "properties": {
@@ -43,7 +59,56 @@
         "to"
       ]
     },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "EndingSource": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Segment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "GraphRef": {
+      "description": "A graph of one package instance. Package aliases and graph names are composition\nstructure, so unlike node aliases they are part of the artifact identity.",
       "type": "object",
       "properties": {
         "graph": {
@@ -79,7 +144,7 @@
         "port"
       ]
     },
-    "Product": {
+    "ProductSource": {
       "type": "object",
       "properties": {
         "arguments": {
@@ -96,6 +161,13 @@
             "$ref": "#/$defs/Binding"
           }
         },
+        "endings": {
+          "description": "How each outcome of the entry graph is shown when the story ends.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/EndingSource"
+          }
+        },
         "entry": {
           "$ref": "#/$defs/GraphRef"
         },
@@ -110,23 +182,39 @@
           "default": {}
         },
         "shared_labels": {
+          "description": "Display names of shared variables.",
           "type": "object",
           "additionalProperties": {
-            "type": "string"
+            "$ref": "#/$defs/ContentRef"
           }
         },
         "title": {
-          "type": "string"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "id",
-        "title",
         "entry"
       ]
     },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "R1ArtifactId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "Scalar": {
+      "description": "A state value. `text` is data that rules compare (decision 2); translatable names travel as\n`ref`, which only supports equality.",
       "anyOf": [
         {
           "type": "boolean"
@@ -137,7 +225,42 @@
         },
         {
           "type": "string"
+        },
+        {
+          "$ref": "#/$defs/ContentRef"
         }
+      ]
+    },
+    "Segment": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/ContentRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "unit"
       ]
     }
   }

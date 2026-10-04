@@ -1,6 +1,6 @@
 [package]
 name = "narrata-nodes"
-description = "Checked narrative node composition and portable Gamebook sessions"
+description = "Text-free narrative node composition, content-addressed artifacts and portable Gamebook sessions"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,12 +8,15 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
-sha2.workspace = true
 hex.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CompositionLock",
+  "description": "Written next to the project manifest as `project.lock.json`.",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "node_types": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "packages": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/PackageLock"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "artifact_id",
+    "packages",
+    "node_types"
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "PackageLock": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "description": "`digest_bytes(\"narrata.nodes.package-source\", 1, canonical JSON)`, hexadecimal.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ]
+    }
+  }
+}

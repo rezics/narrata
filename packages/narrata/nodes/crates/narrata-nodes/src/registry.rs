@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
 
-use crate::{Error, NodePlan, Result};
+use crate::{Error, Result, SourcePlan};
+
+/// The semantic revision of the built-in `narrata.*` node types (ADR 0013 §4).
+pub const GAMEBOOK_REVISION: &str = "2";
 
 /// An authoring extension lowers to a plan that is subsequently checked in its graph context.
 /// Compilers are trusted build-time code, not callbacks executed by the story runtime.
-pub type NodeCompiler = fn(&serde_json::Value) -> Result<NodePlan>;
+pub type NodeCompiler = fn(&serde_json::Value) -> Result<SourcePlan>;
 
 #[derive(Clone)]
 struct Registration {
@@ -17,6 +20,10 @@ pub struct NodeRegistry {
     entries: BTreeMap<String, Registration>,
 }
 
+pub(crate) fn valid_type_id(id: &str) -> bool {
+    id.len() <= 128 && id.split('.').all(crate::valid_name)
+}
+
 impl NodeRegistry {
     pub fn empty() -> Self {
         Self::default()
@@ -25,8 +32,7 @@ impl NodeRegistry {
     pub fn gamebook() -> Self {
         let mut entries = BTreeMap::new();
         for (name, compiler) in [
-            ("content", content as NodeCompiler),
-            ("decision", decision as NodeCompiler),
+            ("passage", passage as NodeCompiler),
             ("branch", branch as NodeCompiler),
             ("mutate", mutate as NodeCompiler),
             ("call", call as NodeCompiler),
@@ -35,7 +41,7 @@ impl NodeRegistry {
             entries.insert(
                 format!("narrata.{name}"),
                 Registration {
-                    revision: "1".into(),
+                    revision: GAMEBOOK_REVISION.into(),
                     compiler,
                 },
             );
@@ -44,11 +50,7 @@ impl NodeRegistry {
     }
 
     pub fn register(&mut self, id: &str, revision: &str, compiler: NodeCompiler) -> Result<()> {
-        if id.len() > 128
-            || !id.split('.').all(crate::compile::valid_name)
-            || revision.is_empty()
-            || revision.len() > 64
-        {
+        if !valid_type_id(id) || revision.is_empty() || revision.len() > 64 {
             return Err(Error::new(
                 "identifier",
                 "node_types",
@@ -77,7 +79,7 @@ impl NodeRegistry {
         id: &str,
         data: &serde_json::Value,
         path: &str,
-    ) -> Result<(NodePlan, String)> {
+    ) -> Result<(SourcePlan, String)> {
         let entry = self.entries.get(id).ok_or_else(|| {
             Error::new(
                 "node_type",
@@ -91,7 +93,8 @@ impl NodeRegistry {
     }
 }
 
-fn lower(kind: &str, data: &serde_json::Value) -> Result<NodePlan> {
+/// The built-in types take their plan's fields as data; the kind comes from `type_id`.
+pub fn lower_builtin(kind: &str, data: &serde_json::Value) -> Result<SourcePlan> {
     let mut fields = data
         .as_object()
         .cloned()
@@ -104,40 +107,22 @@ fn lower(kind: &str, data: &serde_json::Value) -> Result<NodePlan> {
         ));
     }
     fields.insert("kind".into(), serde_json::Value::String(kind.into()));
-    if kind == "content" {
-        fields
-            .entry("label")
-            .or_insert_with(|| serde_json::Value::String("继续".into()));
-    }
-    if kind == "mutate" {
-        fields
-            .entry("assignments")
-            .or_insert_with(|| serde_json::json!([]));
-    }
-    if kind == "call" {
-        fields
-            .entry("arguments")
-            .or_insert_with(|| serde_json::json!({}));
-    }
     serde_json::from_value(serde_json::Value::Object(fields))
         .map_err(|e| Error::new("schema", "data", e.to_string()))
 }
 
-fn content(v: &serde_json::Value) -> Result<NodePlan> {
-    lower("content", v)
+fn passage(v: &serde_json::Value) -> Result<SourcePlan> {
+    lower_builtin("passage", v)
 }
-fn decision(v: &serde_json::Value) -> Result<NodePlan> {
-    lower("decision", v)
+fn branch(v: &serde_json::Value) -> Result<SourcePlan> {
+    lower_builtin("branch", v)
 }
-fn branch(v: &serde_json::Value) -> Result<NodePlan> {
-    lower("branch", v)
+fn mutate(v: &serde_json::Value) -> Result<SourcePlan> {
+    lower_builtin("mutate", v)
 }
-fn mutate(v: &serde_json::Value) -> Result<NodePlan> {
-    lower("mutate", v)
+fn call(v: &serde_json::Value) -> Result<SourcePlan> {
+    lower_builtin("call", v)
 }
-fn call(v: &serde_json::Value) -> Result<NodePlan> {
-    lower("call", v)
-}
-fn return_node(v: &serde_json::Value) -> Result<NodePlan> {
-    lower("return", v)
+fn return_node(v: &serde_json::Value) -> Result<SourcePlan> {
+    lower_builtin("return", v)
 }

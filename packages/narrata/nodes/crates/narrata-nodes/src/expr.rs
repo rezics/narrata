@@ -1,65 +1,154 @@
 use std::collections::BTreeMap;
 
-use crate::{BinaryOp, Error, Expr, Graph, MAX_TEXT_BYTES, Result, Scalar, ScalarType, Scope};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
-pub(crate) fn variable_type(
-    graph: &Graph,
-    scope: Scope,
-    name: &str,
-    path: &str,
-) -> Result<ScalarType> {
-    let kind = match scope {
-        Scope::Parameter => graph.parameters.get(name).copied(),
-        Scope::Local => graph.locals.get(name).map(Scalar::kind),
-        Scope::Shared => graph.shared.get(name).copied(),
-    };
-    kind.ok_or_else(|| {
-        Error::new(
-            "reference",
-            path,
-            format!("undeclared {scope:?} variable {name}"),
-        )
-    })
+use crate::{Error, MAX_TEXT_BYTES, Result, Scalar, ScalarType};
+
+pub const MAX_EXPRESSION_DEPTH: usize = 48;
+
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Scope {
+    Parameter,
+    Local,
+    Shared,
 }
 
-pub(crate) fn check(expr: &Expr, graph: &Graph, depth: usize, path: &str) -> Result<ScalarType> {
-    if depth > 48 {
-        return Err(Error::new("limit", path, "expression nesting exceeds 48"));
-    }
-    match expr {
-        Expr::Literal { value } => {
-            check_scalar(value, path)?;
-            Ok(value.kind())
-        }
-        Expr::Read { scope, name } => variable_type(graph, *scope, name, path),
-        Expr::Not { value } => {
-            expect(
-                check(value, graph, depth + 1, path)?,
-                ScalarType::Bool,
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Variable {
+    pub scope: Scope,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Assignment {
+    pub target: Variable,
+    pub value: Expr,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Expr {
+    Literal {
+        value: Scalar,
+    },
+    Read {
+        scope: Scope,
+        name: String,
+    },
+    Not {
+        value: Box<Expr>,
+    },
+    Binary {
+        op: BinaryOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BinaryOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Add,
+    Sub,
+    And,
+    Or,
+}
+
+/// The variables a graph may read: its parameters, its locals and the shared variables it
+/// declares.
+pub(crate) struct Declarations<'a> {
+    pub parameters: &'a BTreeMap<String, ScalarType>,
+    pub locals: &'a BTreeMap<String, Scalar>,
+    pub shared: &'a BTreeMap<String, ScalarType>,
+}
+
+impl Declarations<'_> {
+    pub fn variable(&self, scope: Scope, name: &str, path: &str) -> Result<ScalarType> {
+        let kind = match scope {
+            Scope::Parameter => self.parameters.get(name).copied(),
+            Scope::Local => self.locals.get(name).map(Scalar::kind),
+            Scope::Shared => self.shared.get(name).copied(),
+        };
+        kind.ok_or_else(|| {
+            Error::new(
+                "reference",
                 path,
-            )?;
-            Ok(ScalarType::Bool)
+                format!("undeclared {scope:?} variable {name}"),
+            )
+        })
+    }
+
+    pub fn check(&self, expr: &Expr, path: &str) -> Result<ScalarType> {
+        self.check_at(expr, 0, path)
+    }
+
+    fn check_at(&self, expr: &Expr, depth: usize, path: &str) -> Result<ScalarType> {
+        if depth > MAX_EXPRESSION_DEPTH {
+            return Err(Error::new("limit", path, "expression nesting exceeds 48"));
         }
-        Expr::Binary { op, left, right } => {
-            let left = check(left, graph, depth + 1, path)?;
-            let right = check(right, graph, depth + 1, path)?;
-            expect(right, left, path)?;
-            match op {
-                BinaryOp::Eq | BinaryOp::Ne => Ok(ScalarType::Bool),
-                BinaryOp::And | BinaryOp::Or => {
-                    expect(left, ScalarType::Bool, path)?;
-                    Ok(ScalarType::Bool)
-                }
-                BinaryOp::Add | BinaryOp::Sub => {
-                    expect(left, ScalarType::Int, path)?;
-                    Ok(ScalarType::Int)
-                }
-                BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                    expect(left, ScalarType::Int, path)?;
-                    Ok(ScalarType::Bool)
+        match expr {
+            Expr::Literal { value } => {
+                check_scalar(value, path)?;
+                Ok(value.kind())
+            }
+            Expr::Read { scope, name } => self.variable(*scope, name, path),
+            Expr::Not { value } => {
+                expect(
+                    self.check_at(value, depth + 1, path)?,
+                    ScalarType::Bool,
+                    path,
+                )?;
+                Ok(ScalarType::Bool)
+            }
+            Expr::Binary { op, left, right } => {
+                let left = self.check_at(left, depth + 1, path)?;
+                let right = self.check_at(right, depth + 1, path)?;
+                expect(right, left, path)?;
+                // Only equality is defined for every type, including `ref`.
+                match op {
+                    BinaryOp::Eq | BinaryOp::Ne => Ok(ScalarType::Bool),
+                    BinaryOp::And | BinaryOp::Or => {
+                        expect(left, ScalarType::Bool, path)?;
+                        Ok(ScalarType::Bool)
+                    }
+                    BinaryOp::Add | BinaryOp::Sub => {
+                        expect(left, ScalarType::Int, path)?;
+                        Ok(ScalarType::Int)
+                    }
+                    BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+                        expect(left, ScalarType::Int, path)?;
+                        Ok(ScalarType::Bool)
+                    }
                 }
             }
         }
+    }
+
+    pub fn check_assignments(&self, values: &[Assignment], path: &str) -> Result<()> {
+        for assignment in values {
+            if assignment.target.scope == Scope::Parameter {
+                return Err(Error::new(
+                    "readonly",
+                    path,
+                    "parameters are immutable bindings",
+                ));
+            }
+            let expected = self.variable(assignment.target.scope, &assignment.target.name, path)?;
+            expect(self.check(&assignment.value, path)?, expected, path)?;
+        }
+        Ok(())
     }
 }
 
@@ -76,67 +165,12 @@ pub(crate) fn expect(actual: ScalarType, expected: ScalarType, path: &str) -> Re
 }
 
 pub(crate) fn check_scalar(value: &Scalar, path: &str) -> Result<()> {
-    if let Scalar::Text(v) = value {
-        check_text(v, path)?;
-    }
-    Ok(())
-}
-
-pub(crate) fn check_text(value: &str, path: &str) -> Result<()> {
-    if value.len() > MAX_TEXT_BYTES {
-        Err(Error::new("limit", path, "text exceeds 64 KiB"))
-    } else {
-        Ok(())
-    }
-}
-
-pub(crate) fn template_variables(
-    text: &str,
-    path: &str,
-) -> Result<Vec<(usize, usize, Scope, String)>> {
-    let mut matches = Vec::new();
-    let mut offset = 0;
-    while let Some(start) = text[offset..].find("{{") {
-        let start = offset + start;
-        let end = text[start + 2..]
-            .find("}}")
-            .map(|i| start + 2 + i + 2)
-            .ok_or_else(|| Error::new("template", path, "unclosed {{variable}}"))?;
-        let field = text[start + 2..end - 2].trim();
-        let (scope, name) = field.split_once('.').ok_or_else(|| {
-            Error::new(
-                "template",
-                path,
-                "use {{parameter.name}}, {{local.name}} or {{shared.name}}",
-            )
-        })?;
-        let scope = match scope {
-            "parameter" => Scope::Parameter,
-            "local" => Scope::Local,
-            "shared" => Scope::Shared,
-            _ => {
-                return Err(Error::new(
-                    "template",
-                    path,
-                    format!("unknown variable scope {scope}"),
-                ));
-            }
-        };
-        if !crate::compile::valid_name(name) {
-            return Err(Error::new("template", path, "invalid variable name"));
+    match value {
+        Scalar::Text(text) if text.len() > MAX_TEXT_BYTES => {
+            Err(Error::new("limit", path, "text value exceeds 64 KiB"))
         }
-        matches.push((start, end, scope, name.into()));
-        offset = end;
+        _ => Ok(()),
     }
-    Ok(matches)
-}
-
-pub(crate) fn check_template(text: &str, graph: &Graph, path: &str) -> Result<()> {
-    check_text(text, path)?;
-    for (_, _, scope, name) in template_variables(text, path)? {
-        variable_type(graph, scope, &name, path)?;
-    }
-    Ok(())
 }
 
 pub(crate) struct Values<'a> {
@@ -190,20 +224,8 @@ impl Values<'_> {
                             BinaryOp::Le => Ok(Scalar::Bool(a <= b)),
                             BinaryOp::Gt => Ok(Scalar::Bool(a > b)),
                             BinaryOp::Ge => Ok(Scalar::Bool(a >= b)),
-                            BinaryOp::Add | BinaryOp::Sub => {
-                                let result = if *op == BinaryOp::Add {
-                                    a.checked_add(b)
-                                } else {
-                                    a.checked_sub(b)
-                                };
-                                result.map(Scalar::Int).ok_or_else(|| {
-                                    Error::new(
-                                        "overflow",
-                                        "expression",
-                                        "integer arithmetic overflow",
-                                    )
-                                })
-                            }
+                            BinaryOp::Add => a.checked_add(b).map(Scalar::Int).ok_or_else(overflow),
+                            BinaryOp::Sub => a.checked_sub(b).map(Scalar::Int).ok_or_else(overflow),
                             _ => Err(Error::new(
                                 "state",
                                 "expression",
@@ -218,22 +240,16 @@ impl Values<'_> {
 
     pub fn boolean(&self, expr: &Expr) -> Result<bool> {
         match self.evaluate(expr)? {
-            Scalar::Bool(v) => Ok(v),
+            Scalar::Bool(value) => Ok(value),
             _ => Err(Error::new("state", "condition", "expected checked boolean")),
         }
     }
 
-    pub fn render(&self, text: &str) -> Result<String> {
-        let mut output = String::new();
-        let mut offset = 0;
-        for (start, end, scope, name) in template_variables(text, "content")? {
-            output.push_str(&text[offset..start]);
-            output.push_str(&self.read(scope, &name)?.display());
-            offset = end;
-            check_text(&output, "rendered_content")?;
-        }
-        output.push_str(&text[offset..]);
-        check_text(&output, "rendered_content")?;
-        Ok(output)
+    pub fn condition(&self, expr: Option<&Expr>) -> Result<bool> {
+        expr.map_or(Ok(true), |value| self.boolean(value))
     }
+}
+
+fn overflow() -> Error {
+    Error::new("overflow", "expression", "integer arithmetic overflow")
 }
