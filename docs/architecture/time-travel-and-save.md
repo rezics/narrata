@@ -6,6 +6,8 @@
 与 2026-10-05 决定的关系：不可变提交图、Ref、普通存档与完整时间线的区分保留为 kernel 能力。
 后端接口收窄为[存储与存档契约](../contracts/storage-and-saves.md) 的五个原语
 （[决定 8](../product/decisions.md)），Snapshot 不再包含文本（[决定 2](../product/decisions.md)）。
+存档引擎、键布局、校验边界与 GC 由 [ADR 0014](../adr/0014-save-engine-key-layout.md) 决定；
+下文与之冲突处以 ADR 0014 为准。
 
 ## 核心决定
 
@@ -288,7 +290,8 @@ Commit Ref、Catalog Head Ref 与 Timeline Archive Ref 使用不同 checked key/
 `CommitId` 写入 catalog namespace，把 `TimelineCatalogEventId` 当成 save target，或把 archive
 manifest 当成 branch head。
 
-generation/revision 只用于 Ref 并发和 UI 排序，不是 Commit identity。两个设备同时覆盖同一
+revision 是后端的全库修订号，只用于 Ref 并发，不是 Commit identity，也不进入任何对象字节
+（[ADR 0014](../adr/0014-save-engine-key-layout.md#修订号)）。两个设备同时覆盖同一
 save slot 时，一个 CAS 成功，另一个收到携带实际 revision/Commit 的 `RefConflict`；禁止
 last-write-wins 静默丢失玩家历史。
 
@@ -369,8 +372,9 @@ Receipt 重建，不进入 rewindable Runtime State。
 7. 若处于 `Complete`，追加相应 Catalog Event，并 CAS 更新 Catalog Head。
 8. 提交事务后，才向宿主发布 `CommittedRunResult`。
 
-步骤 3–7 对 reference adapter 是同一数据库事务。失败时 committed parent 保持不变；已写但
-未引用的 immutable object 可以稍后 GC。
+步骤 3–7 是一个原子批次；超出后端上限时先按引用顺序写对象、最后写根引用
+（[ADR 0014](../adr/0014-save-engine-key-layout.md#批次与结果未知)）。失败时 committed parent
+保持不变；已写但未引用的 immutable object 由 GC 在宽限期后回收。
 
 ## 恢复
 
@@ -378,7 +382,10 @@ Receipt 重建，不进入 rewindable Runtime State。
 
 1. 限制输入 bundle/object 的总大小、对象数、单对象大小和嵌套深度；
 2. 验证每个 envelope、kind、schema version 和 Object ID；
-3. 解析 Commit，并验证 parent、Snapshot、Receipt、Program 引用存在且类型正确；
+3. 解析 Commit，并验证 Snapshot 与 Program；本地加载不沿父链校验到 Genesis，Commit 的其余
+   引用由写入时的校验保证存在，祖先在访问时读取并校验
+   （[ADR 0014](../adr/0014-save-engine-key-layout.md#信任边界与校验)）。导入 bundle 时仍校验
+   整个闭包；
 4. 获取 Commit 固定的精确 Program Artifact closure；
 5. decode Snapshot 到 untrusted wire type；
 6. 通过 checked constructor 验证 RuntimeStatus、frame、Stable ID、queue 和 Program 对应关系；
@@ -502,33 +509,11 @@ Host Timeline，再在单个事务中创建 archive root 与映射后的 Ref。�
 
 ## Reference SaveStore
 
-Core 只定义行为，`narrata-store` 提供：
-
-```rust
-trait SaveStore {
-    fn get_object(&self, id: ObjectId) -> Result<Bytes, StoreError>;
-    fn put_object(&mut self, object: CheckedObject) -> Result<PutOutcome, StoreError>;
-    fn read_ref(&self, key: &RefKey) -> Result<Option<RefValue>, StoreError>;
-    fn read_catalog_head(
-        &self,
-        key: &CatalogRefKey,
-    ) -> Result<Option<CatalogHeadRefValue>, StoreError>;
-    fn read_timeline_archive(
-        &self,
-        key: &TimelineArchiveRefKey,
-    ) -> Result<Option<TimelineArchiveRefValue>, StoreError>;
-    fn commit(&mut self, tx: CommitTransaction) -> Result<CommitOutcome, StoreError>;
-    fn roots(&self) -> Result<Vec<Root>, StoreError>;
-    fn collect(&mut self, policy: RetentionPolicy) -> Result<GcReport, StoreError>;
-}
-```
-
-第一批 adapter：
-
-- `MemoryStore`：模型测试、property test 和嵌入式临时运行；
-- `SqliteStore`：native reference implementation，在一个事务中写 object/commit/ref/effect
-  ledger；
-- Wasm host adapter：由 JavaScript 使用 IndexedDB transaction 实现同一语义。
+`narrata-store` 的 `SaveStore` 由 `Store<B: StorageBackend>` 在
+[ADR 0012](../adr/0012-narrow-storage-backend-contract.md) 的后端契约之上实现一次：
+`MemoryStore` 是内存后端上的引擎，`narrata_store_sqlite::SqliteStore` 是按行读写的 SQLite
+后端上的引擎。接口、键布局、批次与结果未知的处理见
+[ADR 0014](../adr/0014-save-engine-key-layout.md)；浏览器的 IndexedDB 后端是后续工作。
 
 自制目录 + rename 的文件存储留到 SQLite 版本通过 crash test 后；不同 OS 的 fsync、目录
 同步、杀进程和 antivirus 行为不应成为 v1 正确性的前提。
@@ -540,7 +525,9 @@ GC 是 mark-and-sweep：
 1. 收集所有 Ref、未过期 Pin、active session 和 Effect Store root；
 2. 标记 Commit parent、Snapshot、Receipt、Program Artifact、Content Lock、Catalog Event、
    Timeline Archive 与 Host Manifest；
-3. 在同一事务/租约视图中清除未标记且超过 grace period 的对象；
+3. 清除未标记且超过 grace period 的对象：按引用顺序分批删除，宽限期内的对象也作为根，
+   删除批次与并发写入由 `meta/graph`、`meta/sweep` 两个栅栏互斥
+   （[ADR 0014](../adr/0014-save-engine-key-layout.md#gctouch-键与两个栅栏)）；
 4. 输出可审计 `GcReport`，包括按 kind 计数和 bytes，不暴露 payload。
 
 必须保留：

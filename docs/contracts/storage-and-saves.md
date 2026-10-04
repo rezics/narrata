@@ -21,15 +21,16 @@
 修订号的键、带前置条件的原子批次、有界游标扫描和能力声明，取舍与理由见
 [ADR 0012](../adr/0012-narrow-storage-backend-contract.md)。内存后端是行为参考，
 `narrata-storage-sqlite` 按行读写；两者都通过 `testing` feature 中的一致性套件，以后的后端
-也用这套件验收。效果账本、目录、复合存档、保留与 GC、完整性扫描和迁移在契约之上只实现一次，
-`SaveStore` 各操作如何映射到原语见 ADR 0012 的对照表。
+也用这套件验收。效果账本、目录、复合存档、保留与 GC、完整性扫描和迁移由
+`narrata_store::Store<B>` 在契约之上只实现一次；键布局、校验边界与 GC 栅栏见
+[ADR 0014](../adr/0014-save-engine-key-layout.md)。
 
 ## 各场景的后端
 
 | 场景 | 后端 | 说明 |
 | --- | --- | --- |
 | 测试与 Wasm 内临时会话 | 内存 | 行为参考 |
-| CLI、调试、桌面工具 | SQLite | 按行读写；当前实现每次操作整库加载并整库重写，必须改掉 |
+| CLI、调试、桌面工具 | SQLite | 按行读写；schema v2 旧库用 `narrata store migrate-v2` 显式迁移 |
 | 浏览器 | IndexedDB（以后可选 OPFS 上的 SQLite-Wasm） | 浏览器会整源驱逐存储，Safari 删除 7 天无交互的脚本存储：申请持久化并提供导出 |
 | 本地游戏 | 存档字节 | 引擎导出 Checkpoint Bundle 字节，宿主写入自己的存档系统；导入时引擎重新校验 |
 | 网站登录用户 | 存档字节 | 宿主（如 REZICS）把字节存在自己的数据库并同步，Narrata 不连接该数据库 |
@@ -44,10 +45,8 @@ JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
 
 ## 当前缺口
 
-- `SaveStore`（`crates/narrata-store/src/store.rs`）是约 25 个方法的领域接口，`list_*` 一次
-  返回全部结果；新后端需要重写领域逻辑。
-- `SqliteStore` 每次操作都整库加载、整库重写。
-- 加载一个存档要沿提交链一直走到最初的提交。
+- Checkpoint Bundle 携带目标提交的全部祖先，导出字节随历史深度线性增长；浅存档会改变 bundle
+  语义，需要单独的 ADR。
 - 协议引擎（FFI、Wasm、TypeScript 绑定使用）写死了内存存储。
 - 节点栈的会话存档不使用对象/引用模型，浏览器阅读器把整份会话（含源）存为一条 IndexedDB
   记录。
