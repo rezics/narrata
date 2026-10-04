@@ -1,0 +1,52 @@
+{
+  "format_version": 1,
+  "product": {
+    "id": "mountain-letter",
+    "title": "山口来信",
+    "entry": {
+      "package": "main",
+      "graph": "journey"
+    },
+    "shared": {
+      "rations": 3,
+      "letter": false,
+      "rests": 0,
+      "helped": false
+    },
+    "shared_labels": {
+      "rations": "干粮",
+      "letter": "已取信件",
+      "rests": "歇脚次数",
+      "helped": "已帮助旅人"
+    },
+    "bindings": [
+      {
+        "from": {
+          "package": "main",
+          "graph": "journey",
+          "port": "road"
+        },
+        "to": {
+          "package": "road",
+          "graph": "crossing"
+        }
+      },
+      {
+        "from": {
+          "package": "main",
+          "graph": "journey",
+          "port": "camp"
+        },
+        "to": {
+          "package": "camp",
+          "graph": "visit"
+        }
+      }
+    ]
+  },
+  "packages": {
+    "main": "packages/main.json",
+    "road": "packages/road.json",
+    "camp": "packages/camp.json"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "corpus_version": 1,
+  "format": "ADR 0011 R1 node bundle, project, package and save JSON (format_version 1)",
+  "frozen_from_commit": "077e680",
+  "artifact_id": "b73f74b82f33834c386134e1f5cd548d9ba304d2d299507d827c4fe7acad412b",
+  "saves": {
+    "linear.save.json": "actions camp,letter,continue,rest,continue,road,help,continue,deliver; ends with outcome delivered",
+    "branched.save.json": "linear.save.json, then checkout of the rocks commit, retreat, road, alone, continue, arrive; 15 commits, cursor ends with outcome arrived"
+  },
+  "artifacts": {
+    "branched.save.json": {
+      "sha256": "84e6d67e1699cdbbcb280da706d9c1fe6e02cd01c6e57fa5ffdf4e33c6e600d4"
+    },
+    "linear.save.json": {
+      "sha256": "cc7ee0eecb259c66c52244d1783c3d9ed5a4402480cc98dbe2adc7a7807c3f19"
+    },
+    "project/packages/camp.json": {
+      "sha256": "7f4927dc602220ebb62ac3b1b56f15aca1cad571acfab4f1aaab5f5739ec6872"
+    },
+    "project/packages/main.json": {
+      "sha256": "f752036cd9c36254aa8a6c585ad1742d456ca8750c0ee9014b785df0c414d1b5"
+    },
+    "project/packages/road.json": {
+      "sha256": "251394ceba43a873db4f76505ec1da590f8cac0e39014734c8bba1c4c89a7f77"
+    },
+    "project/project.json": {
+      "sha256": "1707625a79dd664ee16e16755e19f8b30ca038080e52c88dfb087a6b6e397f8e"
+    },
+    "project/project.lock.json": {
+      "sha256": "85c077a7f09cab415e866a42c42625be9cba226dc8ecc54f18710d079d8587aa"
+    },
+    "story.nar.analysis.json": {
+      "sha256": "97aba5c43413e66930c9a497fa7bdb402eb2cecb8368bf0a088386f0477c2197"
+    },
+    "story.nar.json": {
+      "sha256": "a39a0f0dff74183c2e1d17b3f1ad030193efb804907fdd172292734c2bc60d31"
+    }
+  }
+}

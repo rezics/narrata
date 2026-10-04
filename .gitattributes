@@ -1,0 +1,2 @@
+# Frozen corpora are byte-exact evidence; never convert line endings.
+fixtures/compat/nodes-r1/** -text

@@ -1,0 +1,142 @@
+{
+  "id": "example.mountain-road",
+  "version": "1.0.0",
+  "exports": [
+    "crossing"
+  ],
+  "content": {
+    "rocks": {
+      "title": "落石滚下",
+      "paragraphs": [
+        "转过山脚，几块碎石从上方滚落。你扶住岩壁，等响声停下，才发现一个挑着空篮的旅人坐在路边。",
+        "他看上去饿了一整天，却认得山口的路。"
+      ]
+    },
+    "trail": {
+      "title": "发现小径",
+      "paragraphs": [
+        "旅人接过干粮，把空篮重新背好。他没有多问你从哪里来，只领着你拨开一丛低矮的灌木。",
+        "这条路绕过了塌方。石缝里透出风，远处已经能看见山口的灯。"
+      ]
+    },
+    "fog": {
+      "title": "迷雾弥漫",
+      "paragraphs": [
+        "你沿旧路慢慢摸索，雾水很快打湿了衣袖。每当碎石从脚边滑下，你便停一停，听它落到底的声音。",
+        "山口终于出现在前方，灯火在雾里摇晃。"
+      ]
+    }
+  },
+  "graphs": {
+    "crossing": {
+      "title": "山路事件",
+      "entry": "rocks",
+      "outcomes": [
+        "crossed",
+        "retreated"
+      ],
+      "shared": {
+        "rations": "int",
+        "helped": "bool"
+      },
+      "nodes": {
+        "rocks": {
+          "type_id": "narrata.decision",
+          "data": {
+            "content": "rocks",
+            "choices": [
+              {
+                "id": "help",
+                "label": "分给旅人一份干粮，请他带路",
+                "enabled_if": {
+                  "kind": "binary",
+                  "op": "gt",
+                  "left": {
+                    "kind": "read",
+                    "scope": "shared",
+                    "name": "rations"
+                  },
+                  "right": {
+                    "kind": "literal",
+                    "value": 0
+                  }
+                },
+                "disabled_reason": "至少需要一份干粮",
+                "assignments": [
+                  {
+                    "target": {
+                      "scope": "shared",
+                      "name": "rations"
+                    },
+                    "value": {
+                      "kind": "binary",
+                      "op": "sub",
+                      "left": {
+                        "kind": "read",
+                        "scope": "shared",
+                        "name": "rations"
+                      },
+                      "right": {
+                        "kind": "literal",
+                        "value": 1
+                      }
+                    }
+                  },
+                  {
+                    "target": {
+                      "scope": "shared",
+                      "name": "helped"
+                    },
+                    "value": {
+                      "kind": "literal",
+                      "value": true
+                    }
+                  }
+                ],
+                "target": "trail"
+              },
+              {
+                "id": "alone",
+                "label": "独自沿旧路继续",
+                "target": "fog"
+              },
+              {
+                "id": "retreat",
+                "label": "先回驿站准备",
+                "target": "retreated"
+              }
+            ]
+          }
+        },
+        "trail": {
+          "type_id": "narrata.content",
+          "data": {
+            "content": "trail",
+            "label": "继续前往山口",
+            "next": "crossed"
+          }
+        },
+        "fog": {
+          "type_id": "narrata.content",
+          "data": {
+            "content": "fog",
+            "label": "走向灯火",
+            "next": "crossed"
+          }
+        },
+        "crossed": {
+          "type_id": "narrata.return",
+          "data": {
+            "outcome": "crossed"
+          }
+        },
+        "retreated": {
+          "type_id": "narrata.return",
+          "data": {
+            "outcome": "retreated"
+          }
+        }
+      }
+    }
+  }
+}
