@@ -30,5 +30,10 @@
 Goal worker 通过 `task goal -- slot [--heavy] -- <命令>` 运行检查，以限制并发；完整 gate 与
 浏览器回归属于重型检查。见 [Goal 程序](../goals/README.md)。
 
+`narrata-graph` 的增量检查为 `cargo test -p narrata-graph --all-targets`、
+`cargo clippy -p narrata-graph --all-targets -- -D warnings` 和
+`cargo check -p narrata-graph --target wasm32-unknown-unknown`，也经 Goal 槽位运行。
+原生 release 规模基准与 Windows 峰值工作集采样的命令见[图布局基准](benchmarks/graph-layout.md)。
+
 每个 git worktree 有自己的 `target/`（主 checkout 约 20 GB），并发 worker 的磁盘与编译开销
 按 worktree 数线性增长。
