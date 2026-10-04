@@ -66,7 +66,7 @@ TypeScript DTO drift、async pull、IndexedDB 原子性和 Unity 平台分离检
 ## Nickel 结果与明确限制
 
 Nickel optional Gate 没有全部满足，因此未发布 adapter，详见
-[ADR 0010](../adr/0010-nickel-adapter-not-published.md)。core/FFI/Wasm 依赖图不含 Nickel。
+[ADR 0010](../../docs/adr/0010-nickel-adapter-not-published.md)。core/FFI/Wasm 依赖图不含 Nickel。
 
 本阶段仍不提供 Visual Graph editor、完整文本 DSL、timeline merge、多人同步、任意宿主 callback、
 WIT Component 唯一 ABI 或通用云存档服务。C#/TS/Unity 是 protocol adapter，不拥有运行语义。

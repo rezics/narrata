@@ -3,6 +3,11 @@
 状态：已决定
 日期：2026-09-01
 
+与 2026-10-05 决定的关系：精确构件恢复、依赖锁与显式迁移保留。逻辑构件身份不再包含文本
+（[决定 2](../product/decisions.md)），只改文字不需要迁移；身份规则见
+[决定 3](../product/decisions.md)。程序按包和块切分（[决定 10](../product/decisions.md)）后，
+锁与迁移以块为单位，由 Goal `narrative-core` 与 `kernel-and-saves` 通过 ADR 落实。
+
 ## 问题
 
 存档不仅保存变量，还保存“程序执行到哪里”。只写产品版本或脚本文件名无法证明旧 frame、
@@ -118,7 +123,7 @@ resolution policy：
 ## REZICS 外部内容
 
 Narrata 引用 REZICS `ContentStructureNode` occurrence，而不是 Post ID，详见
-[REZICS Gamebook 集成边界](../rezics-gamebook-integration.md)。恢复还需验证：
+[REZICS Gamebook 集成边界](../../archive/2026-08-31-rezics-gamebook-integration.md)。恢复还需验证：
 
 - provider、structure 和 occurrence node identity；
 - 当前调用者权限；

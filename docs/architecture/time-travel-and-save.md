@@ -3,6 +3,10 @@
 状态：已决定；编码库与性能阈值仍需 Phase 0 spike 证明
 日期：2026-09-01
 
+与 2026-10-05 决定的关系：不可变提交图、Ref、普通存档与完整时间线的区分保留为 kernel 能力。
+后端接口收窄为[存储与存档契约](../contracts/storage-and-saves.md) 的五个原语
+（[决定 8](../product/decisions.md)），Snapshot 不再包含文本（[决定 2](../product/decisions.md)）。
+
 ## 核心决定
 
 Narrata 使用**不可变 Snapshot Commit 图 + 可变 Ref**。恢复直接加载完整 continuation；

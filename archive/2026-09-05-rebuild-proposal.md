@@ -3,10 +3,10 @@
 日期：2026-09-05。状态：已授权分批实施；R0/R1 最小节点与 Web Gamebook 已有实现，后续部分仍为提案。
 调查基线：`95e7af90af75d13efedf08deb009014d15a16453`。
 
-当前实施记录见 [REBUILD_PROGRESS.md](REBUILD_PROGRESS.md)，R1 的实际契约与限制见
-[ADR 0011](docs/adr/0011-r1-node-composition.md)。下文候选类型不等于已全部交付。
+当前实施记录见 [REBUILD_PROGRESS.md](2026-09-05-rebuild-progress.md)，R1 的实际契约与限制见
+[ADR 0011](../docs/adr/0011-r1-node-composition.md)。下文候选类型不等于已全部交付。
 
-本轮修订依据见 [真实实现与学术研究](docs/research/2026-09-05-narrative-model-evidence.md)：
+本轮修订依据见 [真实实现与学术研究](../docs/research/2026-09-05-narrative-model-evidence.md)：
 Scene 成为统一节点族中的一种类型，SceneState 由其运行实例产生；标签机制仍待验证。
 产品顺序明确为 Web Gamebook → VN → 更复杂任务/同伴/世界叙事，不以制造差异为设计目标。
 
@@ -43,11 +43,11 @@ Skyrim/BG3 级叙事是长期表达能力目标，第一阶段交付可使用的
 最新一轮额外核查了 BG3 官方 Osiris、Anubis、Journal 与同伴 API；Mutagen 的 Skyrim
 Scene/Quest/StoryManager 格式实现；LSLib 编译 IR；Anansi 的 Storylet/Instance；以及
 Storylets、Façade、Versu 和意图驱动叙事规划论文。固定源码版本、实际观察与适用边界集中记录在
-[研究依据](docs/research/2026-09-05-narrative-model-evidence.md)。下表是此前的组合架构参考。
+[研究依据](../docs/research/2026-09-05-narrative-model-evidence.md)。下表是此前的组合架构参考。
 
 | 来源 | 学到的原则 | 在 Narrata 中的应用 |
 | --- | --- | --- |
-| [Lattice Axiom 重建提案](../lattice-axiom/REBUILD_PROPOSAL.md) | package 是组合、版本、实现、数据和资源所有权单位；产品图与 Cargo 图分开；通过生成的入口装配 | Narrata package 也必须能够实际选择和替换实现；明确数据、状态与代码 owner |
+| [Lattice Axiom 重建提案](../../lattice-axiom/REBUILD_PROPOSAL.md) | package 是组合、版本、实现、数据和资源所有权单位；产品图与 Cargo 图分开；通过生成的入口装配 | Narrata package 也必须能够实际选择和替换实现；明确数据、状态与代码 owner |
 | [Twee 3 规范](https://github.com/iftechfoundation/twine-specs/blob/master/twee-3-specification.md) | 交互文本以 passage 组织，内容单元不要求是对白 | Gamebook 使用内容节点与行动入口，不需要 Say/Advance 伪装层 |
 | [Versu 架构论文](https://versu.com/wp-content/uploads/2014/05/versu.pdf) | 人物参与具有角色与可执行行动的情境；情境提供行动，人物决策机制选择行动 | 将 Situation、参与角色、Action 与选择策略分开；情境可复用且可并存 |
 | [Ensemble](https://github.com/ensemble-engine/ensemble/wiki) | 社会世界、人物、意愿、行动和后果是可以独立建模的领域 | 同伴能力不简化为头像和好感度变量 |
@@ -99,7 +99,7 @@ Reader 渲染正文和行动入口。玩家分配食物时，内容节点可以�
 
 如果作品完全没有状态或行动语义，内容展示本身也不必制造 Runtime Commit。Narrata 只处理被作品定义为有叙事意义的操作。
 
-保留现有 [REZICS 所有权边界](docs/rezics-gamebook-integration.md)：REZICS 负责正文、内容 occurrence、权限与生命周期；Narrata 的 progression/content adapter 负责叙事行为与解析契约。文件系统、REZICS、静态内容包应能通过同一内容端口替换。替换 provider 不改变正文版权或访问权限的归属。
+保留现有 [REZICS 所有权边界](2026-08-31-rezics-gamebook-integration.md)：REZICS 负责正文、内容 occurrence、权限与生命周期；Narrata 的 progression/content adapter 负责叙事行为与解析契约。文件系统、REZICS、静态内容包应能通过同一内容端口替换。替换 provider 不改变正文版权或访问权限的归属。
 
 ### 3.2 VN 是一个产品组合
 
@@ -212,7 +212,7 @@ Situation 是场景或其他活动的情境信息；具体是否独立为节点�
 
 ## 5. Package 是真正的组合单位
 
-借鉴 [Lattice 提案第 4 节](../lattice-axiom/REBUILD_PROPOSAL.md)，区分三张图：package 依赖/端口绑定图、执行时因果/调度图、作者剧情/内容图。Cargo graph 只处理 Rust 构建依赖，不能替代其中任意一张。
+借鉴 [Lattice 提案第 4 节](../../lattice-axiom/REBUILD_PROPOSAL.md)，区分三张图：package 依赖/端口绑定图、执行时因果/调度图、作者剧情/内容图。Cargo graph 只处理 Rust 构建依赖，不能替代其中任意一张。
 
 [Cargo features 会合并且通常应为 additive](https://doc.rust-lang.org/cargo/reference/features.html)。因此“开一个 companion feature”可以是构建结果，不能承担全部 provider 选择与冲突求解语义。
 
@@ -424,14 +424,14 @@ dispatch(checked composition, committed state, checked input)
 
 | 当前证据 | 当前假设/限制 | 建议处理 |
 | --- | --- | --- |
-| [ProgramArtifactV0](crates/narrata-core/src/program/wire.rs) | 必须提供 entry_flow，内置 flows/statechart 形状 | 泛化为组合与模块入口；旧 Program 作为 Flow 产品适配 |
-| [RuntimeStateV0](crates/narrata-core/src/runtime/state.rs) | 全局 globals、必有 SceneState、固定 runtime status | 会话、共享事实与节点实例状态分开；不同节点种类注册自己的状态 |
-| [RuntimeInputV0](crates/narrata-core/src/runtime/input.rs) | 入口围绕 Start/Advance/Select；Event 只有 EventTypeId | 增加 typed 领域命令/事件载荷与目标；保留旧协议 adapter |
-| [PendingInteraction](crates/narrata-core/src/runtime/interaction.rs) | 交互形态固定为 Say/Choice | 使用可注册、可校验的交互契约，支持内容页与领域行动 |
-| [SceneState](crates/narrata-core/src/scene.rs) | 角色、图层、相机和音轨 | 旧呈现字段归可选组件；新 SceneState 是 Scene 节点实例的运行状态 |
-| [external content declaration](crates/narrata-core/src/program/flow.rs) / [wire](crates/narrata-core/src/program/wire.rs) | ExternalContentDeclV0 仍是占位类型，encoder 写空声明数组 | 内容解析已有代码不等于已完成可组合内容依赖；优先补实际 content package 契约 |
-| [内容引用](crates/narrata-core/src/content.rs) | StructureOccurrence 使用 structure + u32 occurrence | 核实数值是否持久分配且不可复用；不得把当前排序/数组下标当作稳定 occurrence；必要时升级引用格式 |
-| [Store/coordinator](crates/narrata-store/src/coordinator.rs) | 可靠提交能力与旧 RuntimeState 形状绑定 | 保留算法与测试经验，重构为跨注册模块状态的事务协调 |
+| [ProgramArtifactV0](../crates/narrata-core/src/program/wire.rs) | 必须提供 entry_flow，内置 flows/statechart 形状 | 泛化为组合与模块入口；旧 Program 作为 Flow 产品适配 |
+| [RuntimeStateV0](../crates/narrata-core/src/runtime/state.rs) | 全局 globals、必有 SceneState、固定 runtime status | 会话、共享事实与节点实例状态分开；不同节点种类注册自己的状态 |
+| [RuntimeInputV0](../crates/narrata-core/src/runtime/input.rs) | 入口围绕 Start/Advance/Select；Event 只有 EventTypeId | 增加 typed 领域命令/事件载荷与目标；保留旧协议 adapter |
+| [PendingInteraction](../crates/narrata-core/src/runtime/interaction.rs) | 交互形态固定为 Say/Choice | 使用可注册、可校验的交互契约，支持内容页与领域行动 |
+| [SceneState](../crates/narrata-core/src/scene.rs) | 角色、图层、相机和音轨 | 旧呈现字段归可选组件；新 SceneState 是 Scene 节点实例的运行状态 |
+| [external content declaration](../crates/narrata-core/src/program/flow.rs) / [wire](../crates/narrata-core/src/program/wire.rs) | ExternalContentDeclV0 仍是占位类型，encoder 写空声明数组 | 内容解析已有代码不等于已完成可组合内容依赖；优先补实际 content package 契约 |
+| [内容引用](../crates/narrata-core/src/content.rs) | StructureOccurrence 使用 structure + u32 occurrence | 核实数值是否持久分配且不可复用；不得把当前排序/数组下标当作稳定 occurrence；必要时升级引用格式 |
+| [Store/coordinator](../crates/narrata-store/src/coordinator.rs) | 可靠提交能力与旧 RuntimeState 形状绑定 | 保留算法与测试经验，重构为跨注册模块状态的事务协调 |
 
 值得保留：确定性、checked decoding、显式效果、持久身份、提交/恢复与迁移的验证资产。需要重新设计：强制 Flow 入口、全局单一等待模型、必需 VN SceneState、以 Effect capability 代替全部模块组合，以及仅面向对白的输入/输出。
 

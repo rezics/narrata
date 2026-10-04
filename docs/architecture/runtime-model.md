@@ -3,6 +3,10 @@
 状态：已决定（v0.1 语义基线）
 日期：2026-09-01
 
+与 2026-10-05 决定的关系：本页描述 Stage 1–5 的 Flow VM 运行模型。确定性归约、safe point 与
+受检输入保留并抽取进 kernel（[决定 11](../product/decisions.md)）；状态中的文本与强制
+`SceneState` 被[决定 2](../product/decisions.md) 取代，由新的格式 ADR 落实。
+
 ## 目标
 
 Narrata core 接收不可变 Program、已验证的 Runtime State 和一个显式 Input，产生新的状态及
@@ -28,7 +32,7 @@ macrostep 和同一份事务性 working state，但不能把每句台词强行�
 
 v0.1 已实现 Flow VM 与 typed Statechart。Statechart 作为可选 extension 接入，并保持既有
 Input、Commit、safe point 与 Effect 基础协议；完整规则见
-[Stage 4](../plan/stage-4-statecharts.md)。
+[Stage 4](../../archive/plan/stage-4-statecharts.md)。
 
 ## 权威类型
 

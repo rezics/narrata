@@ -2,7 +2,7 @@
 
 状态：提案，未实施，也不替代已有 ADR。
 
-后续方向已调整：下一步优先级以 [可组合叙事引擎重建提案](../../REBUILD_PROPOSAL.md) 为准。
+后续方向已调整：下一步优先级以 [可组合叙事引擎重建提案](../../archive/2026-09-05-rebuild-proposal.md) 为准。
 本页保留为作者工具与媒体工作流研究，不再建议直接启动 Stage 6；其中 Scene/Flow 假设需按新提案复查。
 调研日期：2026-09-05。
 仓库基线：`95e7af90af75d13efedf08deb009014d15a16453`。
@@ -17,7 +17,7 @@
 
 | 当前证据 | 已有基础 | 下一步缺口 |
 | --- | --- | --- |
-| [实施总览](../plan/README.md) | Stage 1–5 文档及对应 workspace；完整 DSL、Visual Graph editor 明确延后 | 建立作者能实际使用的入口 |
+| [实施总览](../../archive/plan/README.md) | Stage 1–5 文档及对应 workspace；完整 DSL、Visual Graph editor 明确延后 | 建立作者能实际使用的入口 |
 | [指令模型](../../crates/narrata-core/src/program/instruction.rs) | Say、Choice、条件跳转、Call/Return、Effect、ReconcileScene | 编译器将作者语言降级到这些指令 |
 | [authoring.rs](../../crates/narrata-core/src/authoring.rs) | Stable ID 分类、SourceMapSidecar、重复 ID 检查、迁移定位建议 | 持久化作者项目、ID 编辑生命周期、编译与源码编辑协议 |
 | [program inspect](../../crates/narrata-cli/src/commands/inspect.rs) | 构件身份、flow/指令数量等摘要 | 面向 UI 的节点、边、源码范围、条件与引用信息 |

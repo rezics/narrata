@@ -18,8 +18,12 @@ Its goal is broader than visual novels. Narrata is designed for any system where
 
 ## Documentation
 
-The current architecture decisions, research notes, and phased implementation plan are indexed in
-[docs/README.md](./docs/README.md).
+Product goals, numbered decisions, architecture, target contracts, the REZICS integration and research
+are indexed in [docs/README.md](./docs/README.md). Work runs as Goals listed in [GOAL.md](./GOAL.md);
+completed Stage 1–5 plans live in [archive/](./archive/).
+
+Commands run through [Task](https://taskfile.dev/) (`task --list`); tools and checks are listed in
+[the toolchain page](./docs/development/toolchain.md).
 
 ## Composable Web Gamebook (R0/R1)
 
@@ -36,7 +40,7 @@ npm --prefix examples/gamebook-web run dev
 Open `http://127.0.0.1:4173/` to read, inspect the graph, explore branches and save/restore a journey.
 See [the Web reader](examples/gamebook-web/README.md), [the three content packages](products/gamebook-demo/README.md),
 and [ADR 0011](docs/adr/0011-r1-node-composition.md) for format boundaries and current limits.
-Run `./scripts/check-r1.ps1` for the new Rust/Wasm/browser gate. Existing Stage 1–5 formats remain supported.
+Run `task check:r1` for the new Rust/Wasm/browser gate. Existing Stage 1–5 formats remain supported.
 
 ## Stage 5 quick start
 
@@ -44,7 +48,7 @@ The deterministic Flow/Statechart runtime, migration system, local time-travel s
 protocol bindings are implemented as a Rust 1.98 workspace. Run the complete local gate with:
 
 ```powershell
-./scripts/check-g5.ps1
+task check:g5
 ```
 
 Validate the checked-in canonical Program vector or replay both conformance stories:
@@ -64,10 +68,10 @@ cargo run -p narrata-cli -- migrate dry-run saves.db --source old-program.hex --
 `narrata-store` now also provides capability negotiation, commit-before-dispatch, a monotonic Effect
 ledger, recorded query recovery, rewind barriers, compensation links, declarative Scene reconcile,
 and atomically published Compound Saves. `narrata-store-sqlite` persists the same checked model.
-See [Stage 5](./docs/plan/stage-5-migrations-and-bindings.md) for frozen-save compatibility,
+See [Stage 5](./archive/plan/stage-5-migrations-and-bindings.md) for frozen-save compatibility,
 migration, C/C#/Wasm/TypeScript and debugger contracts; see
-[Stage 4](./docs/plan/stage-4-statecharts.md) for the implemented Statechart subset and
-[Stage 3](./docs/plan/stage-3-effects-and-host-coordination.md) before connecting commands or host
+[Stage 4](./archive/plan/stage-4-statecharts.md) for the implemented Statechart subset and
+[Stage 3](./archive/plan/stage-3-effects-and-host-coordination.md) before connecting commands or host
 snapshots. Narrata does not promise generic exactly-once delivery: a host must supply a stable
 idempotency key, transactional API, or explicit unknown-outcome resolution.
 

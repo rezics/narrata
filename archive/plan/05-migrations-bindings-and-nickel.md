@@ -174,4 +174,4 @@ G5 必需：
 Nickel optional Gate：只有 P5.9 全部满足才发布；否则保留研究结果，不进入核心依赖。
 
 本次 optional spike 未满足资源隔离与 schema drift 全部条件，因此按
-[ADR 0010](../adr/0010-nickel-adapter-not-published.md) 不发布 Nickel adapter；这不阻塞 G5。
+[ADR 0010](../../docs/adr/0010-nickel-adapter-not-published.md) 不发布 Nickel adapter；这不阻塞 G5。
