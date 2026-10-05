@@ -138,7 +138,7 @@ fn execute(args: &[String], apply: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn print_reports(reports: &[narrata_core::MigrationReport]) {
+pub(super) fn print_reports(reports: &[narrata_core::MigrationReport]) {
     for report in reports {
         println!(
             "migration={} relocations={} recoveries={} lossy={} effect_rekey={}",
@@ -200,13 +200,13 @@ fn explicit_path(flags: &Flags) -> Result<Option<Vec<MigrationId>>, String> {
 }
 
 #[derive(Default)]
-struct Flags {
+pub(super) struct Flags {
     values: BTreeMap<String, Vec<String>>,
     switches: BTreeSet<String>,
 }
 
 impl Flags {
-    fn parse(args: &[String]) -> Result<Self, String> {
+    pub(super) fn parse(args: &[String]) -> Result<Self, String> {
         let mut parsed = Self::default();
         let mut index = 0;
         while index < args.len() {
@@ -248,7 +248,7 @@ impl Flags {
             .collect()
     }
 
-    fn one(&self, key: &str) -> Result<Option<&str>, String> {
+    pub(super) fn one(&self, key: &str) -> Result<Option<&str>, String> {
         let values = self.values(key);
         if values.len() > 1 {
             Err(format!("{key} may only be specified once"))
@@ -257,7 +257,7 @@ impl Flags {
         }
     }
 
-    fn required_one(&self, key: &str) -> Result<&str, String> {
+    pub(super) fn required_one(&self, key: &str) -> Result<&str, String> {
         self.one(key)?.ok_or_else(|| format!("missing {key}"))
     }
 

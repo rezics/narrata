@@ -482,6 +482,7 @@ name = "narrata-cli"
 version = "0.1.0-alpha.1"
 dependencies = [
  "hex",
+ "narrata-content-local",
  "narrata-core",
  "narrata-node-tools",
  "narrata-store",
@@ -489,6 +490,7 @@ dependencies = [
  "narrata-testkit",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

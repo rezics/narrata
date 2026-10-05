@@ -1,0 +1,58 @@
+{
+  "artifacts": {
+    "checkpoint-bundle-v1.hex": {
+      "sha256": "8093837375f7b71d2bb74ccc87a3c8406169c5759777c91cea924dddd331bff9"
+    },
+    "commit-v1.hex": {
+      "sha256": "4dd612d7806ef8b680c976276edd4aa0bd61241067be051857d35448fcdd4367"
+    },
+    "content-pack.json": {
+      "sha256": "8c13deff7757665c712de8912a527905e537b1abb6015359f153a498d7ca245a"
+    },
+    "program-v1.hex": {
+      "sha256": "59f2b787f6d01b5fe21ad721ff44e0e5bf844ac7e795e8b6e959b1998fd45731"
+    },
+    "receipt-v1.hex": {
+      "sha256": "22b2d9264c88fa73119364a9f86cb760f6f60c2c7d98b3dc7e08924f09b11463"
+    },
+    "snapshot-v1.hex": {
+      "sha256": "6a6bd76fd24c38fea6df033788803d96226e3c0bcf844a92d2efa2db83f5e89a"
+    },
+    "timeline-archive-v1.hex": {
+      "sha256": "4896e9953b78a94fe11b03fb5a5297c58286a79fbe3ba2b1bc77c885571c9da3"
+    }
+  },
+  "build_provenance": {
+    "compiler": "narrata-testkit/0.1.0-alpha.1",
+    "locked_inputs": [
+      "branch-call-choice-v1"
+    ],
+    "rust": "1.98",
+    "source": "generator:branch-call-choice-v1"
+  },
+  "commit_id": "commit:e7e1af6d4fbcd0ba1de29194a59c91471e9e341c5e286b1e3e3bf95ccc0f8b42",
+  "content_pack": "content-pack.json",
+  "corpus_version": 1,
+  "expected_continuation": {
+    "choices": [
+      {
+        "id": "choice:00000000000000000000000000000001",
+        "label": {
+          "key": "continue",
+          "provider": "local"
+        }
+      }
+    ],
+    "kind": "choice",
+    "occurrence": 1,
+    "prompt": {
+      "key": "choose-a-path",
+      "provider": "local"
+    },
+    "select": "choice:00000000000000000000000000000001"
+  },
+  "frozen_at_stage": 6,
+  "program_artifact_id": "artifact:2c9a03cf98582cba40c50cdb8a8d2e1695072359b3720e673101749744cc207f",
+  "receipt_id": "stored-receipt:db5f9f4357c1c41401ef43a1ea598611dd8a9b30dbe2638e92b02e0a272cdb0c",
+  "state_digest": "state:8a162b48586a108a5447b42674a875c418dd8e7e57c35a6451e03fe9a8e7356c"
+}

@@ -5,6 +5,7 @@ mod replay;
 mod run;
 mod store;
 mod timeline;
+mod upgrade;
 mod validate;
 
 pub(crate) fn run(args: Vec<String>) -> Result<(), String> {
@@ -24,6 +25,7 @@ pub(crate) fn run(args: Vec<String>) -> Result<(), String> {
         [command, rest @ ..] if command == "conformance" => conformance::directory(rest),
         [group, command, rest @ ..] if group == "timeline" => timeline::run(command, rest),
         [group, command, rest @ ..] if group == "migrate" => migrate::run(command, rest),
+        [group, command, rest @ ..] if group == "upgrade" => upgrade::run(command, rest),
         [group, command, rest @ ..] if group == "store" => store::run(command, rest),
         _ => Err(usage()),
     }
@@ -31,6 +33,9 @@ pub(crate) fn run(args: Vec<String>) -> Result<(), String> {
 
 fn usage() -> String {
     "usage:\n  narrata program validate <artifact>\n  narrata program inspect <artifact> [--json]\n  narrata run <artifact> --execution <execution-id> --inputs <trace.json> [--trace] [--json]\n  narrata snapshot inspect <snapshot> --program <artifact>\n  narrata replay <fixture.json>\n  narrata conformance <fixture-directory>\n  narrata timeline log <store> --execution <execution-id>\n  narrata timeline rewind|redo <store> --program <artifact> --execution <id> --session <name> --branch <id> --steps <n>\n  narrata timeline fork <store> --program <artifact> --execution <id> --session <name> --branch <selected> --new-branch <id> --operation <id>\n  narrata timeline bookmark <store> --program <artifact> --execution <id> --session <name> --branch <id> --owner <name> --name <name> --operation <id>\n  narrata migrate inspect <source-program> <target-program> --descriptor <migration.json> [--path <id,...>]\n  narrata migrate dry-run|apply <store> --source <program> --target <program> --descriptor <migration.json> --commit <id> [--program <intermediate>]
+  narrata upgrade program <format-0-program> --program-out <path> --content-out <pack.json> [--language <tag>]
+  narrata upgrade dry-run <store> --source <format-0-program> --commit <id>
+  narrata upgrade apply <store> --source <format-0-program> --commit <id> --ref-owner <name> --ref-slot <name> [--expected-revision <n>]
   narrata store migrate-v2 <schema-v2-store> <new-store>".to_owned()
 }
 
