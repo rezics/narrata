@@ -1,18 +1,19 @@
 //! A checked program that loads chunks on demand (ADR 0013 §8). It holds the manifest and
 //! the tombstone set; a chunk is fetched by object ID from a [`ChunkSource`], verified
 //! against that ID, decoded with the checked decoder and checked against the manifest
-//! before first use.
+//! on every load, including after cache eviction.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::{Arc, OnceLock},
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    num::NonZeroUsize,
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use narrata_kernel::codec::{EnvelopeLimits, inspect_envelope};
 
 use crate::{
     ArtifactId, AuthoredId, ChoicePointId, Error, MAX_CHUNK_BYTES, MAX_MANIFEST_BYTES,
-    MAX_PACK_BYTES, NodeId, ObjectId, Result,
+    MAX_PACK_BYTES, NodeId, ObjectId, Result, State,
     check::{check_chunk, check_manifest},
     plan::{CallTarget, Graph, GraphRef, Manifest, NameTable, Plan, TombstoneSet},
     state::resolve_call,
@@ -68,7 +69,71 @@ pub struct Program {
     tombstones: TombstoneSet,
     tombstones_envelope: Vec<u8>,
     source: Box<dyn ChunkSource>,
-    chunks: Vec<OnceLock<BTreeMap<GraphRef, Arc<Graph>>>>,
+    chunks: Mutex<ChunkCache>,
+}
+
+type ChunkGraphs = BTreeMap<GraphRef, Arc<Graph>>;
+
+struct CachedChunk {
+    graphs: Arc<ChunkGraphs>,
+    pins: usize,
+}
+
+struct ChunkCache {
+    capacity: usize,
+    entries: BTreeMap<u32, CachedChunk>,
+    /// Oldest access first; only resident chunks appear here.
+    lru: VecDeque<u32>,
+}
+
+impl ChunkCache {
+    fn touch(&mut self, index: u32) {
+        self.lru.retain(|other| *other != index);
+        self.lru.push_back(index);
+    }
+
+    fn trim(&mut self) {
+        while self.entries.len() > self.capacity {
+            let candidate = self.lru.iter().position(|index| {
+                self.entries.get(index).is_some_and(|entry| {
+                    entry.pins == 0
+                        && Arc::strong_count(&entry.graphs) == 1
+                        && entry
+                            .graphs
+                            .values()
+                            .all(|graph| Arc::strong_count(graph) == 1)
+                })
+            });
+            let Some(position) = candidate else {
+                // Live frames and graph borrowers may exceed the cache budget.
+                break;
+            };
+            if let Some(index) = self.lru.remove(position) {
+                self.entries.remove(&index);
+            }
+        }
+    }
+}
+
+/// Keeps a state's frame chunks resident until dropped. Each session needs its own guard;
+/// replace it after moving the cursor, and keep the old guard while executing a choice.
+/// This does not retain historical states or pin graphs entered during that choice.
+#[must_use = "keep this guard alive while its frames are active"]
+pub struct ChunkPins<'p> {
+    program: &'p Program,
+    indices: BTreeSet<u32>,
+}
+
+impl Drop for ChunkPins<'_> {
+    fn drop(&mut self) {
+        let mut cache = self.program.cache();
+        for index in &self.indices {
+            if let Some(entry) = cache.entries.get_mut(index) {
+                entry.pins -= 1;
+            }
+        }
+        cache.trim();
+    }
 }
 
 impl std::fmt::Debug for Program {
@@ -123,7 +188,11 @@ impl Program {
                 "tombstone set differs from the manifest",
             ));
         }
-        let chunks = manifest.chunks.iter().map(|_| OnceLock::new()).collect();
+        let chunks = Mutex::new(ChunkCache {
+            capacity: Self::DEFAULT_CHUNK_CAPACITY,
+            entries: BTreeMap::new(),
+            lru: VecDeque::new(),
+        });
         Ok(Self {
             artifact_id: ArtifactId::from_bytes(*manifest_id.as_bytes()),
             manifest,
@@ -223,19 +292,38 @@ impl Program {
             .collect())
     }
 
-    fn chunk_graphs(&self, index: u32) -> Result<&BTreeMap<GraphRef, Arc<Graph>>> {
-        let cell = self
-            .chunks
-            .get(index as usize)
-            .ok_or_else(|| Error::new("reference", "chunks", "chunk index out of range"))?;
-        if let Some(graphs) = cell.get() {
-            return Ok(graphs);
+    fn cache(&self) -> MutexGuard<'_, ChunkCache> {
+        self.chunks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn chunk_graphs(&self, index: u32) -> Result<Arc<ChunkGraphs>> {
+        {
+            let mut cache = self.cache();
+            if let Some(entry) = cache.entries.get(&index) {
+                let graphs = entry.graphs.clone();
+                cache.touch(index);
+                cache.trim();
+                return Ok(graphs);
+            }
         }
-        let graphs = self.load_chunk(index)?;
-        // A concurrent loader may have won; both verified the same bytes.
-        let _ = cell.set(graphs);
-        cell.get()
-            .ok_or_else(|| Error::new("state", "chunks", "chunk cache is empty"))
+        // Never call an external source while holding the cache lock. A concurrent miss
+        // may load twice; only checked data is published and both name the same object.
+        let loaded = Arc::new(self.load_chunk(index)?);
+        let mut cache = self.cache();
+        let graphs = cache
+            .entries
+            .entry(index)
+            .or_insert_with(|| CachedChunk {
+                graphs: loaded,
+                pins: 0,
+            })
+            .graphs
+            .clone();
+        cache.touch(index);
+        cache.trim();
+        Ok(graphs)
     }
 
     pub fn graph(&self, key: &GraphRef) -> Result<Arc<Graph>> {
@@ -250,12 +338,78 @@ impl Program {
             .ok_or_else(|| Error::new("state", key.label(), "graph missing from its chunk"))
     }
 
-    /// How many chunks are loaded; the rest stay unread.
-    pub fn loaded_chunks(&self) -> usize {
-        self.chunks
+    /// Default resident chunk budget. Live pins/borrowers can exceed this budget.
+    pub const DEFAULT_CHUNK_CAPACITY: usize = 16;
+
+    /// Changes the resident chunk budget, immediately evicting eligible LRU entries.
+    /// Encoded bytes retained by a source (for example `MemorySource`) are not in this budget.
+    pub fn set_chunk_capacity(&self, capacity: NonZeroUsize) {
+        let mut cache = self.cache();
+        cache.capacity = capacity.get();
+        cache.trim();
+    }
+
+    pub fn chunk_capacity(&self) -> usize {
+        self.cache().capacity
+    }
+
+    /// Pins all distinct chunks referenced by the state's frames. Every miss is checked
+    /// again, including after eviction. On failure all pins acquired by this call release.
+    /// This pins frame references; it does not validate the rest of the state's contents.
+    pub fn pin_state(&self, state: &State) -> Result<ChunkPins<'_>> {
+        let indices = state
+            .frames
             .iter()
-            .filter(|cell| cell.get().is_some())
-            .count()
+            .map(|frame| {
+                self.manifest
+                    .graphs
+                    .get(&frame.graph)
+                    .map(|entry| entry.chunk)
+                    .ok_or_else(|| Error::new("reference", frame.graph.label(), "unknown graph"))
+            })
+            .collect::<Result<BTreeSet<_>>>()?;
+        let mut pins = ChunkPins {
+            program: self,
+            indices: BTreeSet::new(),
+        };
+        // Protect the whole resident subset before any miss can trigger trimming. In
+        // particular, transferring guards must not evict a newly entered frame while
+        // walking the older frames first.
+        {
+            let mut cache = self.cache();
+            for index in &indices {
+                if let Some(entry) = cache.entries.get_mut(index) {
+                    entry.pins = entry
+                        .pins
+                        .checked_add(1)
+                        .ok_or_else(|| Error::new("limit", "chunks", "too many chunk pins"))?;
+                    pins.indices.insert(*index);
+                }
+            }
+        }
+        for index in indices {
+            if pins.indices.contains(&index) {
+                continue;
+            }
+            let _graphs = self.chunk_graphs(index)?;
+            let mut cache = self.cache();
+            let entry = cache
+                .entries
+                .get_mut(&index)
+                .ok_or_else(|| Error::new("state", "chunks", "pinned chunk is missing"))?;
+            entry.pins = entry
+                .pins
+                .checked_add(1)
+                .ok_or_else(|| Error::new("limit", "chunks", "too many chunk pins"))?;
+            pins.indices.insert(index);
+        }
+        Ok(pins)
+    }
+
+    /// Resident decoded chunks, including those kept by live pins or graph borrowers.
+    /// Released borrowers are reclaimed on the next access, budget change or pin drop.
+    pub fn loaded_chunks(&self) -> usize {
+        self.cache().entries.len()
     }
 
     pub fn resolve_call(&self, graph: &GraphRef, target: &CallTarget) -> Result<GraphRef> {
@@ -269,7 +423,7 @@ impl Program {
         let mut points = BTreeSet::new();
         let mut options = BTreeSet::new();
         for index in 0..self.manifest.chunks.len() {
-            for (key, graph) in self.chunk_graphs(index as u32)? {
+            for (key, graph) in self.chunk_graphs(index as u32)?.iter() {
                 for (id, plan) in &graph.nodes {
                     if !nodes.insert(*id) {
                         return Err(Error::new(
@@ -310,7 +464,7 @@ impl Program {
             return Ok(Lookup::Deleted);
         }
         for index in 0..self.manifest.chunks.len() {
-            for (key, graph) in self.chunk_graphs(index as u32)? {
+            for (key, graph) in self.chunk_graphs(index as u32)?.iter() {
                 for (node, plan) in &graph.nodes {
                     let live = |choice_point| Lookup::Live {
                         graph: key.clone(),
@@ -346,7 +500,7 @@ impl Program {
     pub fn owners(&self) -> Result<BTreeMap<AuthoredId, Owner>> {
         let mut owners = BTreeMap::new();
         for index in 0..self.manifest.chunks.len() {
-            for (key, graph) in self.chunk_graphs(index as u32)? {
+            for (key, graph) in self.chunk_graphs(index as u32)?.iter() {
                 for (node, plan) in &graph.nodes {
                     owners.insert(AuthoredId::Node(*node), Owner::Graph(key.clone()));
                     let Plan::Passage(passage) = plan else {

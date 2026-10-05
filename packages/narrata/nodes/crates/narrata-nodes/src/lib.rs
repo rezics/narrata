@@ -39,7 +39,7 @@ pub use ids::{
 pub use json::{parse_json, parse_json_limited};
 pub use outline::ContentOutline;
 pub use plan::NameTable;
-pub use program::{ChunkSource, Lookup, MemorySource, Owner, Program};
+pub use program::{ChunkPins, ChunkSource, Lookup, MemorySource, Owner, Program};
 pub use proposal::{
     ChoicePointProposal, MAX_OVERLAY_NODES, MAX_PROPOSED_NODES, MAX_PROPOSED_OPTIONS,
     MAX_REQUEST_BYTES, NodeProposal, OptionProposal, ProposalRequest,
