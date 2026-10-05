@@ -264,3 +264,69 @@ fn missing_entry_signatures_do_not_hide_independent_scalar_constraints() {
             .any(|error| error.path == "product.entry")
     );
 }
+
+#[test]
+fn identical_errors_on_distinct_variable_fields_and_bindings_are_not_deduplicated() {
+    let mut source = source();
+    let graph = source
+        .packages
+        .get_mut("main")
+        .unwrap()
+        .graphs
+        .get_mut("start")
+        .unwrap();
+    graph.locals.insert(
+        "one".into(),
+        Scalar::Text("x".repeat(narrata_nodes::MAX_TEXT_BYTES + 1)),
+    );
+    graph.locals.insert(
+        "two".into(),
+        Scalar::Text("x".repeat(narrata_nodes::MAX_TEXT_BYTES + 1)),
+    );
+    for name in ["lamp", "other"] {
+        graph
+            .shared
+            .insert(name.into(), narrata_nodes::ScalarType::Int);
+    }
+    source
+        .manifest
+        .product
+        .shared
+        .insert("other".into(), Scalar::Bool(false));
+    let first = compile(&source, &NodeRegistry::gamebook()).unwrap_err();
+    assert_eq!(first.path, "packages.main.graphs.start");
+    let report = validate_source(&source, &NodeRegistry::gamebook(), 100_000, 1_000);
+    assert_eq!(
+        report
+            .errors
+            .iter()
+            .filter(|error| error.path.contains(".locals[") && error.code == "limit")
+            .count(),
+        2
+    );
+    assert_eq!(
+        report
+            .errors
+            .iter()
+            .filter(|error| error.path.contains(".shared[") && error.code == "type")
+            .count(),
+        2
+    );
+    let binding = source.manifest.product.bindings[0].clone();
+    source.manifest.product.bindings[0].to.graph = "missing_one".into();
+    let mut extra = binding;
+    extra.from.port = "extra".into();
+    extra.to.graph = "missing_two".into();
+    source.manifest.product.bindings.push(extra);
+    let report = validate_source(&source, &NodeRegistry::gamebook(), 100_000, 1_000);
+    assert_eq!(
+        report
+            .errors
+            .iter()
+            .filter(|error| error.path.starts_with("product.bindings[")
+                && error.path.ends_with(".to")
+                && error.message == "target graph does not exist")
+            .count(),
+        2
+    );
+}

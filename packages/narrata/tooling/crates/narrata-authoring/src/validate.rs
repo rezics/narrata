@@ -223,12 +223,57 @@ pub(crate) fn source_pointer(path: &str) -> String {
     if path.starts_with('/') {
         return path.into();
     }
-    path.replace('[', ".")
-        .replace(']', "")
-        .split('.')
-        .filter(|part| !part.is_empty())
-        .map(|part| format!("/{}", escape(part)))
-        .collect()
+    let mut pointer = String::new();
+    let bytes = path.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'.' {
+            index += 1;
+            continue;
+        }
+        let segment = if bytes[index] == b'[' {
+            index += 1;
+            let start = index;
+            if bytes.get(index) == Some(&b'"') {
+                index += 1;
+                let mut escaped = false;
+                while index < bytes.len() {
+                    let byte = bytes[index];
+                    index += 1;
+                    if byte == b'"' && !escaped {
+                        break;
+                    }
+                    escaped = byte == b'\\' && !escaped;
+                }
+                let key: String = serde_json::from_str(&path[start..index])
+                    .unwrap_or_else(|_| path[start..index].into());
+                if bytes.get(index) == Some(&b']') {
+                    index += 1;
+                }
+                key
+            } else {
+                while index < bytes.len() && bytes[index] != b']' {
+                    index += 1;
+                }
+                let key = path[start..index].to_owned();
+                if bytes.get(index) == Some(&b']') {
+                    index += 1;
+                }
+                key
+            }
+        } else {
+            let start = index;
+            while index < bytes.len() && !matches!(bytes[index], b'.' | b'[') {
+                index += 1;
+            }
+            path[start..index].to_owned()
+        };
+        if !segment.is_empty() {
+            pointer.push('/');
+            pointer.push_str(&escape(&segment));
+        }
+    }
+    pointer
 }
 
 /// JSON field visits and shared semantic rule evaluations consume the work budget. Parsing

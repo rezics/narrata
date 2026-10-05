@@ -25,6 +25,7 @@ pub(crate) struct Checks {
     diagnostics: usize,
     pub available: Option<BTreeSet<crate::NodeId>>,
     pub graph_size: Option<usize>,
+    pub binding_paths: std::collections::BTreeMap<ImportRef, String>,
 }
 
 impl Checks {
@@ -41,6 +42,7 @@ impl Checks {
             diagnostics: usize::MAX,
             available: None,
             graph_size: None,
+            binding_paths: std::collections::BTreeMap::new(),
         }
     }
     pub fn collecting(work: usize, diagnostics: usize) -> Self {
@@ -53,6 +55,7 @@ impl Checks {
             diagnostics,
             available: None,
             graph_size: None,
+            binding_paths: std::collections::BTreeMap::new(),
         }
     }
     pub fn tick(&mut self, path: &str) -> Result<()> {
@@ -113,6 +116,34 @@ impl Checks {
             format!("{path}.{field}")
         }
     }
+    pub fn key_path(&self, path: &str, field: &str, key: &str) -> String {
+        if self.first {
+            return path.into();
+        }
+        let base = if field.is_empty() {
+            path.to_owned()
+        } else if path.is_empty() {
+            field.to_owned()
+        } else {
+            format!("{path}.{field}")
+        };
+        format!("{base}[{}]", serde_json::Value::String(key.into()))
+    }
+    pub fn binding_path(&self, from: &ImportRef, legacy: &str, field: &str) -> String {
+        if self.first {
+            return legacy.into();
+        }
+        self.binding_paths.get(from).map_or_else(
+            || legacy.into(),
+            |path| {
+                if field.is_empty() {
+                    path.clone()
+                } else {
+                    format!("{path}.{field}")
+                }
+            },
+        )
+    }
 }
 
 pub(crate) fn name(value: &str, path: &str) -> Result<()> {
@@ -154,7 +185,7 @@ fn collect_signature(value: &Signature, path: &str, checks: &mut Checks) -> Resu
         checks.error(Error::new("limit", path, "too many parameters"))?;
     }
     for key in value.parameters.keys() {
-        checks.check(name(key, path))?;
+        checks.check(name(key, &checks.key_path(path, "parameters", key)))?;
     }
     collect_names(&value.outcomes, path, checks)?;
     if value.outcomes.is_empty() {
@@ -259,7 +290,8 @@ pub(crate) fn collect_manifest(manifest: &Manifest, checks: &mut Checks) -> Resu
             ))?;
         }
         for (key, value) in &product.arguments {
-            checks.check(check_scalar(value, "product.arguments"))?;
+            let at = checks.key_path("product.arguments", "", key);
+            checks.check(check_scalar(value, &at))?;
             if let Some(kind) = entry.signature.parameters.get(key) {
                 checks.check(expect(
                     value.kind(),
@@ -282,8 +314,9 @@ pub(crate) fn collect_manifest(manifest: &Manifest, checks: &mut Checks) -> Resu
         ))?;
     }
     for (key, variable) in &product.shared {
-        checks.check(name(key, "product.shared"))?;
-        checks.check(check_scalar(&variable.value, "product.shared"))?;
+        let at = checks.key_path("product.shared", "", key);
+        checks.check(name(key, &at))?;
+        checks.check(check_scalar(&variable.value, &at))?;
     }
     if let Some(entry) = entry {
         for outcome in product.endings.keys() {
@@ -302,21 +335,30 @@ pub(crate) fn collect_manifest(manifest: &Manifest, checks: &mut Checks) -> Resu
         )?;
     }
     for (from, to) in &product.bindings {
+        let from_path = checks.binding_path(from, "product.bindings", "from");
+        let to_path = checks.binding_path(from, "product.bindings", "to");
         if !manifest.graphs.contains_key(&from.owner()) {
             checks.error(Error::new(
                 "binding",
-                "product.bindings",
+                &from_path,
                 format!("unknown import owner {}", from.owner().label()),
             ))?;
         }
-        let Some(target) = checks.check(manifest.graphs.get(to).ok_or_else(|| {
-            Error::new("binding", "product.bindings", "target graph does not exist")
-        }))?
+        let Some(target) = checks.check(
+            manifest
+                .graphs
+                .get(to)
+                .ok_or_else(|| Error::new("binding", &to_path, "target graph does not exist")),
+        )?
         else {
             continue;
         };
         if !target.exported {
-            checks.error(Error::new("contract", to.label(), "graph is not exported"))?;
+            checks.error(Error::new(
+                "contract",
+                checks.binding_path(from, &to.label(), "to"),
+                "graph is not exported",
+            ))?;
         }
     }
     Ok(())
@@ -392,11 +434,12 @@ pub(crate) fn collect_graph(
     }
     collect_graph_locals(header, &path, checks)?;
     for (shared, kind) in &header.shared {
+        let at = checks.key_path(&path, "shared", shared);
         let Some(declared) =
             checks.check(manifest.product.shared.get(shared).ok_or_else(|| {
                 Error::new(
                     "reference",
-                    &path,
+                    &at,
                     format!("product does not provide shared variable {shared}"),
                 )
             }))?
@@ -404,11 +447,12 @@ pub(crate) fn collect_graph(
             checks.skip(&path, "dependent checks require a valid declaration")?;
             continue;
         };
-        checks.check(expect(declared.value.kind(), *kind, &path))?;
+        checks.check(expect(declared.value.kind(), *kind, &at))?;
     }
     for (port, import) in &header.imports {
-        checks.check(name(port, &path))?;
-        collect_signature(import, &path, checks)?;
+        let at = checks.key_path(&path, "imports", port);
+        checks.check(name(port, &at))?;
+        collect_signature(import, &at, checks)?;
         let reference = ImportRef {
             package: key.package.clone(),
             graph: key.graph.clone(),
@@ -418,7 +462,11 @@ pub(crate) fn collect_graph(
             checks.check(manifest.product.bindings.get(&reference).ok_or_else(|| {
                 Error::new(
                     "binding",
-                    key.label(),
+                    if checks.is_first() {
+                        key.label()
+                    } else {
+                        at.clone()
+                    },
                     format!("missing provider for {port}"),
                 )
             }))?
@@ -426,10 +474,13 @@ pub(crate) fn collect_graph(
             checks.skip(&path, "dependent checks require a valid declaration")?;
             continue;
         };
-        let Some(provided) =
-            checks.check(manifest.graphs.get(target).ok_or_else(|| {
-                Error::new("binding", key.label(), "target graph does not exist")
-            }))?
+        let Some(provided) = checks.check(manifest.graphs.get(target).ok_or_else(|| {
+            Error::new(
+                "binding",
+                checks.binding_path(&reference, &key.label(), "to"),
+                "target graph does not exist",
+            )
+        }))?
         else {
             checks.skip(&path, "import signature checks require a provider")?;
             continue;
@@ -437,7 +488,7 @@ pub(crate) fn collect_graph(
         if &provided.signature != import {
             checks.error(Error::new(
                 "contract",
-                "product.bindings",
+                checks.binding_path(&reference, "product.bindings", "to"),
                 format!(
                     "import {port} of {} does not match {} parameters and outcomes",
                     key.label(),
@@ -450,7 +501,7 @@ pub(crate) fn collect_graph(
         if &from.owner() == key && !header.imports.contains_key(&from.port) {
             checks.error(Error::new(
                 "binding",
-                "product.bindings",
+                checks.binding_path(from, "product.bindings", "from.port"),
                 "import port is not declared",
             ))?;
         }
@@ -553,7 +604,7 @@ pub(crate) fn collect_graph(
                         ))?;
                     }
                     for (argument, value) in arguments {
-                        let at = checks.path(&path, &format!("arguments.{argument}"));
+                        let at = checks.key_path(&path, "arguments", argument);
                         if let Some(kind) = callee.parameters.get(argument) {
                             collect_expected(&declarations, value, *kind, &at, checks)?;
                         } else {
@@ -565,7 +616,7 @@ pub(crate) fn collect_graph(
                     for (argument, value) in arguments {
                         declarations.collect(
                             value,
-                            &checks.path(&path, &format!("arguments.{argument}")),
+                            &checks.key_path(&path, "arguments", argument),
                             checks,
                         )?;
                     }
@@ -611,11 +662,7 @@ fn collect_passage(
     }
     for (argument, value) in &passage.args {
         checks.check(name(argument, path))?;
-        declarations.collect(
-            value,
-            &checks.path(path, &format!("args.{argument}")),
-            checks,
-        )?;
+        declarations.collect(value, &checks.key_path(path, "args", argument), checks)?;
     }
     if passage.choice_points.len() > MAX_CHOICE_POINTS {
         checks.error(Error::new(
@@ -926,8 +973,9 @@ fn collect_graph_locals(
         checks.error(Error::new("limit", path, "too many variables"))?;
     }
     for (local, value) in &header.locals {
-        checks.check(name(local, path))?;
-        checks.check(check_scalar(value, path))?;
+        let at = checks.key_path(path, "locals", local);
+        checks.check(name(local, &at))?;
+        checks.check(check_scalar(value, &at))?;
     }
     Ok(())
 }
@@ -956,7 +1004,7 @@ pub fn validate_graph_source(source: &crate::source::GraphSource) -> Vec<Error> 
         }
         for (port, import) in &header.imports {
             checks.check(name(port, "imports"))?;
-            collect_signature(import, &format!("imports.{port}"), checks)?;
+            collect_signature(import, &checks.key_path("", "imports", port), checks)?;
         }
         Ok(())
     }

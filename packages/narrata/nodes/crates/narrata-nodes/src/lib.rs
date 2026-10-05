@@ -34,7 +34,7 @@ pub use analysis::{Analysis, analyze};
 pub use check::{check_package_identity, validate_choice_source, validate_graph_source};
 pub use compile::{
     Compilation, SourceValidation, canonical_json, check_node_data, compile, package_digest,
-    validate_manifest_source, validate_source,
+    validate_manifest_source, validate_package_metadata, validate_source,
 };
 pub use error::{Diagnostic, Error, Result};
 pub use expr::{Assignment, BinaryOp, Expr, Scope, Variable, check_scalar};

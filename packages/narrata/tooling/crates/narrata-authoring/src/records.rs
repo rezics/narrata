@@ -315,10 +315,15 @@ impl DraftRecord {
                 }
             }
             Self::Package { payload, .. } => {
-                if let Err(error) =
-                    narrata_nodes::check_package_identity(&payload.id, &payload.version, "/payload")
-                {
-                    out.error(error, Some(self));
+                for error in narrata_nodes::validate_package_metadata(payload) {
+                    out.error(
+                        Error::new(
+                            &error.code,
+                            format!("/payload{}", source_pointer(&error.path)),
+                            error.message,
+                        ),
+                        Some(self),
+                    );
                 }
                 if !payload.graphs.is_empty() {
                     error(

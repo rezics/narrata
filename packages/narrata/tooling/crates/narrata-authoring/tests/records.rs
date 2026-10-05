@@ -410,6 +410,43 @@ fn local_headers_collect_independent_metadata_errors_before_assembly() {
 }
 
 #[test]
+fn map_key_locations_are_json_pointers_and_equal_errors_on_distinct_fields_survive() {
+    let records = split_source(&source()).into_result().unwrap();
+    let record = records
+        .iter()
+        .find(|record| matches!(record.record(), DraftRecord::Graph { .. }))
+        .unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(record.bytes()).unwrap();
+    value["payload"]["locals"] = json!({"one":"x".repeat(narrata_nodes::MAX_TEXT_BYTES + 1), "bad.name/~[\"":"x".repeat(narrata_nodes::MAX_TEXT_BYTES + 1)});
+    let report = validate_record(&canonical_json(&value).unwrap());
+    assert_eq!(
+        report
+            .diagnostics
+            .iter()
+            .filter(|error| error.code == "limit")
+            .count(),
+        2
+    );
+    for diagnostic in &report.diagnostics {
+        assert!(
+            value.pointer(&diagnostic.location.pointer).is_some(),
+            "{diagnostic:?}"
+        );
+    }
+    let record = records
+        .iter()
+        .find(|record| matches!(record.record(), DraftRecord::Package { .. }))
+        .unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(record.bytes()).unwrap();
+    value["payload"]["id"] = json!("");
+    value["payload"]["exports"] = json!(["same", "same"]);
+    let report = validate_record(&canonical_json(&value).unwrap());
+    for code in ["identifier", "duplicate"] {
+        assert!(report.diagnostics.iter().any(|error| error.code == code));
+    }
+}
+
+#[test]
 fn tombstones_split_with_their_package_and_cannot_reuse_live_ids() {
     let mut source = source();
     source

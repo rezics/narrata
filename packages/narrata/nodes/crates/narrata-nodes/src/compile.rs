@@ -271,14 +271,7 @@ fn lower_collect(
     for (alias, package) in &source.packages {
         checks.check(name(alias, "packages"))?;
         let path = format!("packages.{alias}");
-        checks.check(crate::check::check_package_identity(
-            &package.id,
-            &package.version,
-            &path,
-        ))?;
-        let mut exports = package.exports.clone();
-        exports.sort();
-        collect_names(&exports, &format!("{path}.exports"), checks)?;
+        let exports = collect_package_metadata(package, &path, checks)?;
         for export in &exports {
             if !package.graphs.contains_key(export) {
                 checks.error(Error::new(
@@ -553,6 +546,35 @@ fn lower_graph(
     Ok((header, nodes, names))
 }
 
+fn collect_package_metadata(
+    package: &PackageSource,
+    path: &str,
+    checks: &mut crate::check::Checks,
+) -> Result<Vec<String>> {
+    checks.check(crate::check::check_package_identity(
+        &package.id,
+        &package.version,
+        path,
+    ))?;
+    let mut exports = package.exports.clone();
+    exports.sort();
+    let export_path = if path.is_empty() {
+        "exports".into()
+    } else {
+        format!("{path}.exports")
+    };
+    collect_names(&exports, &export_path, checks)?;
+    Ok(exports)
+}
+
+pub fn validate_package_metadata(package: &PackageSource) -> Vec<Error> {
+    let mut checks = crate::check::Checks::collecting(usize::MAX, usize::MAX);
+    if let Err(error) = collect_package_metadata(package, "", &mut checks) {
+        checks.errors.push(error);
+    }
+    checks.errors
+}
+
 fn check_source_header(source: &ProjectSource, checks: &mut crate::check::Checks) -> Result<()> {
     let manifest_source = &source.manifest;
     check_source_version(manifest_source.format_version, checks)?;
@@ -590,6 +612,12 @@ pub fn validate_source(
         check_source_header(source, checks)?;
         let lowered = lower_collect(source, registry, checks)?;
         let product = &source.manifest.product;
+        checks.binding_paths = product
+            .bindings
+            .iter()
+            .enumerate()
+            .map(|(index, binding)| (binding.from.clone(), format!("product.bindings[{index}]")))
+            .collect();
         let bindings = collect_bindings(product, checks)?;
         let manifest = Manifest {
             product: product_header(product, bindings),
@@ -796,8 +824,9 @@ fn check_product_source(
         }
     }
     for (key, value) in &product_source.shared {
-        checks.check(name(key, "product.shared"))?;
-        checks.check(check_scalar(value, "product.shared"))?;
+        let at = checks.key_path("product.shared", "", key);
+        checks.check(name(key, &at))?;
+        checks.check(check_scalar(value, &at))?;
     }
     Ok(())
 }
