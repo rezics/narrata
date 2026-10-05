@@ -63,10 +63,53 @@ fn resolve(content: &LocalContent, languages: &[&str], items: Vec<ResolveItem>) 
                     .iter()
                     .map(|language| (*language).to_owned())
                     .collect(),
+                ..ResolveContext::default()
             },
             items,
         })
         .unwrap()
+}
+
+#[test]
+fn optional_host_context_round_trips_and_is_ignored_locally() {
+    let old: ResolveRequest = serde_json::from_value(json!({
+        "context": {"languages": ["zh-Hans"]},
+        "items": [{"content": {"provider": "local", "key": "title"}}]
+    }))
+    .unwrap();
+    assert_eq!(old.context.realization, None);
+    assert_eq!(old.context.viewer, None);
+    let mut remote = old.clone();
+    remote.context.realization = Some("expression:translated-revision".into());
+    remote.context.viewer = Some("host-reader:opaque".into());
+    assert_eq!(
+        content().resolve(&old).unwrap(),
+        content().resolve(&remote).unwrap()
+    );
+    assert_eq!(
+        serde_json::from_str::<ResolveRequest>(&serde_json::to_string(&remote).unwrap()).unwrap(),
+        remote
+    );
+    assert!(
+        serde_json::from_value::<ResolveRequest>(json!({"context": {"viewer": 3}, "items": []}))
+            .is_err()
+    );
+}
+
+#[test]
+fn resolve_schemas_match_the_rust_exchange_types() {
+    for (name, schema) in narrata_content_local::schemas() {
+        if name == "content-resolve-request.schema.json" || name == "content-resolution.schema.json"
+        {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../nodes/schemas")
+                .join(name);
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                serde_json::to_string_pretty(&schema).unwrap() + "\n"
+            );
+        }
+    }
 }
 
 fn text(resolution: &Resolution) -> String {

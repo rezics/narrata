@@ -2,6 +2,7 @@ import init, { NodeBook, LocalContent } from "./wasm/narrata_nodes_wasm.js";
 import { StorageHost, type CacheStore } from "./storage.js";
 import validate from "./generated/validate-book.js";
 import type { BookView, ChoicePointId, CommitId, ExecutionId, OptionId } from "./generated/book-view.js";
+import type { ContentRef } from "./generated/book-view.js";
 
 export { LocalContent };
 export type WasmSource = URL | string | Uint8Array | ArrayBuffer | WebAssembly.Module;
@@ -32,6 +33,11 @@ export function checkedBook(value: unknown): BookView {
 }
 export function decodeBook(text: string): BookView { return checkedBook(JSON.parse(text)); }
 
+function isContentRef(value: unknown): value is ContentRef {
+  return typeof value === "object" && value !== null && "provider" in value && "key" in value
+    && typeof value.provider === "string" && typeof value.key === "string";
+}
+
 type SessionOptions = { execution: ExecutionId; storage?: CacheStore; wasm?: WasmSource };
 export type OpenBookOptions = SessionOptions & (
   | { manifest: Uint8Array; fetchChunk: (id: string) => Promise<Uint8Array>; names?: Uint8Array; pack?: never }
@@ -57,6 +63,8 @@ export async function openBook(options: OpenBookOptions): Promise<Book> {
 export interface Book {
   readonly artifactId: string;
   inspect(): Promise<BookView>;
+  /** Possible body units after one choice, through automatic transitions to the next interaction. */
+  nextContentUnits(): Promise<ContentRef[]>;
   choose(expected: CommitId, choicePoint: ChoicePointId, options: readonly OptionId[]): Promise<CommitId>;
   checkout(commit: CommitId): Promise<void>;
   exportSave(): Promise<string>;
@@ -84,6 +92,13 @@ class RuntimeBook implements Book {
   get artifactId(): string { this.assertOpen(); return this.raw.artifact_id; }
   start(): Promise<void> { return this.run(() => this.host ? this.raw.open() : this.raw.memory()); }
   inspect(): Promise<BookView> { return this.run(() => decodeBook(this.raw.inspect())); }
+  nextContentUnits(): Promise<ContentRef[]> {
+    return this.run(() => {
+      const references: unknown = JSON.parse(this.raw.nextContentUnits());
+      if (!Array.isArray(references) || !references.every(isContentRef)) throw new Error("Invalid content lookahead from the runtime");
+      return references;
+    });
+  }
   choose(expected: CommitId, choicePoint: ChoicePointId, options: readonly OptionId[]): Promise<CommitId> {
     return this.run(() => this.raw.choose(expected, choicePoint, [...options]));
   }

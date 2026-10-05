@@ -20,7 +20,7 @@ npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", ta
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./storage"]);
+assert.deepEqual(Object.keys(manifest.exports), [".", "./storage", "./testing"]);
 assert.equal(manifest.dependencies, undefined, "Runtime assets and storage host are self-contained");
 assert.equal(createHash("sha256").update(readFileSync(join(installed, "dist/wasm/narrata_nodes_wasm_bg.wasm"))).digest("hex"),
   createHash("sha256").update(readFileSync(join(here, "dist/wasm/narrata_nodes_wasm_bg.wasm"))).digest("hex"));
@@ -36,7 +36,19 @@ execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc
 writeFileSync(join(directory, "node.mjs"), `
 import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
-import { openBook, initialize } from "@rezics/narrata";
+import { openBook, initialize, resolveContent } from "@rezics/narrata";
+import { MockRezicsContent, mountainLetterData, mountainLetterKeys } from "@rezics/narrata/testing";
+const mock = new MockRezicsContent(mountainLetterData(), 1);
+const station = mountainLetterKeys["main.station"];
+const label = mountainLetterKeys["main.journey:station.camp.label"];
+assert.ok(station && label);
+const resolved = await resolveContent(mock, [
+  { content: { unit: { provider: "rezics", key: station }, first: "p1", last: "p1" } },
+  { content: { provider: "rezics", key: label } },
+], { realization: "en", viewer: "reader:installed" }, 1);
+assert.equal(resolved[0].status, "ok");
+assert.equal(resolved[0].payload.blocks[0].id, "p1");
+assert.equal(resolved[1].payload.text, "Rest at the camp");
 const objects = JSON.parse(await readFile(new URL("./objects.json", import.meta.url), "utf8"));
 const wasm = new URL("./node_modules/@rezics/narrata/dist/wasm/narrata_nodes_wasm_bg.wasm", import.meta.url);
 if (process.argv[2] === "bytes") await initialize(new Uint8Array(await readFile(wasm)));
@@ -44,7 +56,14 @@ if (process.argv[2] === "url") await initialize(wasm);
 const requests = [];
 const book = await openBook({ manifest: new Uint8Array(await readFile(new URL("./manifest.cbor", import.meta.url))), execution: ${JSON.stringify(execution)},
   fetchChunk: async id => { requests.push(id); assert.ok(objects[id]); return new Uint8Array(objects[id]); } });
-try { const view = await book.inspect(); assert.equal(view.view.depth, 0); assert.equal(view.view.interaction.kind, "choose"); assert.equal(requests.length, 1); }
+try {
+  const view = await book.inspect(); assert.equal(view.view.depth, 0); assert.equal(view.view.interaction.kind, "choose"); assert.equal(requests.length, 1);
+  const save = await book.exportSave();
+  const units = await book.nextContentUnits();
+  assert.ok(units.some(reference => reference.key === "camp.fire"));
+  assert.ok(units.some(reference => reference.key === "road.rocks"));
+  assert.equal(await book.exportSave(), save);
+}
 finally { await book.close(); }
 console.log("Installed package opened in " + process.argv[2]);
 `);
@@ -61,7 +80,7 @@ window.ready = (async () => {
   const store = await IndexedDbStore.open("installed-package-session");
   const book = await openBook({ manifest: await bytes("/manifest.cbor"), execution: ${JSON.stringify(execution)}, storage: store,
     fetchChunk: id => bytes("/objects/" + id.slice(7) + ".cbor") });
-  window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), choose: async () => {
+  window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), choose: async () => {
     const view = await book.inspect(); const interaction = view.view.interaction;
     if (interaction.kind !== "choose") throw new Error("Expected a choice");
     const option = interaction.options.find(option => option.enabled); if (!option) throw new Error("No option");
@@ -99,6 +118,11 @@ try {
   assert.equal((await page.evaluate(() => window.installed.inspect())).view.depth, 0);
   assert.equal(requests.filter(path => path.endsWith(".cbor")).length, 2, "First screen requests only the manifest and entry chunk");
   assert.equal(requests.filter(path => path.endsWith(".wasm")).length, 1);
+  const beforePrefetch = await page.evaluate(() => window.installed.save());
+  const units = await page.evaluate(() => window.installed.prefetch());
+  assert.ok(units.some(reference => reference.key === "camp.fire"));
+  assert.ok(units.some(reference => reference.key === "road.rocks"));
+  assert.equal(await page.evaluate(() => window.installed.save()), beforePrefetch);
   await page.evaluate(() => window.installed.choose());
   const before = await page.evaluate(() => window.installed.inspect());
   assert.equal(before.view.depth, 1);

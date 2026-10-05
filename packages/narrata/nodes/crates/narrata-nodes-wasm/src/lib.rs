@@ -394,6 +394,17 @@ impl NodeBook {
         self.finish(result)
     }
 
+    /// Possible body-unit references after one choice, without changing history or BookView.
+    #[wasm_bindgen(js_name = nextContentUnits)]
+    pub fn next_content_units(&self) -> Result<String, JsError> {
+        let units = narrata_nodes::view::next_content_units(
+            &self.program,
+            self.opened()?.state().map_err(js_error)?,
+        )
+        .map_err(js_error)?;
+        self.finish(json(&units))
+    }
+
     /// The text-free book view as JSON.
     pub fn inspect(&self) -> Result<String, JsError> {
         self.finish(json(&BookView {

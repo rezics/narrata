@@ -69,6 +69,20 @@
           "items": {
             "type": "string"
           }
+        },
+        "realization": {
+          "description": "The host's selected translation or version; opaque to Narrata and ignored locally.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "viewer": {
+          "description": "The host's reader identity; opaque to Narrata and ignored locally.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

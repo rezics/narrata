@@ -93,6 +93,12 @@ pub struct ResolveContext {
     /// Preferred languages, most preferred first.
     #[serde(default)]
     pub languages: Vec<String>,
+    /// The host's selected translation or version; opaque to Narrata and ignored locally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub realization: Option<String>,
+    /// The host's reader identity; opaque to Narrata and ignored locally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewer: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]

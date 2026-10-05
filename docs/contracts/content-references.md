@@ -6,6 +6,8 @@
 - `ContentRef`、`Segment`、`AnchorId` 及其规范 CBOR：`narrata-kernel` 的 `content` 模块；
 - 解析请求与结果：`packages/narrata/nodes/schemas/content-resolve-request.schema.json`、
   `content-resolution.schema.json`；参考实现是本地内容方 `narrata-content-local`；
+- 宿主批量接口、画面收集与分批：`packages/narrata/web/src/content/`；模拟 REZICS 内容方与
+  《山口来信》数据从 `@rezics/narrata/testing` 导出；
 - 呈现项与呈现键：`book-view.schema.json` 的 `PresentationItem`。
 
 本页只记录代码无法表达的约定。
@@ -29,6 +31,11 @@ Narrata 的构件、状态和存档只持有内容引用，不持有正文、选
   对译本或版本的选择（`realization`）与对 Narrata 不透明的读者身份（`viewer`）。
 - **锚点跨译本保持。** 译本必须保留原文的块 ID；某译本缺少段落端点时该段为 `incompatible`，
   宿主可以回退到原文。
+
+下一步正文预取由 `narrata_nodes::view::next_content_units` 与 Wasm `nextContentUnits` 单独提供，
+不进入 `BookView`，也不推进会话。它只返回正文单元引用；当前隐藏或不可用的选项不参与，后续
+条件保守地覆盖两条路径，多选不枚举组合。宿主用同一解析上下文与自己的批量上限预取；这个
+候选集合不证明读者已经看过内容，也不能用来授予权限或生成读者地图。
 
 ## 呈现键
 

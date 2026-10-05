@@ -7,7 +7,8 @@
   "files": ["dist", "size-budget.json"],
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./storage": { "types": "./dist/storage.d.ts", "import": "./dist/storage.js" }
+    "./storage": { "types": "./dist/storage.d.ts", "import": "./dist/storage.js" },
+    "./testing": { "types": "./dist/testing/index.d.ts", "import": "./dist/testing/index.js" }
   },
   "scripts": {
     "build": "node scripts/build.mjs",
