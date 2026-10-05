@@ -195,6 +195,21 @@ fn deep_frame_pins_survive_a_smaller_budget_and_release_independently() {
 }
 
 #[test]
+fn owned_pins_keep_the_cache_alive_after_the_program_and_session_drop() {
+    let (program, _) = opened(&fixture(2), 1);
+    let session = Session::new(program.clone(), ExecutionId::from_bytes([5; 16])).unwrap();
+    let pins = program.pin_state(session.state().unwrap()).unwrap();
+    let borrowed = program.graph(&graph(0)).unwrap();
+    let weak = Arc::downgrade(&borrowed);
+    drop(borrowed);
+    drop(session);
+    drop(program);
+    assert!(weak.upgrade().is_some());
+    drop(pins);
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
 fn failed_pinning_releases_partial_pins() {
     let (program, source) = opened(&fixture(4), 1);
     let mut session = Session::new(program.clone(), ExecutionId::from_bytes([3; 16])).unwrap();

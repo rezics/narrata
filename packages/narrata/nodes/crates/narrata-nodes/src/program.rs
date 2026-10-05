@@ -69,7 +69,7 @@ pub struct Program {
     tombstones: TombstoneSet,
     tombstones_envelope: Vec<u8>,
     source: Box<dyn ChunkSource>,
-    chunks: Mutex<ChunkCache>,
+    chunks: Arc<Mutex<ChunkCache>>,
 }
 
 type ChunkGraphs = BTreeMap<GraphRef, Arc<Graph>>;
@@ -118,15 +118,19 @@ impl ChunkCache {
 /// Keeps a state's frame chunks resident until dropped. Each session needs its own guard;
 /// replace it after moving the cursor, and keep the old guard while executing a choice.
 /// This does not retain historical states or pin graphs entered during that choice.
+/// The guard owns its cache handle and can be stored by a session.
 #[must_use = "keep this guard alive while its frames are active"]
-pub struct ChunkPins<'p> {
-    program: &'p Program,
+pub struct ChunkPins {
+    cache: Arc<Mutex<ChunkCache>>,
     indices: BTreeSet<u32>,
 }
 
-impl Drop for ChunkPins<'_> {
+impl Drop for ChunkPins {
     fn drop(&mut self) {
-        let mut cache = self.program.cache();
+        let mut cache = self
+            .cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for index in &self.indices {
             if let Some(entry) = cache.entries.get_mut(index) {
                 entry.pins -= 1;
@@ -188,11 +192,11 @@ impl Program {
                 "tombstone set differs from the manifest",
             ));
         }
-        let chunks = Mutex::new(ChunkCache {
+        let chunks = Arc::new(Mutex::new(ChunkCache {
             capacity: Self::DEFAULT_CHUNK_CAPACITY,
             entries: BTreeMap::new(),
             lru: VecDeque::new(),
-        });
+        }));
         Ok(Self {
             artifact_id: ArtifactId::from_bytes(*manifest_id.as_bytes()),
             manifest,
@@ -356,7 +360,7 @@ impl Program {
     /// Pins all distinct chunks referenced by the state's frames. Every miss is checked
     /// again, including after eviction. On failure all pins acquired by this call release.
     /// This pins frame references; it does not validate the rest of the state's contents.
-    pub fn pin_state(&self, state: &State) -> Result<ChunkPins<'_>> {
+    pub fn pin_state(&self, state: &State) -> Result<ChunkPins> {
         let indices = state
             .frames
             .iter()
@@ -369,7 +373,7 @@ impl Program {
             })
             .collect::<Result<BTreeSet<_>>>()?;
         let mut pins = ChunkPins {
-            program: self,
+            cache: self.chunks.clone(),
             indices: BTreeSet::new(),
         };
         // Protect the whole resident subset before any miss can trigger trimming. In
