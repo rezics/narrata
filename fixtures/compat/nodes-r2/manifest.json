@@ -1,0 +1,36 @@
+{
+  "corpus_version": 1,
+  "format": "ADR 0013 R2 pack, local content pack and content outline (format_version 1), session exports (format_version 2)",
+  "frozen_from_commit": "1e05be1",
+  "artifact_id": "artifact:705163c2d401e60115dce5bd457d8e31d77b275ff155205cbefd58a6cf68f7d9",
+  "migrated_from_r1": "b73f74b82f33834c386134e1f5cd548d9ba304d2d299507d827c4fe7acad412b",
+  "execution": "execution:0190f2a0000070008000000000000001",
+  "build_provenance": {
+    "story.narpack": "cargo run -p narrata-node-tools -- compose products/gamebook-demo/project.json --out products/gamebook-demo/story.narpack --locked, then copied",
+    "zh-Hans.json": "copied from products/gamebook-demo/content/zh-Hans.json",
+    "zh-Hans.outline.json": "narrata-book outline fixtures/compat/nodes-r2/zh-Hans.json --out fixtures/compat/nodes-r2/zh-Hans.outline.json",
+    "linear.export.json": "narrata-book migrate-r1 fixtures/compat/nodes-r2/story.narpack --save fixtures/compat/nodes-r1/linear.save.json --content fixtures/compat/nodes-r2/zh-Hans.json --execution execution:0190f2a0000070008000000000000001 --out fixtures/compat/nodes-r2/linear.export.json",
+    "branched.export.json": "narrata-book migrate-r1 fixtures/compat/nodes-r2/story.narpack --save fixtures/compat/nodes-r1/branched.save.json --content fixtures/compat/nodes-r2/zh-Hans.json --execution execution:0190f2a0000070008000000000000001 --out fixtures/compat/nodes-r2/branched.export.json"
+  },
+  "exports": {
+    "linear.export.json": "nodes-r1 linear.save.json rebuilt on story.narpack: 10 commits, cursor ends with outcome delivered",
+    "branched.export.json": "nodes-r1 branched.save.json rebuilt on story.narpack: 15 commits, cursor ends with outcome arrived"
+  },
+  "artifacts": {
+    "branched.export.json": {
+      "sha256": "9f35a3ffbccd0343c75dab78dfca11a9dbbed1cb69842bcb3d962cfe09fa60a2"
+    },
+    "linear.export.json": {
+      "sha256": "95f14b815c7c65834db0f72564d86826ea47b2ad8333ed083804b05536ef2357"
+    },
+    "story.narpack": {
+      "sha256": "0f745d94e971654c5fbc95b64d1ae969b36ad1b90c5226e4f2fc50c39f55efc4"
+    },
+    "zh-Hans.json": {
+      "sha256": "8fa1363c5021b14c55e72b4d70f684cb5fb646b6accb0da52ced7a3db6dbe625"
+    },
+    "zh-Hans.outline.json": {
+      "sha256": "92c7f639fcabc64727c79ed4a121cfed057232d042dff6ccb7614c951d7c28fb"
+    }
+  }
+}

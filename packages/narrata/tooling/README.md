@@ -11,6 +11,7 @@
 cargo run -p narrata-node-tools -- ids products/gamebook-demo/project.json
 cargo run -p narrata-node-tools -- compose products/gamebook-demo/project.json --out products/gamebook-demo/story.narpack --locked
 cargo run -p narrata-node-tools -- inspect products/gamebook-demo/story.narpack
+cargo run -p narrata-node-tools -- outline products/gamebook-demo/content/zh-Hans.json
 cargo run -p narrata-node-tools -- run products/gamebook-demo/story.narpack --content products/gamebook-demo/content/zh-Hans.json --actions ledger,sign,candle+flask
 cargo run -p narrata-node-tools -- schemas --out packages/narrata/nodes/schemas
 ```
@@ -21,6 +22,7 @@ cargo run -p narrata-node-tools -- schemas --out packages/narrata/nodes/schemas
   旁写 `<out>.analysis.json`（无文字的图分析）。
 - `run` 的动作用选项别名，逗号分隔各步，`+` 连接多选，`~` 表示不选。给出 `--content` 时打印解析后
   的文字，否则打印无文字的 book view JSON。
+- `outline` 打印内容包的大纲：各内容单元的块锚点与选择点标记，不含文字。
 - `migrate-r1 <R1 project.json> --out <目录>` 把 R1 作品转换为 R2 源稿与本地内容包；
   `migrate-r1 <story.narpack> --save <R1 存档> --content <内容包> --out <导出>` 迁移 R1 存档。
 

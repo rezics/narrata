@@ -1,0 +1,72 @@
+{
+  "format_version": 1,
+  "provider": "local",
+  "units": {
+    "camp.fire": {
+      "blocks": [
+        "p1",
+        "p2"
+      ]
+    },
+    "camp.letter": {
+      "blocks": [
+        "p1",
+        "p2"
+      ]
+    },
+    "camp.rest": {
+      "blocks": [
+        "p1",
+        "p2"
+      ]
+    },
+    "main.gate": {
+      "blocks": [
+        "p1",
+        "p2"
+      ]
+    },
+    "main.ledger": {
+      "blocks": [
+        "l1",
+        "l-sign",
+        "l-skip",
+        "l2",
+        "l-candle",
+        "l-rope",
+        "l-flask",
+        "l3"
+      ]
+    },
+    "main.station": {
+      "blocks": [
+        "p1",
+        "p2",
+        "p3"
+      ]
+    },
+    "product:ending": {
+      "blocks": [
+        "p1"
+      ]
+    },
+    "road.fog": {
+      "blocks": [
+        "p1",
+        "p2"
+      ]
+    },
+    "road.rocks": {
+      "blocks": [
+        "p1",
+        "p2"
+      ]
+    },
+    "road.trail": {
+      "blocks": [
+        "p1",
+        "p2"
+      ]
+    }
+  }
+}

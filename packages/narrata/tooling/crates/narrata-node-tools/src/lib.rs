@@ -133,6 +133,16 @@ pub fn run(args: &[String]) -> std::result::Result<(), String> {
             );
             Ok(())
         }
+        "outline" => {
+            let flags = options(rest, &["--out"], &[])?;
+            let pack = ContentPack::parse(&read_text(path).map_err(text)?).map_err(text)?;
+            let outline = pretty(&narrata_content_local::outline(&pack)).map_err(text)?;
+            match one(&flags, "--out") {
+                Some(out) => write_text(Path::new(out), &outline).map_err(text)?,
+                None => print!("{outline}"),
+            }
+            Ok(())
+        }
         "run" => run_command(path, rest),
         "migrate-r1" => migrate_command(path, rest),
         _ => Err(usage().into()),
@@ -356,6 +366,7 @@ pub fn usage() -> &'static str {
     "narrata-book compose <project.json> --out <story.narpack> [--locked]\n\
      narrata-book ids <project.json>\n\
      narrata-book inspect <story.narpack>\n\
+     narrata-book outline <content.json> [--out <outline.json>]\n\
      narrata-book run <story.narpack> [--content <pack.json>]... [--language <tag>] [--actions a,b+c,~]\n\
      \x20                [--load export.json] [--save export.json] [--checkout commit] [--execution id]\n\
      narrata-book migrate-r1 <r1-project.json> --out <directory> [--language <tag>]\n\
