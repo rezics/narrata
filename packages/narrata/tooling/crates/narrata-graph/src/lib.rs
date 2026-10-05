@@ -7,6 +7,7 @@
 extern crate self as narrata_graph;
 
 mod analysis;
+mod labels;
 mod layout;
 mod model;
 mod summary;
@@ -14,6 +15,7 @@ mod tiles;
 pub mod wire;
 
 pub use analysis::{Analysis, NodeAnalysis};
+pub use labels::{LabelTable, decode_labels, encode_labels};
 pub use layout::{ClusterLayout, CutReason, Layout, OrderKey, Partition, Position};
 pub use model::{
     ClusterId, Edge, EdgeKind, Ending, EndingClass, Graph, GraphError, Id, MAX_EDGES, MAX_NODES,

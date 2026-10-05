@@ -4,6 +4,7 @@ fixtures/compat/nodes-r2/** -text
 fixtures/compat/nodes-r2-proposals/** -text
 fixtures/compat/nodes-r2-history/** -text
 fixtures/compat/graph-v1/** -text
+fixtures/compat/graph-v1-labels/** -text
 fixtures/compat/kernel-history-v1/** -text
 fixtures/compat/stage6-v0/** -text
 fixtures/compat/kernel-history-v2/** -text

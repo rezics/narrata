@@ -1,0 +1,19 @@
+{
+  "files": [
+    {
+      "bytes": 162,
+      "cluster": "cluster:00000000000000000000000000000001",
+      "file": "1c439319d97f4f12211495b77a8dec19fbe51b39b6a10ce001c5c1cf5f60e5bb.cbor",
+      "object_id": "1c439319d97f4f12211495b77a8dec19fbe51b39b6a10ce001c5c1cf5f60e5bb",
+      "sha256": "75a127c648a3daaf5823dd7e8d0572c0117f8e5ce1432313ec1d9d82d22486ce"
+    },
+    {
+      "bytes": 77,
+      "cluster": "cluster:00000000000000000000000000000004",
+      "file": "689903139eb82dc8fea77f73a1e9b026ebf6851d2ca4f1e008f744040f3b4cea.cbor",
+      "object_id": "689903139eb82dc8fea77f73a1e9b026ebf6851d2ca4f1e008f744040f3b4cea",
+      "sha256": "963011b60ccf7e2abf90614d253c7c2ebdf78426242baa5f349ae3ac48cfec65"
+    }
+  ],
+  "format_version": 1
+}

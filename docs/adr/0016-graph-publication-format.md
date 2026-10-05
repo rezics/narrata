@@ -14,7 +14,7 @@ kind code；不改变节点、运行时或存档格式。
 | `0x0121` | 作品级瓦片：作者簇与跨簇关系，使用紧凑概览坐标 |
 | `0x0122` | 簇级瓦片：分区与区间关系，使用簇内坐标 |
 | `0x0123` | 节点级瓦片：节点与边，跨区端点由 ghost 行补齐，使用各行所属簇内坐标 |
-| `0x0124` | 保留给标签表（`NodeId` → ADR 0013 `ContentRef` 标题）；由 R2 适配任务定义形状 |
+| `0x0124` | 按作者簇分表的节点标题引用，形状见下方修订 |
 
 前四种对象使用 kernel 的 [规范 CBOR](0003-deterministic-cbor-profile.md) 与信封。
 对象以 `object_id(kind, schema, payload)` 的 64 位小写十六进制加 `.cbor` 命名。
@@ -57,3 +57,32 @@ JSON 读取拒绝未知或重复字段、错误身份、版本、顺序、重复
 这是首个可分发图格式。旧内存对象和基准 `.columns` 缓冲不是存储协议，没有旧分发格式
 需要迁移。schema 1 与 JSON version 1 的读取路径和冻结测试永久保留；未来格式改变使用
 新 ADR、版本、新语料与明确读取或迁移路径，不重写本语料。
+
+## 修订：R2 适配与标签表（2026-10-05）
+
+`0x0124` schema 1 是一个作者簇的 `NodeId` → `ContentRef` 标题表，只记录有标题的节点，
+不记录正文、别名、选项文字或宿主解析的文字。`NodeId` 是 16 字节；引用沿用 kernel 的
+`content` 编码。节点按 ID 严格递增，空表合法。簇身份写入载荷，避免宿主把正确的表挂到
+错误的簇。字段与行形状由 [标签编解码器](../../packages/narrata/tooling/crates/narrata-graph/src/labels.rs)
+固定；读取检查信封、请求的 object id、请求的簇、规范 CBOR、精确字段集合、行预算、排序、
+重复 ID 与内容引用。它证明表良构，不证明节点属于原程序中的该簇。
+
+标签表使用与瓦片相同的 object-id 文件名。旧 schema 1 几何对象的字节与读取路径保持原样，
+没有旧标签格式需要迁移；新的[冻结语料](../../fixtures/compat/graph-v1-labels/manifest.json)
+及兼容测试保存本次定义，不改写 `graph-v1`。
+
+[R2 适配器](../../packages/narrata/tooling/crates/narrata-node-tools/src/publish.rs) 把有正文的段落
+归入正文 `ContentRef` 的作者簇；其他节点归入所在图的簇。簇身份分别取
+`digest_bytes("narrata.graph.content-cluster", 1, ContentRef 的规范 CBOR)` 与
+`digest_bytes("narrata.graph.graph-cluster", 1, [包实例别名, 图名] 的规范 CBOR)` 的前 16 字节，
+碰撞拒绝发布。源稿没有提供节点作者顺序时不推断顺序。选项的分支、顺序、条件、调用与返回
+保留各自的边种类；调用进入被调图入口，被调图的匹配 return 接到调用方的继续节点。
+产品入口是结构图入口，入口图的 return 是未分类的结局；不从结局名字推断成败。
+该投影不模拟调用栈、求解条件或动态提议，递归和复用子图的路线仍是结构近似。
+
+发布伴随文件 `story.graph.json`（version 1）记录 `artifact_id`、索引 object id 和按簇排序的
+标签 object id，object id 使用 64 位小写十六进制。其引用的所有对象放在同目录的
+`story.graph/` 中；`story.summary.json` 是已有的摘要 version 1。`story.analysis.json` 保留
+节点检查器的交换形状，把大纲与拓扑诊断并入 `diagnostics`，不改变旧检查器的图字段。
+这些 JSON 文件不参与构件或几何身份。没有提供大纲的内容方在诊断中报告检查跳过；提供了大纲
+却缺少单元或锚点则报告内容缺陷。大纲缺陷不改变 compose 的成功退出码。

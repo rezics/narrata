@@ -15,7 +15,7 @@ pub const INDEX_KIND: u16 = 0x0120;
 pub const WORK_KIND: u16 = 0x0121;
 pub const CLUSTER_KIND: u16 = 0x0122;
 pub const NODE_KIND: u16 = 0x0123;
-/// Reserved; no label-table payload is defined by this crate.
+/// Per-cluster title references; see `crate::LabelTable`.
 pub const LABEL_KIND: u16 = 0x0124;
 pub const SCHEMA_VERSION: u16 = 1;
 pub const MAX_OBJECT_BYTES: u64 = 512 * 1024 * 1024;
@@ -108,7 +108,7 @@ fn level_code(level: DetailLevel) -> u64 {
     }
 }
 
-fn limits() -> DecodeLimits {
+pub(crate) fn limits() -> DecodeLimits {
     DecodeLimits {
         max_payload_bytes: MAX_OBJECT_BYTES,
         max_depth: 8,
@@ -118,7 +118,7 @@ fn limits() -> DecodeLimits {
     }
 }
 
-fn object(kind: u16, payload: Vec<u8>) -> Result<EncodedObject, DecodeError> {
+pub(crate) fn object(kind: u16, payload: Vec<u8>) -> Result<EncodedObject, DecodeError> {
     if payload.len() as u64 + 56 > MAX_OBJECT_BYTES {
         return Err(DecodeError::Limit("graph object bytes"));
     }
@@ -128,7 +128,11 @@ fn object(kind: u16, payload: Vec<u8>) -> Result<EncodedObject, DecodeError> {
     })
 }
 
-fn payload<'a>(bytes: &'a [u8], id: &[u8; 32], kind: u16) -> Result<&'a [u8], DecodeError> {
+pub(crate) fn payload<'a>(
+    bytes: &'a [u8],
+    id: &[u8; 32],
+    kind: u16,
+) -> Result<&'a [u8], DecodeError> {
     let envelope = decode_envelope(
         bytes,
         kind,
