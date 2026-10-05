@@ -1,0 +1,15 @@
+{
+  "choice_point": "choice-point:00000000000000000000000000000001",
+  "options": [
+    {
+      "label": {
+        "key": "whistle",
+        "provider": "gen"
+      },
+      "outcome": {
+        "kind": "local",
+        "rejoin": "b2"
+      }
+    }
+  ]
+}

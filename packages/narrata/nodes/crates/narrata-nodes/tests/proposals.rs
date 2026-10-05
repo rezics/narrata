@@ -716,3 +716,97 @@ fn an_export_with_proposals_restores_without_replay_and_verifies_by_replay() {
         restored.verify_path(&id).unwrap();
     }
 }
+
+fn corpus() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../../fixtures/compat/nodes-r2-proposals")
+}
+
+fn frozen(name: &str) -> Vec<u8> {
+    std::fs::read(corpus().join(name)).unwrap()
+}
+
+fn frozen_text(name: &str) -> String {
+    String::from_utf8(frozen(name)).unwrap()
+}
+
+fn frozen_compilation() -> Compilation {
+    let manifest: narrata_nodes::ProjectManifest =
+        narrata_nodes::parse_json(&frozen_text("project.json")).unwrap();
+    let packages = manifest
+        .packages
+        .iter()
+        .map(|(alias, path)| {
+            (
+                alias.clone(),
+                narrata_nodes::parse_json(&frozen_text(path)).unwrap(),
+            )
+        })
+        .collect();
+    narrata_nodes::compile(
+        &narrata_nodes::ProjectSource { manifest, packages },
+        &narrata_nodes::NodeRegistry::gamebook(),
+    )
+    .unwrap()
+}
+
+fn frozen_manifest() -> Value {
+    serde_json::from_str(&frozen_text("manifest.json")).unwrap()
+}
+
+#[test]
+fn every_frozen_file_matches_its_recorded_digest() {
+    let manifest = frozen_manifest();
+    let artifacts = manifest["artifacts"].as_object().unwrap();
+    assert_eq!(artifacts.len(), 8);
+    for (name, entry) in artifacts {
+        assert_eq!(
+            hex::encode(narrata_kernel::codec::sha256(&frozen(name))),
+            entry["sha256"].as_str().unwrap(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn the_frozen_source_still_compiles_to_the_frozen_pack() {
+    let compilation = frozen_compilation();
+    assert_eq!(compilation.pack, frozen("story.narpack"));
+    assert_eq!(
+        compilation.program.artifact_id().to_string(),
+        frozen_manifest()["artifact_id"].as_str().unwrap()
+    );
+}
+
+#[test]
+fn the_frozen_export_restores_without_replay_and_replays_from_the_root() {
+    let (program, names) = open(&frozen("story.narpack"));
+    let text = frozen_text("session.export.json");
+    let session = Session::restore(program, &text).unwrap();
+    assert_eq!(session.commits().count(), 11);
+    for (id, _) in session.commits() {
+        session.verify_path(&id).unwrap();
+    }
+    assert_eq!(session.export().unwrap(), text);
+    let state = session.state().unwrap();
+    assert_eq!(state.frames.len(), 1);
+    assert_eq!(state.frames[0].overlay.nodes.len(), 2);
+    assert_eq!(waiting(&session, &names).1.len(), 4);
+}
+
+#[test]
+fn the_frozen_requests_still_derive_the_frozen_session() {
+    let compilation = frozen_compilation();
+    let session = play(&compilation, &|name| {
+        serde_json::from_str(&frozen_text(&format!("{name}.request.json"))).unwrap()
+    });
+    assert_eq!(
+        session.export().unwrap(),
+        frozen_text("session.export.json")
+    );
+    // The frozen requests are the ones the other tests propose.
+    assert_eq!(
+        serde_json::from_str::<Value>(&frozen_text("cellar.request.json")).unwrap(),
+        cellar()
+    );
+}

@@ -1,0 +1,71 @@
+{
+  "exports": [
+    "visit"
+  ],
+  "graphs": {
+    "visit": {
+      "entry": "talk",
+      "nodes": {
+        "out": {
+          "data": {
+            "outcome": "back"
+          },
+          "id": "node:0000000000000000000000000000000c",
+          "type_id": "narrata.return"
+        },
+        "talk": {
+          "data": {
+            "args": {
+              "visitor": {
+                "kind": "read",
+                "name": "visitor",
+                "scope": "parameter"
+              }
+            },
+            "body": {
+              "unit": {
+                "key": "side.talk",
+                "provider": "local"
+              }
+            },
+            "choice_points": [
+              {
+                "id": "choice-point:0000000000000000000000000000000b",
+                "key": "choice",
+                "options": [
+                  {
+                    "id": "option:0000000000000000000000000000000b",
+                    "key": "continue",
+                    "label": {
+                      "key": "side.talk.continue",
+                      "provider": "local"
+                    },
+                    "outcome": {
+                      "kind": "branch",
+                      "target": "out"
+                    }
+                  }
+                ],
+                "proposals": true
+              }
+            ],
+            "title": {
+              "key": "side.talk.title",
+              "provider": "local"
+            }
+          },
+          "id": "node:0000000000000000000000000000000b",
+          "type_id": "narrata.passage"
+        }
+      },
+      "outcomes": [
+        "back"
+      ],
+      "parameters": {
+        "visitor": "ref"
+      }
+    }
+  },
+  "id": "trial.side",
+  "version": "1.0.0"
+}

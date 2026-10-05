@@ -1,0 +1,63 @@
+{
+  "format_version": 2,
+  "packages": {
+    "main": "main.json",
+    "side": "side.json"
+  },
+  "product": {
+    "bindings": [
+      {
+        "from": {
+          "graph": "start",
+          "package": "main",
+          "port": "helper"
+        },
+        "to": {
+          "graph": "visit",
+          "package": "side"
+        }
+      }
+    ],
+    "endings": {
+      "done": {
+        "body": {
+          "first": "e1",
+          "last": "e1",
+          "unit": {
+            "key": "ending",
+            "provider": "local"
+          }
+        },
+        "title": {
+          "key": "ending.done",
+          "provider": "local"
+        }
+      },
+      "lost": {
+        "title": {
+          "key": "ending.lost",
+          "provider": "local"
+        }
+      }
+    },
+    "entry": {
+      "graph": "start",
+      "package": "main"
+    },
+    "id": "trial",
+    "shared": {
+      "coins": 0,
+      "lamp": false
+    },
+    "shared_labels": {
+      "coins": {
+        "key": "shared.coins",
+        "provider": "local"
+      }
+    },
+    "title": {
+      "key": "product.title",
+      "provider": "local"
+    }
+  }
+}

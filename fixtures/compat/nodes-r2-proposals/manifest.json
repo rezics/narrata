@@ -1,0 +1,42 @@
+{
+  "corpus_version": 1,
+  "format": "ADR 0013 R2 pack with choice points that accept proposals, proposal requests (JSON) and a session export (format_version 2) holding propose inputs and frame overlays",
+  "frozen_from_commit": "bd4b260",
+  "artifact_id": "artifact:d2f7394dd08bec286ec26922efb0937852f925a0a3fc258f0644d4def30451be",
+  "execution": "execution:0190f2a0000070008000000000000001",
+  "build_provenance": {
+    "project.json, main.json, side.json": "the trial work of packages/narrata/nodes/crates/narrata-nodes/tests/support with proposals opened by `open_variant` in tests/proposals.rs",
+    "cellar.request.json, aside.request.json, whistle.request.json": "the requests `cellar`, `aside` and `whistle` of tests/proposals.rs",
+    "story.narpack": "narrata_nodes::compile of project.json with main.json and side.json",
+    "session.export.json": "the play `play` of tests/proposals.rs on story.narpack with the three requests, exported"
+  },
+  "exports": {
+    "session.export.json": "11 commits: a proposal at the gate, into the proposed cellar and back, a proposed local option, a proposal in the called graph and its return to the gate (cursor), and a second proposal from the root"
+  },
+  "artifacts": {
+    "aside.request.json": {
+      "sha256": "a0f93abf441edd2cfea5a962aa255e75c6eaec501c9b2b8a9aac6848ce55ac27"
+    },
+    "cellar.request.json": {
+      "sha256": "27e679df21b6d3b63c1c411c6d87844d60b56231e775c7cacbea660b425dcc54"
+    },
+    "main.json": {
+      "sha256": "693df696768f31df6cf26540ce43ee8b81d395a3846f63b6ff71381f46e03668"
+    },
+    "project.json": {
+      "sha256": "8d797aff72f947fe1e0f39e465c94b83168f3563cd5e89dc3fcc230c3e2f4b46"
+    },
+    "session.export.json": {
+      "sha256": "5061d79def0fed174b2a77a074b1ab62137a5e6c3877cf9e9f7f886724c1d162"
+    },
+    "side.json": {
+      "sha256": "e1de1fd164e2552825c64995700c985347578b79891f1e0f9320af383a7c15ac"
+    },
+    "story.narpack": {
+      "sha256": "5d24aeabf2274ce0692a3c391bc1533f30a0a102979af9c5e8183cb97e6f3d71"
+    },
+    "whistle.request.json": {
+      "sha256": "00b4c6d6986076363dbca25d4ef6911ebcdb2c05332967d07198cbce9e44884e"
+    }
+  }
+}

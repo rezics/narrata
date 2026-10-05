@@ -1,0 +1,112 @@
+{
+  "choice_point": "choice-point:00000000000000000000000000000001",
+  "nodes": [
+    {
+      "args": {
+        "coins": {
+          "kind": "read",
+          "name": "coins",
+          "scope": "shared"
+        }
+      },
+      "body": {
+        "unit": {
+          "key": "cellar",
+          "provider": "gen"
+        }
+      },
+      "choice_points": [
+        {
+          "options": [
+            {
+              "label": {
+                "key": "cellar.up",
+                "provider": "gen"
+              },
+              "outcome": {
+                "kind": "branch",
+                "target": "node:00000000000000000000000000000001"
+              }
+            },
+            {
+              "label": {
+                "key": "cellar.down",
+                "provider": "gen"
+              },
+              "outcome": {
+                "kind": "branch",
+                "target": "vault"
+              }
+            }
+          ]
+        }
+      ],
+      "key": "cellar",
+      "title": {
+        "key": "cellar.title",
+        "provider": "gen"
+      }
+    },
+    {
+      "body": {
+        "unit": {
+          "key": "vault",
+          "provider": "gen"
+        }
+      },
+      "key": "vault",
+      "next": "node:00000000000000000000000000000004"
+    }
+  ],
+  "options": [
+    {
+      "effects": [
+        {
+          "target": {
+            "name": "coins",
+            "scope": "shared"
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "read",
+              "name": "coins",
+              "scope": "shared"
+            },
+            "op": "add",
+            "right": {
+              "kind": "literal",
+              "value": 2
+            }
+          }
+        }
+      ],
+      "label": {
+        "key": "hum",
+        "provider": "gen"
+      },
+      "outcome": {
+        "kind": "local",
+        "rejoin": "b2",
+        "reply": {
+          "first": "r-wave",
+          "last": "r-wave",
+          "unit": {
+            "key": "main.gate",
+            "provider": "local"
+          }
+        }
+      }
+    },
+    {
+      "label": {
+        "key": "cellar",
+        "provider": "gen"
+      },
+      "outcome": {
+        "kind": "branch",
+        "target": "cellar"
+      }
+    }
+  ]
+}

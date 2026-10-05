@@ -1,0 +1,27 @@
+{
+  "choice_point": "choice-point:0000000000000000000000000000000b",
+  "nodes": [
+    {
+      "body": {
+        "unit": {
+          "key": "aside",
+          "provider": "gen"
+        }
+      },
+      "key": "aside",
+      "next": "node:0000000000000000000000000000000c"
+    }
+  ],
+  "options": [
+    {
+      "label": {
+        "key": "aside",
+        "provider": "gen"
+      },
+      "outcome": {
+        "kind": "branch",
+        "target": "aside"
+      }
+    }
+  ]
+}
