@@ -1,12 +1,12 @@
 //! A checked program that loads chunks on demand (ADR 0013 §8). It holds the manifest and
-//! the tombstone set; a chunk is fetched by object ID from a [`ChunkSource`], verified
-//! against that ID, decoded with the checked decoder and checked against the manifest
+//! loads tombstones only for identity checks. A chunk is fetched from a [`ChunkSource`],
+//! verified against its object ID, decoded and checked against the manifest
 //! on every load, including after cache eviction.
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     num::NonZeroUsize,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
 use narrata_kernel::codec::{EnvelopeLimits, inspect_envelope};
@@ -66,8 +66,7 @@ pub struct Program {
     artifact_id: ArtifactId,
     manifest: Manifest,
     manifest_envelope: Vec<u8>,
-    tombstones: TombstoneSet,
-    tombstones_envelope: Vec<u8>,
+    tombstones: OnceLock<(TombstoneSet, Vec<u8>)>,
     source: Box<dyn ChunkSource>,
     chunks: Arc<Mutex<ChunkCache>>,
 }
@@ -162,12 +161,22 @@ pub enum Lookup {
 }
 
 impl Program {
-    /// Opens the manifest and tombstone set; chunks load from `source` when first used.
+    /// Convenience path with an already available, checked tombstone set.
     pub fn open(
         manifest_envelope: &[u8],
         tombstones_envelope: &[u8],
         source: Box<dyn ChunkSource>,
     ) -> Result<Self> {
+        let program = Self::from_manifest(manifest_envelope, source)?;
+        let tombstones = program.decode_tombstones(tombstones_envelope)?;
+        let _ = program.tombstones.set(tombstones);
+        Ok(program)
+    }
+
+    /// Opens only the manifest. Chunks and tombstones come from `source` on demand.
+    /// Chunk-local checks need no tombstones (ADR 0013 §8); lookup, proposals and full
+    /// artifact verification must fetch and check the manifest's tombstone object.
+    pub fn from_manifest(manifest_envelope: &[u8], source: Box<dyn ChunkSource>) -> Result<Self> {
         let (manifest, manifest_id) = wire::open(
             manifest_envelope,
             wire::KIND_MANIFEST,
@@ -177,21 +186,6 @@ impl Program {
             wire::encode_manifest,
         )?;
         check_manifest(&manifest)?;
-        let (tombstones, tombstones_id) = wire::open(
-            tombstones_envelope,
-            wire::KIND_TOMBSTONES,
-            MAX_PACK_BYTES,
-            "tombstones",
-            wire::decode_tombstones,
-            wire::encode_tombstones,
-        )?;
-        if tombstones_id != manifest.tombstones {
-            return Err(Error::new(
-                "artifact",
-                "tombstones",
-                "tombstone set differs from the manifest",
-            ));
-        }
         let chunks = Arc::new(Mutex::new(ChunkCache {
             capacity: Self::DEFAULT_CHUNK_CAPACITY,
             entries: BTreeMap::new(),
@@ -201,8 +195,7 @@ impl Program {
             artifact_id: ArtifactId::from_bytes(*manifest_id.as_bytes()),
             manifest,
             manifest_envelope: manifest_envelope.to_vec(),
-            tombstones,
-            tombstones_envelope: tombstones_envelope.to_vec(),
+            tombstones: OnceLock::new(),
             source,
             chunks,
         })
@@ -262,8 +255,40 @@ impl Program {
         &self.manifest
     }
 
-    pub fn tombstones(&self) -> &TombstoneSet {
-        &self.tombstones
+    fn decode_tombstones(&self, envelope: &[u8]) -> Result<(TombstoneSet, Vec<u8>)> {
+        let (tombstones, id) = wire::open(
+            envelope,
+            wire::KIND_TOMBSTONES,
+            MAX_PACK_BYTES,
+            "tombstones",
+            wire::decode_tombstones,
+            wire::encode_tombstones,
+        )?;
+        if id != self.manifest.tombstones {
+            return Err(Error::new(
+                "artifact",
+                "tombstones",
+                "tombstone set differs from the manifest",
+            ));
+        }
+        Ok((tombstones, envelope.to_vec()))
+    }
+
+    fn loaded_tombstones(&self) -> Result<&(TombstoneSet, Vec<u8>)> {
+        if let Some(loaded) = self.tombstones.get() {
+            return Ok(loaded);
+        }
+        // Failed loads are never cached. Concurrent loads check the same object ID;
+        // whichever wins publishes the same immutable value.
+        let loaded = self.decode_tombstones(&self.source.load(&self.manifest.tombstones)?)?;
+        let _ = self.tombstones.set(loaded);
+        self.tombstones
+            .get()
+            .ok_or_else(|| Error::new("state", "tombstones", "checked tombstones not retained"))
+    }
+
+    pub fn tombstones(&self) -> Result<&TombstoneSet> {
+        Ok(&self.loaded_tombstones()?.0)
     }
 
     fn load_chunk(&self, index: u32) -> Result<BTreeMap<GraphRef, Arc<Graph>>> {
@@ -288,7 +313,11 @@ impl Program {
                 "chunk content differs from its object ID",
             ));
         }
-        check_chunk(&self.manifest, index, &chunk, &self.tombstones, None)?;
+        // Global identity continuity belongs to compilation/verify_artifact. Still
+        // check deletions here when a caller supplied or already loaded tombstones.
+        let empty = TombstoneSet::default();
+        let tombstones = self.tombstones.get().map_or(&empty, |loaded| &loaded.0);
+        check_chunk(&self.manifest, index, &chunk, tombstones, None)?;
         Ok(chunk
             .graphs
             .into_iter()
@@ -423,12 +452,25 @@ impl Program {
     /// Loads every chunk and confirms work-wide ID uniqueness, which per-chunk decoding
     /// cannot see.
     pub fn verify_artifact(&self) -> Result<()> {
+        let tombstones = self.tombstones()?;
+        let live = |id: AuthoredId, key: &GraphRef| {
+            if tombstones.contains(&id) {
+                Err(Error::new(
+                    "tombstone",
+                    key.label(),
+                    format!("{id} is deleted"),
+                ))
+            } else {
+                Ok(())
+            }
+        };
         let mut nodes = BTreeSet::new();
         let mut points = BTreeSet::new();
         let mut options = BTreeSet::new();
         for index in 0..self.manifest.chunks.len() {
             for (key, graph) in self.chunk_graphs(index as u32)?.iter() {
                 for (id, plan) in &graph.nodes {
+                    live(AuthoredId::Node(*id), key)?;
                     if !nodes.insert(*id) {
                         return Err(Error::new(
                             "duplicate",
@@ -438,6 +480,7 @@ impl Program {
                     }
                     if let Plan::Passage(passage) = plan {
                         for point in &passage.choice_points {
+                            live(AuthoredId::ChoicePoint(point.id), key)?;
                             if !points.insert(point.id) {
                                 return Err(Error::new(
                                     "duplicate",
@@ -446,6 +489,7 @@ impl Program {
                                 ));
                             }
                             for option in &point.options {
+                                live(AuthoredId::Option(option.id), key)?;
                                 if !options.insert(option.id) {
                                     return Err(Error::new(
                                         "duplicate",
@@ -464,7 +508,7 @@ impl Program {
 
     /// Scans the artifact for an authored ID.
     pub fn lookup(&self, id: AuthoredId) -> Result<Lookup> {
-        if self.tombstones.contains(&id) {
+        if self.tombstones()?.contains(&id) {
             return Ok(Lookup::Deleted);
         }
         for index in 0..self.manifest.chunks.len() {
@@ -536,7 +580,7 @@ impl Program {
         Ok(Pack {
             manifest: self.manifest_envelope.clone(),
             chunks,
-            tombstones: self.tombstones_envelope.clone(),
+            tombstones: self.loaded_tombstones()?.1.clone(),
             names: names.map(|names| wire::seal(wire::KIND_NAMES, &wire::encode_names(names)).1),
         }
         .encode())

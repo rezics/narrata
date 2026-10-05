@@ -32,52 +32,18 @@ pub fn compose_published(
         verify_lock(&compilation.lock, &project)?;
     }
     let publication = crate::publish::publish(&compilation.program, Some(&compilation.names))?;
-    // The publication projection accounts for cross-graph reachability; per-graph checks
-    // still supply the inspector's graph fields but must not duplicate unreachable reports.
-    compilation
-        .diagnostics
-        .retain(|diagnostic| diagnostic.code != "structurally_unreachable");
-    compilation
-        .diagnostics
-        .extend(publication.diagnostics.iter().cloned());
-    let mut providers = BTreeSet::new();
-    for path in outline_paths {
-        let outline: narrata_nodes::ContentOutline = parse_json(&read_text(path)?)?;
-        if !providers.insert(outline.provider.clone()) {
-            return Err(Error::new(
-                "outline_provider",
-                path.display().to_string(),
-                "supply one original-language outline per provider",
-            ));
-        }
-        compilation
-            .diagnostics
-            .extend(narrata_nodes::outline::diagnose_outline(
-                &compilation.program,
-                Some(&compilation.names),
-                &outline,
-            )?);
-    }
-    let mut required = BTreeSet::new();
-    for reference in compilation.program.manifest().graphs.keys() {
-        for plan in compilation.program.graph(reference)?.nodes.values() {
-            if let narrata_nodes::plan::Plan::Passage(passage) = plan
-                && let Some(body) = &passage.body
-            {
-                required.insert(body.unit.provider.clone());
-            }
-        }
-    }
-    for provider in required.difference(&providers) {
-        compilation.diagnostics.push(narrata_nodes::Diagnostic {
-            code: "outline_checks_skipped".into(),
-            path: format!("content.{provider}"),
-            message:
-                "No content outline was supplied; anchor, order and marker checks were skipped."
-                    .into(),
-        });
-    }
-    compilation.analysis.diagnostics = compilation.diagnostics.clone();
+    let outlines = outline_paths
+        .iter()
+        .map(|path| parse_json(&read_text(path)?))
+        .collect::<Result<Vec<_>>>()?;
+    compilation.analysis = crate::publish::publication_analysis(
+        compilation.analysis.clone(),
+        &compilation.program,
+        Some(&compilation.names),
+        &publication,
+        &outlines,
+    )?;
+    compilation.diagnostics = compilation.analysis.diagnostics.clone();
     crate::write_bytes(output, &compilation.pack)?;
     if !locked {
         write_text(&project.lock_path(), &pretty(&compilation.lock)?)?;
@@ -137,7 +103,7 @@ pub fn compose(
         .values()
         .flat_map(|package| package.tombstones.iter().copied())
         .collect();
-    if let Some(removed) = old.tombstones().iter().find(|id| !declared.contains(id)) {
+    if let Some(removed) = old.tombstones()?.iter().find(|id| !declared.contains(id)) {
         return Err(Error::new(
             "tombstone_removed",
             removed.to_string(),

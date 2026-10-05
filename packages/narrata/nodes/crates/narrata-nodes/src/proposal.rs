@@ -549,7 +549,7 @@ pub(crate) fn apply_proposal(
             "the recorded IDs are not the ones derived from the parent commit and the request",
         ));
     }
-    let tombstones = program.tombstones();
+    let tombstones = program.tombstones()?;
     check_collisions(&graph, tombstones, parent, options, nodes)?;
     let mut overlay = frame.overlay.clone();
     overlay
@@ -621,7 +621,7 @@ pub(crate) fn check_overlay(program: &Program, graph: &Graph, frame: &Frame) -> 
             "a frame holds at most 256 proposed nodes",
         ));
     }
-    let tombstones = program.tombstones();
+    let tombstones = program.tombstones()?;
     let declarations = graph.header.declarations();
     let target = |node: &NodeId| -> Result<()> {
         if graph.nodes.contains_key(node) || overlay.nodes.contains_key(node) {

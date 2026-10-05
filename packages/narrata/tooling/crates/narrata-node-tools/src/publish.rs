@@ -1,10 +1,9 @@
 //! R2's publication projection. The graph is structural: conditions, proposal requests and
 //! call-stack feasibility are not solved. Geometry never carries resolved content.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
-};
+use std::collections::{BTreeMap, BTreeSet};
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use std::path::Path;
 
 use narrata_graph::{
     ClusterId, Edge, EdgeKind, Ending, EndingClass, Graph, Id, LabelTable, Node, NodeKind,
@@ -16,12 +15,13 @@ use narrata_kernel::{
     content::ContentRef,
 };
 use narrata_nodes::{
-    ArtifactId, Diagnostic, Error, NameTable, NodeId, Program, Result,
+    Analysis, ArtifactId, ContentOutline, Diagnostic, Error, NameTable, NodeId, Program, Result,
     plan::{GraphRef, Outcome, Plan},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use crate::{pretty, write_bytes, write_text};
 
 #[derive(Debug)]
@@ -388,6 +388,7 @@ pub fn publish(program: &Program, names: Option<&NameTable>) -> Result<Published
 
 /// Writes object files first, then the JSON references. Each file is atomic; the set is not
 /// a transaction. Existing immutable objects can remain available to readers of old indexes.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn write_publication(output: &Path, publication: &PublishedGraph) -> Result<()> {
     publication.files.validate()?;
     let objects = output.with_extension("graph");
@@ -403,4 +404,56 @@ pub fn write_publication(output: &Path, publication: &PublishedGraph) -> Result<
         &output.with_extension("graph.json"),
         &pretty(&publication.files)?,
     )
+}
+
+/// The same publication diagnostics for CLI and Wasm callers. Outline defects are
+/// diagnostics; duplicate providers are invalid input. No content text is resolved.
+pub fn publication_analysis(
+    mut analysis: Analysis,
+    program: &Program,
+    names: Option<&NameTable>,
+    publication: &PublishedGraph,
+    outlines: &[ContentOutline],
+) -> Result<Analysis> {
+    analysis
+        .diagnostics
+        .retain(|diagnostic| diagnostic.code != "structurally_unreachable");
+    analysis
+        .diagnostics
+        .extend(publication.diagnostics.iter().cloned());
+    let mut providers = BTreeSet::new();
+    for outline in outlines {
+        if !providers.insert(outline.provider.clone()) {
+            return Err(Error::new(
+                "outline_provider",
+                format!("content.{}", outline.provider),
+                "supply one original-language outline per provider",
+            ));
+        }
+        analysis
+            .diagnostics
+            .extend(narrata_nodes::outline::diagnose_outline(
+                program, names, outline,
+            )?);
+    }
+    let mut required = BTreeSet::new();
+    for reference in program.manifest().graphs.keys() {
+        for plan in program.graph(reference)?.nodes.values() {
+            if let Plan::Passage(passage) = plan
+                && let Some(body) = &passage.body
+            {
+                required.insert(body.unit.provider.clone());
+            }
+        }
+    }
+    for provider in required.difference(&providers) {
+        analysis.diagnostics.push(Diagnostic {
+            code: "outline_checks_skipped".into(),
+            path: format!("content.{provider}"),
+            message:
+                "No content outline was supplied; anchor, order and marker checks were skipped."
+                    .into(),
+        });
+    }
+    Ok(analysis)
 }

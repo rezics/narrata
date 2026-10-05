@@ -3,12 +3,16 @@
 
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 use narrata_content_local::{ContentPack, ResolveRequest};
 use narrata_kernel::content::ProviderId;
 use narrata_nodes::{
-    Analysis, BookView, Error, MAX_REQUEST_BYTES, NameTable, Program, ProposalRequest, Session,
+    Analysis, AuthoredId, BookView, ChunkSource, Error, Lookup, MAX_REQUEST_BYTES,
+    MAX_SOURCE_BYTES, MemorySource, NameTable, ObjectId, Program, ProposalRequest, Session,
     analyze, parse_json_limited, r1,
 };
 use narrata_storage_host::{CacheBackend, FlushReply, HostError, Loaded, StoreId, StoreState};
@@ -32,12 +36,121 @@ fn json<T: serde::Serialize>(value: &T) -> Result<String, JsError> {
     serde_json::to_string(value).map_err(|error| JsError::new(&error.to_string()))
 }
 
-/// A packed artifact and one session on it.
+#[derive(serde::Serialize)]
+struct PublicationObject<'a> {
+    object_id: String,
+    bytes: &'a [u8],
+}
+
+#[derive(serde::Serialize)]
+struct GraphPublication<'a> {
+    index: PublicationObject<'a>,
+    tiles: Vec<PublicationObject<'a>>,
+    labels: Vec<PublicationObject<'a>>,
+    files_json: String,
+    summary_json: String,
+    analysis_json: String,
+    diagnostics: &'a [narrata_nodes::Diagnostic],
+}
+
+/// Publication from a complete pack, using exactly the CLI's Rust projection and
+/// diagnostics. `outlines` is an optional JSON array of provider outlines. Object bytes
+/// are arrays of u8; JSON files are strings preserving the CLI's exact output bytes.
+/// This is a host API value, not a new stored artifact format.
+#[wasm_bindgen(js_name = publishGraph)]
+pub fn publish_graph(pack: &[u8], outlines: Option<String>) -> Result<String, JsError> {
+    let (program, names) = Program::from_pack(pack).map_err(js_error)?;
+    program.verify_artifact().map_err(js_error)?;
+    let outlines: Vec<narrata_nodes::ContentOutline> = outlines
+        .as_deref()
+        .map(|text| parse_json_limited(text, MAX_SOURCE_BYTES))
+        .transpose()
+        .map_err(js_error)?
+        .unwrap_or_default();
+    let publication =
+        narrata_node_tools::publish::publish(&program, names.as_ref()).map_err(js_error)?;
+    let analysis = narrata_node_tools::publish::publication_analysis(
+        analyze(&program, names.as_ref()).map_err(js_error)?,
+        &program,
+        names.as_ref(),
+        &publication,
+        &outlines,
+    )
+    .map_err(js_error)?;
+    let object = |id: [u8; 32], bytes| PublicationObject {
+        object_id: hex::encode(id),
+        bytes,
+    };
+    let files_json = serde_json::to_string_pretty(&publication.files)
+        .map(|text| text + "\n")
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    let analysis_json = serde_json::to_string_pretty(&analysis)
+        .map(|text| text + "\n")
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    let summary = publication
+        .summary
+        .encode_json()
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    let result = GraphPublication {
+        index: object(
+            publication.geometry.index.id,
+            &publication.geometry.index.bytes,
+        ),
+        tiles: publication
+            .geometry
+            .tiles
+            .iter()
+            .map(|o| object(o.id, o.bytes.as_slice()))
+            .collect(),
+        labels: publication
+            .labels
+            .iter()
+            .map(|o| object(o.id, o.bytes.as_slice()))
+            .collect(),
+        files_json,
+        summary_json: String::from_utf8(summary).map_err(|e| JsError::new(&e.to_string()))?,
+        analysis_json,
+        diagnostics: &analysis.diagnostics,
+    };
+    json(&result)
+}
+
+#[derive(Default)]
+struct PendingChunks {
+    objects: BTreeMap<ObjectId, Vec<u8>>,
+    request: Option<ObjectId>,
+}
+
+#[derive(Clone, Default)]
+struct HostChunks(Arc<Mutex<PendingChunks>>);
+
+impl ChunkSource for HostChunks {
+    fn load(&self, id: &ObjectId) -> narrata_nodes::Result<Vec<u8>> {
+        let mut pending = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A retried operation can span more than the decoded cache budget. Retain its
+        // supplied bytes until success so retries make progress after decoded eviction.
+        if let Some(bytes) = pending.objects.get(id) {
+            return Ok(bytes.clone());
+        }
+        pending.request = Some(*id);
+        Err(Error::new(
+            "not_loaded",
+            id.to_string(),
+            "host must load this program object and retry",
+        ))
+    }
+}
+
+/// A checked program and one session on it.
 #[wasm_bindgen]
 pub struct NodeBook {
-    pack: Vec<u8>,
+    pack: Option<Vec<u8>>,
     names: Option<NameTable>,
-    analysis: Analysis,
+    analysis: Option<Analysis>,
+    chunks: Option<HostChunks>,
     program: Arc<Program>,
     execution: narrata_nodes::ExecutionId,
     cache: CacheBackend,
@@ -46,7 +159,7 @@ pub struct NodeBook {
 
 #[wasm_bindgen]
 impl NodeBook {
-    /// Opens a pack, checks every chunk and starts a session with `execution`.
+    /// Opens a pack and checks every chunk. Call open or memory to start the session.
     #[wasm_bindgen(constructor)]
     pub fn new(pack: &[u8], execution: &str) -> Result<NodeBook, JsError> {
         let (program, names) = Program::from_pack(pack).map_err(js_error)?;
@@ -55,14 +168,116 @@ impl NodeBook {
         let execution = parse(execution, "execution", "execution:<32 hex digits>")?;
 
         Ok(Self {
-            pack: pack.to_vec(),
+            pack: Some(pack.to_vec()),
             names,
-            analysis,
+            analysis: Some(analysis),
+            chunks: None,
             program: Arc::new(program),
             execution,
             cache: CacheBackend::new(),
             session: None,
         })
+    }
+
+    /// Opens only a checked manifest. On a missing program object an operation throws
+    /// `not_loaded`; takeChunkRequest identifies it, loadChunk supplies it, then retry.
+    /// Retry the pending call to completion before another runtime/tool call. Supplied
+    /// bytes survive its retries and are released when it succeeds.
+    /// The manifest and entry chunk suffice for an ordinary first screen. Full-pack
+    /// construction remains available for hosts such as the reference reader.
+    #[wasm_bindgen(js_name = fromManifest)]
+    pub fn from_manifest(manifest: &[u8], execution: &str) -> Result<NodeBook, JsError> {
+        let chunks = HostChunks::default();
+        let program =
+            Program::from_manifest(manifest, Box::new(chunks.clone())).map_err(js_error)?;
+        Ok(Self {
+            pack: None,
+            names: None,
+            analysis: None,
+            chunks: Some(chunks),
+            program: Arc::new(program),
+            execution: parse(execution, "execution", "execution:<32 hex digits>")?,
+            cache: CacheBackend::new(),
+            session: None,
+        })
+    }
+
+    #[wasm_bindgen(js_name = takeChunkRequest)]
+    pub fn take_chunk_request(&self) -> Option<String> {
+        self.chunks
+            .as_ref()?
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .request
+            .take()
+            .map(|id| id.to_string())
+    }
+
+    /// Accepts only a manifest-referenced object with a checked envelope and matching
+    /// object ID. Program checks its canonical payload and semantics when used.
+    #[wasm_bindgen(js_name = loadChunk)]
+    pub fn load_chunk(&self, id: &str, bytes: &[u8]) -> Result<(), JsError> {
+        let id: ObjectId = parse(id, "object", "object:<64 hex digits>")?;
+        if id != self.program.manifest().tombstones && !self.program.manifest().chunks.contains(&id)
+        {
+            return Err(js_error(Error::new(
+                "reference",
+                id.to_string(),
+                "object is not in this manifest",
+            )));
+        }
+        let chunks = self
+            .chunks
+            .as_ref()
+            .ok_or_else(|| JsError::new("loadChunk requires fromManifest"))?;
+        let actual = MemorySource::default()
+            .insert(bytes.to_vec())
+            .map_err(js_error)?;
+        if id != actual {
+            return Err(js_error(Error::new(
+                "artifact",
+                id.to_string(),
+                "object content differs from its object ID",
+            )));
+        }
+        chunks
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .objects
+            .insert(id, bytes.to_vec());
+        Ok(())
+    }
+
+    /// Optional aliases are checked against this artifact without loading graph bodies.
+    #[wasm_bindgen(js_name = loadNames)]
+    pub fn load_names(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        self.names = Some(self.program.decode_names(bytes).map_err(js_error)?);
+        Ok(())
+    }
+
+    /// Requires all chunks and the tombstone set, including chunks already cached.
+    #[wasm_bindgen(js_name = verifyArtifact)]
+    pub fn verify_artifact(&self) -> Result<(), JsError> {
+        self.finish(self.program.verify_artifact().map_err(js_error))
+    }
+
+    /// Tool lookup, loading tombstones first. Live results include their structural owner.
+    pub fn lookup(&self, id: &str) -> Result<String, JsError> {
+        let id: AuthoredId = parse(id, "id", "an authored ID")?;
+        let found = match self.program.lookup(id).map_err(js_error)? {
+            Lookup::Deleted => serde_json::json!({"kind": "deleted"}),
+            Lookup::Unknown => serde_json::json!({"kind": "unknown"}),
+            Lookup::Live {
+                graph,
+                node,
+                choice_point,
+            } => serde_json::json!({
+                "kind": "live", "graph": graph, "node": node, "choice_point": choice_point
+            }),
+        };
+        self.finish(json(&found))
     }
 
     #[wasm_bindgen(getter)]
@@ -77,7 +292,23 @@ impl NodeBook {
             Session::open(self.program.clone(), self.execution, self.cache.share())
                 .map_err(js_error)?,
         );
-        Ok(())
+        self.finish(Ok(()))
+    }
+
+    fn finish<T>(&self, result: Result<T, JsError>) -> Result<T, JsError> {
+        if result.is_ok()
+            && let Some(chunks) = &self.chunks
+        {
+            let mut pending = chunks
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // Only the checked decoded cache/pins survive a completed operation.
+            // Hosts must finish a pending retry before starting another book operation.
+            pending.objects.clear();
+            pending.request = None;
+        }
+        result
     }
 
     #[wasm_bindgen(js_name = takeRequest)]
@@ -147,24 +378,38 @@ impl NodeBook {
             .ok_or_else(|| JsError::new("open the session first"))
     }
 
-    /// The pack bytes the book was opened from.
-    pub fn pack(&self) -> Vec<u8> {
-        self.pack.clone()
+    /// The original full pack. Manifest-only books leave pack assembly to the host.
+    pub fn pack(&self) -> Result<Vec<u8>, JsError> {
+        match &self.pack {
+            Some(pack) => Ok(pack.clone()),
+            None => Err(JsError::new(
+                "pack bytes are unavailable on a manifest-only book",
+            )),
+        }
     }
 
     /// Prepares possible next graph chunks between interactions, without advancing history.
     pub fn prefetch(&mut self) -> Result<(), JsError> {
-        self.opened_mut()?.prefetch().map_err(js_error)
+        let result = self.opened_mut()?.prefetch().map_err(js_error);
+        self.finish(result)
     }
 
     /// The text-free book view as JSON.
     pub fn inspect(&self) -> Result<String, JsError> {
-        json(&BookView {
+        self.finish(json(&BookView {
             view: self.opened()?.view(self.names.as_ref()).map_err(js_error)?,
             page: self.opened()?.page().map_err(js_error)?,
-            graphs: self.analysis.graphs.clone(),
-            diagnostics: self.analysis.diagnostics.clone(),
-        })
+            // Runtime inspection must not eagerly scan the whole work. Publication
+            // analysis is a separate operation for hosts that need the full graph.
+            graphs: self
+                .analysis
+                .as_ref()
+                .map_or_else(Vec::new, |a| a.graphs.clone()),
+            diagnostics: self
+                .analysis
+                .as_ref()
+                .map_or_else(Vec::new, |a| a.diagnostics.clone()),
+        }))
     }
 
     /// Chooses a set of option IDs at the cursor, which must still be `expected`, and returns
@@ -185,7 +430,7 @@ impl NodeBook {
             .opened_mut()?
             .choose(&expected, choice_point, options)
             .map_err(js_error)?;
-        Ok(commit.to_string())
+        self.finish(Ok(commit.to_string()))
     }
 
     /// Records a host proposal (a proposal request as JSON) at the cursor, which must still be
@@ -199,24 +444,25 @@ impl NodeBook {
             .opened_mut()?
             .propose(&expected, &request)
             .map_err(js_error)?;
-        Ok(commit.to_string())
+        self.finish(Ok(commit.to_string()))
     }
 
     pub fn checkout(&mut self, commit: &str) -> Result<(), JsError> {
         let commit = parse(commit, "commit", "commit:<64 hex digits>")?;
-        self.opened_mut()?.checkout(&commit).map_err(js_error)
+        let result = self.opened_mut()?.checkout(&commit).map_err(js_error);
+        self.finish(result)
     }
 
     /// The session export JSON.
     pub fn export(&self) -> Result<String, JsError> {
-        self.opened()?.export().map_err(js_error)
+        self.finish(self.opened()?.export().map_err(js_error))
     }
 
     /// Replaces the session with a checked export of this artifact; the current session stays
     /// on failure.
     pub fn restore(&mut self, export: &str) -> Result<(), JsError> {
         self.opened_mut()?.import(export).map_err(js_error)?;
-        Ok(())
+        self.finish(Ok(()))
     }
 
     /// Rebuilds an R1 save on this artifact, which must have been migrated from the save's R1
@@ -242,7 +488,7 @@ impl NodeBook {
         self.opened_mut()?
             .import_session(&migrated)
             .map_err(js_error)?;
-        Ok(())
+        self.finish(Ok(()))
     }
 }
 

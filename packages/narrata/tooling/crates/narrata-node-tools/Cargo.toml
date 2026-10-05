@@ -16,11 +16,13 @@ narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0
 narrata-nodes = { path = "../../../nodes/crates/narrata-nodes", version = "=0.1.0-alpha.1" }
 narrata-content-local = { path = "../narrata-content-local", version = "=0.1.0-alpha.1" }
 narrata-graph = { path = "../narrata-graph", version = "=0.1.0-alpha.1" }
-getrandom = "0.3.4"
 hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+getrandom = "0.3.4"
 
 [dev-dependencies]
 narrata-history = { path = "../../../kernel/crates/narrata-history", version = "=0.1.0-alpha.1" }

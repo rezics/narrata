@@ -8,7 +8,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use narrata_nodes::{ChunkSource, ExecutionId, ObjectId, Pack, Program, Session, plan::GraphRef};
+use narrata_kernel::codec::{
+    CborWriter, EnvelopeLimits, encode_envelope, inspect_envelope, object_id,
+};
+use narrata_nodes::{
+    AuthoredId, ChunkSource, ExecutionId, KIND_MANIFEST, KIND_TOMBSTONES, Lookup, ObjectId, Pack,
+    Program, Session, plan::GraphRef,
+};
 use serde_json::json;
 use support::{content, node, option, point, try_variant};
 
@@ -115,6 +121,195 @@ fn opening_and_first_screen_read_only_the_needed_chunk() {
     assert_eq!(session.state().unwrap().frames.len(), 1);
     assert_eq!(source.lock().unwrap().reads.values().sum::<usize>(), 1);
     assert_eq!(program.loaded_chunks(), 1);
+}
+
+#[test]
+fn manifest_only_first_screen_and_restore_need_no_tombstones_or_other_chunks() {
+    let bytes = fixture(20);
+    let pack = Pack::decode(&bytes).unwrap();
+    let (full, _) = Program::from_pack(&bytes).unwrap();
+    let source = Arc::new(Mutex::new(SourceState::default()));
+    let program =
+        Arc::new(Program::from_manifest(&pack.manifest, Box::new(Source(source.clone()))).unwrap());
+    assert!(source.lock().unwrap().reads.is_empty());
+    let execution = ExecutionId::from_bytes([1; 16]);
+    let missing = Session::new(program.clone(), execution).err().unwrap();
+    let index = program.manifest().graphs[&graph(0)].chunk as usize;
+    let id = program.manifest().chunks[index];
+    assert_eq!(missing.path, id.to_string());
+    assert_eq!(program.loaded_chunks(), 0);
+    source
+        .lock()
+        .unwrap()
+        .bytes
+        .insert(id, pack.chunks[index].clone());
+    let session = Session::new(program.clone(), execution).unwrap();
+    let reference = Session::new(Arc::new(full), execution).unwrap();
+    assert_eq!(session.view(None).unwrap(), reference.view(None).unwrap());
+    assert_eq!(session.page().unwrap(), reference.page().unwrap());
+    let restored = Session::restore(program.clone(), &session.export().unwrap()).unwrap();
+    assert_eq!(restored.cursor().unwrap(), session.cursor().unwrap());
+    assert_eq!(restored.state().unwrap(), session.state().unwrap());
+    assert_eq!(
+        source
+            .lock()
+            .unwrap()
+            .reads
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![id]
+    );
+    assert_eq!(program.loaded_chunks(), 1);
+}
+
+#[test]
+fn lazy_tombstones_are_checked_on_lookup_and_failed_loads_can_be_retried() {
+    let bytes = fixture(2);
+    let pack = Pack::decode(&bytes).unwrap();
+    let source = Arc::new(Mutex::new(SourceState::default()));
+    let program = Program::from_manifest(&pack.manifest, Box::new(Source(source.clone()))).unwrap();
+    let tombstones = program.manifest().tombstones;
+    let id = AuthoredId::Node(node(900).parse().unwrap());
+    assert_eq!(program.lookup(id).unwrap_err().path, tombstones.to_string());
+    let mut corrupt = pack.tombstones.clone();
+    *corrupt.last_mut().unwrap() ^= 1;
+    source.lock().unwrap().bytes.insert(tombstones, corrupt);
+    assert_eq!(program.lookup(id).unwrap_err().code, "decode");
+    // A well-formed object of the wrong kind is also rejected.
+    source
+        .lock()
+        .unwrap()
+        .bytes
+        .insert(tombstones, pack.chunks[0].clone());
+    assert_eq!(program.lookup(id).unwrap_err().code, "decode");
+    source
+        .lock()
+        .unwrap()
+        .bytes
+        .insert(tombstones, pack.tombstones);
+    assert_eq!(program.tombstones().unwrap().iter().count(), 0);
+    program.tombstones().unwrap();
+    assert_eq!(source.lock().unwrap().reads[&tombstones], 4);
+    assert_eq!(program.loaded_chunks(), 0);
+}
+
+#[test]
+fn proposals_and_overlay_restore_request_tombstones_before_identity_validation() {
+    let compilation = try_variant(|_, main, _| {
+        main["graphs"]["start"]["nodes"]["gate"]["data"]["choice_points"][0]["proposals"] =
+            json!(true);
+    })
+    .unwrap();
+    let pack = Pack::decode(&compilation.pack).unwrap();
+    let objects = compilation
+        .program
+        .manifest()
+        .chunks
+        .iter()
+        .copied()
+        .zip(pack.chunks)
+        .collect();
+    let source = Arc::new(Mutex::new(SourceState {
+        bytes: objects,
+        ..SourceState::default()
+    }));
+    let program =
+        Arc::new(Program::from_manifest(&pack.manifest, Box::new(Source(source.clone()))).unwrap());
+    let mut session = Session::new(program.clone(), ExecutionId::from_bytes([3; 16])).unwrap();
+    let cursor = session.cursor().unwrap();
+    let before = session.state().unwrap().clone();
+    let request = serde_json::from_value(json!({
+        "choice_point": point(1), "options": [{
+            "label": content("whistle"), "outcome": {"kind": "local", "rejoin": "b2"}
+        }]
+    }))
+    .unwrap();
+    let error = session.propose(&cursor, &request).unwrap_err();
+    let tombstones = program.manifest().tombstones;
+    assert_eq!(error.path, tombstones.to_string());
+    assert_eq!(session.cursor().unwrap(), cursor);
+    assert_eq!(session.state().unwrap(), &before);
+    source
+        .lock()
+        .unwrap()
+        .bytes
+        .insert(tombstones, pack.tombstones.clone());
+    session.propose(&cursor, &request).unwrap();
+    let export = session.export().unwrap();
+    let restored_program =
+        Arc::new(Program::from_manifest(&pack.manifest, Box::new(Source(source.clone()))).unwrap());
+    source.lock().unwrap().bytes.remove(&tombstones);
+    assert!(Session::restore(restored_program.clone(), &export).is_err());
+    source
+        .lock()
+        .unwrap()
+        .bytes
+        .insert(tombstones, pack.tombstones);
+    let restored = Session::restore(restored_program, &export).unwrap();
+    assert_eq!(restored.cursor().unwrap(), session.cursor().unwrap());
+    assert_eq!(restored.state().unwrap(), session.state().unwrap());
+}
+
+#[test]
+fn full_verification_checks_tombstones_even_for_chunks_loaded_before_them() {
+    let pack = Pack::decode(&fixture(1)).unwrap();
+    let (full, _) = Program::from_pack(&fixture(1)).unwrap();
+    for (kind, id) in [
+        (0, AuthoredId::Node(node(100).parse().unwrap())),
+        (1, AuthoredId::ChoicePoint(point(100).parse().unwrap())),
+        (2, AuthoredId::Option(option(100).parse().unwrap())),
+    ] {
+        let mut writer = CborWriter::new();
+        writer.map(3);
+        for field in 0..3 {
+            writer.unsigned(field);
+            writer.array(u64::from(field == kind));
+            if field == kind {
+                let bytes = match id {
+                    AuthoredId::Node(id) => *id.as_bytes(),
+                    AuthoredId::ChoicePoint(id) => *id.as_bytes(),
+                    AuthoredId::Option(id) => *id.as_bytes(),
+                };
+                writer.bytes(&bytes);
+            }
+        }
+        let payload = writer.into_bytes();
+        let tombstones = encode_envelope(KIND_TOMBSTONES, 1, &payload);
+        let tombstone_id = object_id(KIND_TOMBSTONES, 1, &payload);
+        let opened = inspect_envelope(&pack.manifest, &EnvelopeLimits::default()).unwrap();
+        let mut manifest = opened.payload.to_vec();
+        // Manifest's final field is the tombstone object's 32-byte identity.
+        let at = manifest.len() - 32;
+        assert_eq!(&manifest[at..], full.manifest().tombstones.as_bytes());
+        manifest[at..].copy_from_slice(&tombstone_id);
+        let manifest = encode_envelope(KIND_MANIFEST, 1, &manifest);
+        let source = Arc::new(Mutex::new(SourceState::default()));
+        source
+            .lock()
+            .unwrap()
+            .bytes
+            .insert(full.manifest().chunks[0], pack.chunks[0].clone());
+        let program = Program::from_manifest(&manifest, Box::new(Source(source.clone()))).unwrap();
+        program.graph(&graph(0)).unwrap();
+        assert_eq!(
+            program.verify_artifact().unwrap_err().path,
+            program.manifest().tombstones.to_string()
+        );
+        source
+            .lock()
+            .unwrap()
+            .bytes
+            .insert(ObjectId::from_bytes(tombstone_id), pack.tombstones.clone());
+        assert_eq!(program.verify_artifact().unwrap_err().code, "artifact");
+        source
+            .lock()
+            .unwrap()
+            .bytes
+            .insert(ObjectId::from_bytes(tombstone_id), tombstones);
+        assert_eq!(program.lookup(id).unwrap(), Lookup::Deleted);
+        assert_eq!(program.verify_artifact().unwrap_err().code, "tombstone");
+    }
 }
 
 #[test]
