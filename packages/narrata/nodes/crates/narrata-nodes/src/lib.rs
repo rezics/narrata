@@ -31,7 +31,11 @@ pub mod view;
 mod wire;
 
 pub use analysis::{Analysis, analyze};
-pub use compile::{Compilation, canonical_json, compile, package_digest};
+pub use check::{check_package_identity, validate_choice_source, validate_graph_source};
+pub use compile::{
+    Compilation, SourceValidation, canonical_json, check_node_data, compile, package_digest,
+    validate_manifest_source, validate_source,
+};
 pub use error::{Diagnostic, Error, Result};
 pub use expr::{Assignment, BinaryOp, Expr, Scope, Variable};
 pub use ids::{
