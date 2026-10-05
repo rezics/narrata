@@ -7,7 +7,10 @@
 后端接口收窄为[存储与存档契约](../contracts/storage-and-saves.md) 的五个原语
 （[决定 8](../product/decisions.md)），Snapshot 不再包含文本（[决定 2](../product/decisions.md)）。
 存档引擎、键布局、校验边界与 GC 由 [ADR 0014](../adr/0014-save-engine-key-layout.md) 决定；
-下文与之冲突处以 ADR 0014 为准。
+其中与领域无关的部分（对象、Ref、Pin、GC、Checkpoint Bundle）属于 kernel 历史层，节点栈等新领域
+的通用提交、transitions 去重、会话 API 与恢复的信任边界由
+[ADR 0015](../adr/0015-kernel-history-layer.md) 决定。下文描述 Stage 1–5 的提交模型，与这两份
+ADR 冲突处以 ADR 为准。
 
 ## 核心决定
 
@@ -509,8 +512,8 @@ Host Timeline，再在单个事务中创建 archive root 与映射后的 Ref。�
 
 ## Reference SaveStore
 
-`narrata-store` 的 `SaveStore` 由 `Store<B: StorageBackend>` 在
-[ADR 0012](../adr/0012-narrow-storage-backend-contract.md) 的后端契约之上实现一次：
+`narrata-store` 的 `SaveStore` 由 `Store<B: StorageBackend>` 实现一次：它是 kernel 历史层
+`History<B, _>` 加上 Stage 1–5 种类的注册（[ADR 0015](../adr/0015-kernel-history-layer.md)）。
 `MemoryStore` 是内存后端上的引擎，`narrata_store_sqlite::SqliteStore` 是按行读写的 SQLite
 后端上的引擎。接口、键布局、批次与结果未知的处理见
 [ADR 0014](../adr/0014-save-engine-key-layout.md)；浏览器的 IndexedDB 后端是后续工作。
@@ -529,6 +532,9 @@ GC 是 mark-and-sweep：
    删除批次与并发写入由 `meta/graph`、`meta/sweep` 两个栅栏互斥
    （[ADR 0014](../adr/0014-save-engine-key-layout.md#gctouch-键与两个栅栏)）；
 4. 输出可审计 `GcReport`，包括按 kind 计数和 bytes，不暴露 payload。
+
+GC 遇到没有注册方认领的种类时拒绝运行，不删除任何东西
+（[ADR 0015](../adr/0015-kernel-history-layer.md#gc-与未注册的种类)）。
 
 必须保留：
 
