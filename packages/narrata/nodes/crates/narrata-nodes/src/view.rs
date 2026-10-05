@@ -37,11 +37,14 @@ pub struct ProductView {
     pub title: Option<ContentRef>,
 }
 
-/// One item to present. Together with the execution and the commit, `occurrence` forms the
-/// presentation key that generative content providers cache by.
+/// One item to present. `(execution, commit, occurrence)` is the presentation key that
+/// generative content providers cache by.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PresentationItem {
+    /// The commit whose step presented the item.
+    pub commit: CommitId,
+    /// The item's position in that commit's presentation.
     pub occurrence: u32,
     pub role: Role,
     pub node: NodeId,
@@ -162,7 +165,8 @@ pub struct HistoryView {
 #[serde(deny_unknown_fields)]
 pub struct BookView {
     pub view: SessionView,
-    /// Items since the current passage was entered, across the local choices made in it.
+    /// The presentation of the step that entered the current passage (or ended the story),
+    /// followed by those of the local choices made in it since.
     pub page: Vec<PresentationItem>,
     pub graphs: Vec<GraphAnalysis>,
     pub diagnostics: Vec<Diagnostic>,

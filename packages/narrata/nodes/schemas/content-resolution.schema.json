@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Array_of_Resolution",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/Resolution"
+  },
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "Payload": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TextBlock"
+              }
+            }
+          },
+          "required": [
+            "blocks"
+          ]
+        }
+      ]
+    },
+    "Resolution": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/Payload"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "ok"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "revision",
+            "payload"
+          ]
+        },
+        {
+          "description": "Missing, withheld or withdrawn; the reason is not disclosed.",
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "unavailable"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "description": "Present, but an anchor, an argument or the entry shape does not fit the request.",
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "const": "incompatible"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "reason"
+          ]
+        }
+      ]
+    },
+    "TextBlock": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/AnchorId"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text"
+      ]
+    }
+  }
+}

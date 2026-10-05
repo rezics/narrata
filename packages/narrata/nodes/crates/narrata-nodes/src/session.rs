@@ -11,7 +11,7 @@ use crate::{
     ArtifactId, ChoicePointId, CommitId, Error, ExecutionId, ObjectId, OptionId, Program, Result,
     json::parse_json_limited,
     plan::NameTable,
-    runtime::{Machine, Step},
+    runtime::{Item, Machine, Step},
     state::{Commit, Input, State, check_state, decode_input, decode_state},
     view::{FrameView, HistoryView, PresentationItem, ProductView, SessionView, VariableView},
     wire,
@@ -223,11 +223,11 @@ impl Session {
             .index
             .get(commit)
             .ok_or_else(|| Error::new("reference", "commit", "unknown commit"))?;
-        Ok(self.step(index)?.presentation)
+        Ok(items(*commit, self.step(index)?.presentation))
     }
 
-    /// The reading page of the current passage: what was presented since it was entered,
-    /// across the local choices made in it.
+    /// The reading page: the presentation of the step that entered the current passage (or
+    /// ended the story), followed by those of the local choices made in it since.
     pub fn page(&self) -> Result<Vec<PresentationItem>> {
         let mut parts = Vec::new();
         let mut index = self.cursor;
@@ -235,7 +235,7 @@ impl Session {
             let step = self.step(index)?;
             let record = self.record(index)?;
             let entered = step.entered || record.state.finished.is_some();
-            parts.push(step.presentation);
+            parts.push(items(record.id, step.presentation));
             match (&record.commit.parent, entered) {
                 (Some(parent), false) => {
                     index = *self
@@ -246,11 +246,7 @@ impl Session {
                 _ => break,
             }
         }
-        let mut items: Vec<_> = parts.into_iter().rev().flatten().collect();
-        for (occurrence, item) in items.iter_mut().enumerate() {
-            item.occurrence = occurrence as u32;
-        }
-        Ok(items)
+        Ok(parts.into_iter().rev().flatten().collect())
     }
 
     /// Replays from the root to `commit`, proving that play reaches every state on the path.
@@ -280,7 +276,7 @@ impl Session {
         };
         let product = &self.program.manifest().product;
         let state = &record.state;
-        let presentation = self.step(self.cursor)?.presentation;
+        let presentation = items(record.id, self.step(self.cursor)?.presentation);
         let variables = |values: &BTreeMap<String, crate::Scalar>| -> Vec<VariableView> {
             values
                 .iter()
@@ -520,4 +516,19 @@ impl Session {
             .ok_or_else(|| Error::new("save", "cursor", "cursor is not a retained commit"))?;
         Ok(session)
     }
+}
+
+fn items(commit: CommitId, items: Vec<Item>) -> Vec<PresentationItem> {
+    items
+        .into_iter()
+        .enumerate()
+        .map(|(occurrence, item)| PresentationItem {
+            commit,
+            occurrence: occurrence as u32,
+            role: item.role,
+            node: item.node,
+            content: item.content,
+            args: item.args,
+        })
+        .collect()
 }

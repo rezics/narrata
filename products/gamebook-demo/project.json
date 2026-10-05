@@ -1,36 +1,77 @@
 {
-  "format_version": 1,
+  "format_version": 2,
   "product": {
     "id": "mountain-letter",
-    "title": "山口来信",
+    "title": {
+      "provider": "local",
+      "key": "product:title"
+    },
     "entry": {
       "package": "main",
       "graph": "journey"
     },
+    "arguments": {},
     "shared": {
-      "rations": 3,
+      "helped": false,
       "letter": false,
+      "rations": 3,
       "rests": 0,
-      "helped": false
+      "signed": false,
+      "packed": 0
     },
     "shared_labels": {
-      "rations": "干粮",
-      "letter": "已取信件",
-      "rests": "歇脚次数",
-      "helped": "已帮助旅人"
+      "helped": {
+        "provider": "local",
+        "key": "product:shared.helped"
+      },
+      "letter": {
+        "provider": "local",
+        "key": "product:shared.letter"
+      },
+      "rations": {
+        "provider": "local",
+        "key": "product:shared.rations"
+      },
+      "rests": {
+        "provider": "local",
+        "key": "product:shared.rests"
+      },
+      "signed": {
+        "provider": "local",
+        "key": "product:shared.signed"
+      },
+      "packed": {
+        "provider": "local",
+        "key": "product:shared.packed"
+      }
     },
-    "bindings": [
-      {
-        "from": {
-          "package": "main",
-          "graph": "journey",
-          "port": "road"
+    "endings": {
+      "arrived": {
+        "title": {
+          "provider": "local",
+          "key": "product:ending.title"
         },
-        "to": {
-          "package": "road",
-          "graph": "crossing"
+        "body": {
+          "unit": {
+            "provider": "local",
+            "key": "product:ending"
+          }
         }
       },
+      "delivered": {
+        "title": {
+          "provider": "local",
+          "key": "product:ending.title"
+        },
+        "body": {
+          "unit": {
+            "provider": "local",
+            "key": "product:ending"
+          }
+        }
+      }
+    },
+    "bindings": [
       {
         "from": {
           "package": "main",
@@ -41,12 +82,24 @@
           "package": "camp",
           "graph": "visit"
         }
+      },
+      {
+        "from": {
+          "package": "main",
+          "graph": "journey",
+          "port": "road"
+        },
+        "to": {
+          "package": "road",
+          "graph": "crossing"
+        }
       }
     ]
   },
   "packages": {
+    "camp": "packages/camp.json",
     "main": "packages/main.json",
-    "road": "packages/road.json",
-    "camp": "packages/camp.json"
-  }
+    "road": "packages/road.json"
+  },
+  "migrated_from_r1": "b73f74b82f33834c386134e1f5cd548d9ba304d2d299507d827c4fe7acad412b"
 }

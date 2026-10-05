@@ -1,194 +1,82 @@
-//! Source closure resolution is an I/O boundary; the node engine never reads files.
+//! Filesystem tooling and the `narrata-book` CLI for R2 node works. Source closure resolution
+//! is an I/O boundary; the node engine never reads files.
 
-use std::{
-    collections::BTreeMap,
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    path::{Component, Path},
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-};
+#![forbid(unsafe_code)]
 
+mod compose;
+mod files;
+pub mod ids;
+mod play;
+pub mod r1;
+
+use std::{collections::BTreeMap, path::Path, sync::Arc};
+
+use narrata_content_local::{ContentPack, LocalContent};
 use narrata_nodes::{
-    BookView, Bundle, CheckedProduct, Compilation, CompositionLock, Error, FORMAT_VERSION,
-    MAX_DOCUMENT_BYTES, NarrativePackage, NodePlan, NodeRegistry, ProjectManifest, Result,
-    SaveArchive, Session, SessionView, compile, parse_json,
+    AuthoredId, Error, NameTable, Program, Result, Session, analyze, plan::GraphRef,
 };
 
-pub fn read_text(path: &Path) -> Result<String> {
-    let mut value = String::new();
-    File::open(path)
-        .map_err(|e| io_error(path, e))?
-        .take(MAX_DOCUMENT_BYTES as u64 + 1)
-        .read_to_string(&mut value)
-        .map_err(|e| io_error(path, e))?;
-    if value.len() > MAX_DOCUMENT_BYTES {
-        return Err(Error::new(
-            "limit",
-            path.display().to_string(),
-            "file exceeds 4 MiB",
-        ));
-    }
-    Ok(value)
-}
+pub use compose::{Composed, compose, verify_lock};
+pub use files::{
+    ProjectFiles, load_project, pretty, read_bytes, read_text, write_bytes, write_text,
+};
+pub use play::{act, book, new_session, render};
 
-pub fn load_project(path: &Path) -> Result<Compilation> {
-    let path = path.canonicalize().map_err(|e| io_error(path, e))?;
-    let root = path.parent().ok_or_else(|| {
-        Error::new(
-            "path",
-            path.display().to_string(),
-            "manifest needs a parent directory",
-        )
-    })?;
-    let text = read_text(&path)?;
-    let manifest: ProjectManifest = parse_json(&text)?;
-    if manifest.format_version != FORMAT_VERSION {
-        return Err(Error::new(
-            "version",
-            "format_version",
-            "unsupported project format",
-        ));
-    }
-    let mut total = text.len();
-    let mut packages = BTreeMap::new();
-    for (alias, relative) in manifest.packages {
-        let relative_path = Path::new(&relative);
-        if relative.is_empty()
-            || relative.contains(':')
-            || relative_path
-                .components()
-                .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
-        {
-            return Err(Error::new(
-                "path",
-                alias,
-                "package paths must be relative and cannot traverse parent directories",
-            ));
-        }
-        let resolved = root
-            .join(relative_path)
-            .canonicalize()
-            .map_err(|e| io_error(&root.join(relative_path), e))?;
-        if !resolved.starts_with(root) {
-            return Err(Error::new(
-                "path",
-                alias,
-                "package resolves outside the project source closure",
-            ));
-        }
-        let text = read_text(&resolved)?;
-        total += text.len();
-        if total > MAX_DOCUMENT_BYTES {
-            return Err(Error::new(
-                "limit",
-                "packages",
-                "source closure exceeds 4 MiB",
-            ));
-        }
-        packages.insert(alias, parse_json::<NarrativePackage>(&text)?);
-    }
-    compile(
-        Bundle {
-            format_version: FORMAT_VERSION,
-            product: manifest.product,
-            packages,
-        },
-        &NodeRegistry::gamebook(),
-    )
-}
-
-pub fn load_bundle(path: &Path) -> Result<Compilation> {
-    compile(parse_json(&read_text(path)?)?, &NodeRegistry::gamebook())
-}
-
-pub fn verify_lock(product: &CheckedProduct, path: &Path) -> Result<()> {
-    let lock: CompositionLock = parse_json(&read_text(path)?)?;
-    if &lock != product.lock() {
-        return Err(Error::new(
-            "lock_mismatch",
-            path.display().to_string(),
-            "selected package bytes, bindings or node semantics differ from the lock",
-        ));
-    }
-    Ok(())
-}
-
-static TEMP_ID: AtomicU64 = AtomicU64::new(0);
-
-/// Atomically replace one output file. Multiple compose outputs are individually published files.
-pub fn write_text(path: &Path, text: &str) -> Result<()> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent).map_err(|e| io_error(parent, e))?;
-    let file_name = path
-        .file_name()
-        .ok_or_else(|| {
-            Error::new(
-                "path",
-                path.display().to_string(),
-                "output needs a filename",
-            )
-        })?
-        .to_string_lossy();
-    let temp = parent.join(format!(
-        ".{file_name}.{}.{}.tmp",
-        std::process::id(),
-        TEMP_ID.fetch_add(1, Ordering::Relaxed)
-    ));
-    let mut owns_temp = false;
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-            .map_err(|e| io_error(&temp, e))?;
-        owns_temp = true;
-        file.write_all(text.as_bytes())
-            .map_err(|e| io_error(&temp, e))?;
-        file.sync_all().map_err(|e| io_error(&temp, e))?;
-        drop(file);
-        fs::rename(&temp, path).map_err(|e| io_error(path, e))
-    })();
-    if result.is_err() && owns_temp {
-        let _ = fs::remove_file(&temp);
-    }
-    result
-}
-
-fn io_error(path: &Path, e: std::io::Error) -> Error {
-    Error::new("io", path.display().to_string(), e.to_string())
-}
-
+/// Command options; a flag may repeat when the command accepts several values.
 fn options(
     args: &[String],
     allowed: &[&str],
-) -> std::result::Result<BTreeMap<String, String>, String> {
-    let mut out = BTreeMap::new();
+    switches: &[&str],
+) -> std::result::Result<BTreeMap<String, Vec<String>>, String> {
+    let mut out = BTreeMap::<String, Vec<String>>::new();
     let mut i = 0;
     while i < args.len() {
         let key = &args[i];
-        if !allowed.contains(&key.as_str()) {
-            return Err(format!("unknown option {key}"));
-        }
-        let value = if key == "--locked" {
-            "true".into()
-        } else {
+        if switches.contains(&key.as_str()) {
+            out.entry(key.clone()).or_default().push("true".into());
+        } else if allowed.contains(&key.as_str()) {
             i += 1;
-            args.get(i)
+            let value = args
+                .get(i)
                 .cloned()
-                .ok_or_else(|| format!("{key} requires a value"))?
-        };
-        if out.insert(key.clone(), value).is_some() {
-            return Err(format!("duplicate option {key}"));
+                .ok_or_else(|| format!("{key} requires a value"))?;
+            out.entry(key.clone()).or_default().push(value);
+        } else {
+            return Err(format!("unknown option {key}"));
         }
         i += 1;
     }
+    for (key, values) in &out {
+        if values.len() > 1 && key != "--content" {
+            return Err(format!("duplicate option {key}"));
+        }
+    }
     Ok(out)
+}
+
+fn one<'a>(flags: &'a BTreeMap<String, Vec<String>>, key: &str) -> Option<&'a str> {
+    flags
+        .get(key)
+        .and_then(|values| values.first())
+        .map(String::as_str)
+}
+
+fn text(error: Error) -> String {
+    error.to_string()
+}
+
+/// Loads local content packs; the first is the original language.
+pub fn load_content(paths: &[String]) -> Result<LocalContent> {
+    let mut content = LocalContent::new();
+    for path in paths {
+        content.add(ContentPack::parse(&read_text(Path::new(path))?)?)?;
+    }
+    Ok(content)
+}
+
+pub fn open_pack(path: &Path) -> Result<(Arc<Program>, Option<NameTable>)> {
+    let (program, names) = Program::from_pack(&read_bytes(path)?)?;
+    Ok((Arc::new(program), names))
 }
 
 pub fn run(args: &[String]) -> std::result::Result<(), String> {
@@ -199,114 +87,279 @@ pub fn run(args: &[String]) -> std::result::Result<(), String> {
         println!("{}", usage());
         return Ok(());
     }
+    let rest = &args[1..];
     if command == "schemas" {
-        let flags = options(&args[1..], &["--out"])?;
-        let output = flags
-            .get("--out")
-            .ok_or("schemas requires --out <directory>")?;
-        for (name, schema) in [
-            ("bundle.schema.json", schemars::schema_for!(Bundle)),
-            ("book-view.schema.json", schemars::schema_for!(BookView)),
-            (
-                "project.schema.json",
-                schemars::schema_for!(ProjectManifest),
-            ),
-            ("node-plan.schema.json", schemars::schema_for!(NodePlan)),
-            ("view.schema.json", schemars::schema_for!(SessionView)),
-            ("save.schema.json", schemars::schema_for!(SaveArchive)),
-        ] {
+        let flags = options(rest, &["--out"], &[])?;
+        let output = one(&flags, "--out").ok_or("schemas requires --out <directory>")?;
+        for (name, schema) in narrata_nodes::schemas()
+            .into_iter()
+            .chain(narrata_content_local::schemas())
+        {
             write_text(
                 &Path::new(output).join(name),
-                &(serde_json::to_string_pretty(&schema).map_err(|e| e.to_string())? + "\n"),
+                &pretty(&schema).map_err(text)?,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(text)?;
         }
         return Ok(());
     }
-    let path = Path::new(args.get(1).ok_or_else(|| usage().to_owned())?);
+    let path = Path::new(rest.first().ok_or_else(|| usage().to_owned())?);
+    let rest = &rest[1..];
     match command.as_str() {
-        "compose" => {
-            let flags = options(&args[2..], &["--out", "--locked"])?;
-            let output = Path::new(
-                flags
-                    .get("--out")
-                    .ok_or("compose requires --out <bundle.json>")?,
-            );
-            let compilation = load_project(path).map_err(|e| e.to_string())?;
-            let lock_path = path.with_extension("lock.json");
-            if flags.contains_key("--locked") {
-                verify_lock(&compilation.product, &lock_path).map_err(|e| e.to_string())?;
-            }
-            let source = serde_json::to_string_pretty(compilation.product.source())
-                .map_err(|e| e.to_string())?
-                + "\n";
-            write_text(output, &source).map_err(|e| e.to_string())?;
-            if !flags.contains_key("--locked") {
-                write_text(
-                    &lock_path,
-                    &(serde_json::to_string_pretty(compilation.product.lock())
-                        .map_err(|e| e.to_string())?
-                        + "\n"),
-                )
-                .map_err(|e| e.to_string())?;
-            }
-            let analysis = serde_json::json!({"artifact_id":compilation.product.artifact_id(),"graphs":compilation.product.analysis(),"diagnostics":compilation.diagnostics});
-            write_text(
-                &output.with_extension("analysis.json"),
-                &(serde_json::to_string_pretty(&analysis).map_err(|e| e.to_string())? + "\n"),
-            )
-            .map_err(|e| e.to_string())?;
-            println!("{}", compilation.product.artifact_id());
-        }
-        "validate" | "inspect" => {
-            options(&args[2..], &[])?;
-            let c = load_bundle(path).map_err(|e| e.to_string())?;
-            let out = serde_json::json!({"lock":c.product.lock(),"graphs":c.product.analysis(),"diagnostics":c.diagnostics});
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?
-            );
-        }
-        "run" => {
-            let flags = options(&args[2..], &["--actions", "--load", "--save", "--checkout"])?;
-            let product = Arc::new(load_bundle(path).map_err(|e| e.to_string())?.product);
-            let mut session = if let Some(load) = flags.get("--load") {
-                Session::restore(
-                    product,
-                    &read_text(Path::new(load)).map_err(|e| e.to_string())?,
-                )
-            } else {
-                Session::new(product)
-            }
-            .map_err(|e| e.to_string())?;
-            if let Some(commit) = flags.get("--checkout") {
-                session.checkout(commit).map_err(|e| e.to_string())?;
-            }
-            if let Some(actions) = flags.get("--actions") {
-                for action in actions.split(',').filter(|v| !v.is_empty()) {
-                    let cursor = session.cursor().map_err(|e| e.to_string())?.to_owned();
-                    session.select(&cursor, action).map_err(|e| e.to_string())?;
+        "compose" => compose_command(path, rest),
+        "ids" => {
+            options(rest, &[], &[])?;
+            let mut project = load_project(path).map_err(text)?;
+            let taken = project.source.packages.values().flat_map(ids::package_ids);
+            let mut minter = ids::Minter::new(taken.collect::<Vec<_>>());
+            for (alias, package) in &mut project.source.packages {
+                let before = minter.minted;
+                ids::fill(package, &mut minter).map_err(text)?;
+                if minter.minted > before
+                    && let Some(path) = project.package_paths.get(alias)
+                {
+                    write_text(path, &pretty(package).map_err(text)?).map_err(text)?;
                 }
             }
-            if let Some(save) = flags.get("--save") {
-                write_text(Path::new(save), &session.save().map_err(|e| e.to_string())?)
-                    .map_err(|e| e.to_string())?;
-            }
+            println!("minted {} IDs", minter.minted);
+            Ok(())
+        }
+        "inspect" => {
+            options(rest, &[], &[])?;
+            let (program, names) = open_pack(path).map_err(text)?;
             println!(
                 "{}",
-                serde_json::to_string_pretty(&session.view().map_err(|e| e.to_string())?)
-                    .map_err(|e| e.to_string())?
+                pretty(&inspect(&program, names.as_ref()).map_err(text)?).map_err(text)?
+            );
+            Ok(())
+        }
+        "run" => run_command(path, rest),
+        "migrate-r1" => migrate_command(path, rest),
+        _ => Err(usage().into()),
+    }
+}
+
+fn compose_command(path: &Path, args: &[String]) -> std::result::Result<(), String> {
+    let flags = options(args, &["--out"], &["--locked"])?;
+    let output = Path::new(one(&flags, "--out").ok_or("compose requires --out <story.narpack>")?);
+    let locked = flags.contains_key("--locked");
+    let mut project = load_project(path).map_err(text)?;
+    let previous = if output.exists() {
+        Some(read_bytes(output).map_err(text)?)
+    } else {
+        None
+    };
+    let composed = compose(&mut project, previous.as_deref(), locked).map_err(text)?;
+    if !composed.compared {
+        eprintln!(
+            "no previous artifact at {}; tombstone checks skipped",
+            output.display()
+        );
+    }
+    for (alias, id) in &composed.appended {
+        eprintln!("tombstone appended to {alias}: {id}");
+    }
+    let compilation = &composed.compilation;
+    if locked {
+        verify_lock(&compilation.lock, &project).map_err(text)?;
+    }
+    write_bytes(output, &compilation.pack).map_err(text)?;
+    if !locked {
+        write_text(
+            &project.lock_path(),
+            &pretty(&compilation.lock).map_err(text)?,
+        )
+        .map_err(text)?;
+    }
+    write_text(
+        &output.with_extension("analysis.json"),
+        &pretty(&compilation.analysis).map_err(text)?,
+    )
+    .map_err(text)?;
+    for diagnostic in &compilation.diagnostics {
+        eprintln!(
+            "{}: {} ({})",
+            diagnostic.code, diagnostic.message, diagnostic.path
+        );
+    }
+    println!("{}", compilation.program.artifact_id());
+    Ok(())
+}
+
+fn run_command(path: &Path, args: &[String]) -> std::result::Result<(), String> {
+    let flags = options(
+        args,
+        &[
+            "--content",
+            "--language",
+            "--actions",
+            "--load",
+            "--save",
+            "--checkout",
+            "--execution",
+        ],
+        &[],
+    )?;
+    let (program, names) = open_pack(path).map_err(text)?;
+    let mut session = match one(&flags, "--load") {
+        Some(load) => Session::restore(program, &read_text(Path::new(load)).map_err(text)?),
+        None => new_session(program, one(&flags, "--execution")),
+    }
+    .map_err(text)?;
+    if let Some(commit) = one(&flags, "--checkout") {
+        let commit = commit
+            .parse()
+            .map_err(|_| "--checkout expects commit:<64 hex digits>".to_owned())?;
+        session.checkout(&commit).map_err(text)?;
+    }
+    if let Some(actions) = one(&flags, "--actions") {
+        act(&mut session, names.as_ref(), actions).map_err(text)?;
+    }
+    if let Some(save) = one(&flags, "--save") {
+        write_text(Path::new(save), &session.export().map_err(text)?).map_err(text)?;
+    }
+    match flags.get("--content") {
+        Some(paths) => {
+            let content = load_content(paths).map_err(text)?;
+            let languages = one(&flags, "--language")
+                .map(str::to_owned)
+                .into_iter()
+                .collect();
+            println!(
+                "{}",
+                render(&session, names.as_ref(), &content, languages).map_err(text)?
             );
         }
-        _ => return Err(usage().into()),
+        None => println!(
+            "{}",
+            pretty(&book(&session, names.as_ref()).map_err(text)?).map_err(text)?
+        ),
     }
     Ok(())
 }
 
+/// Converts an R1 project (`migrate-r1 <project.json> --out <directory>`) or migrates an R1
+/// save onto a migrated pack (`migrate-r1 <pack> --save <save.json> --content <pack.json>
+/// --out <export.json>`).
+fn migrate_command(path: &Path, args: &[String]) -> std::result::Result<(), String> {
+    let flags = options(
+        args,
+        &["--out", "--language", "--save", "--content", "--execution"],
+        &[],
+    )?;
+    let output = Path::new(one(&flags, "--out").ok_or("migrate-r1 requires --out")?);
+    if let Some(save) = one(&flags, "--save") {
+        let (program, names) = open_pack(path).map_err(text)?;
+        let names = names.ok_or("the pack has no name table")?;
+        let content = load_content(
+            flags
+                .get("--content")
+                .ok_or("save migration requires --content <pack.json>")?,
+        )
+        .map_err(text)?;
+        let execution = match one(&flags, "--execution") {
+            Some(id) => id
+                .parse()
+                .map_err(|_| "--execution expects execution:<32 hex digits>".to_owned())?,
+            None => ids::execution_id().map_err(text)?,
+        };
+        let ref_text =
+            |reference: &narrata_kernel::content::ContentRef| content.text(reference, &[]);
+        let session = narrata_nodes::r1::migrate_save(
+            program,
+            &names,
+            &read_text(Path::new(save)).map_err(text)?,
+            execution,
+            &ref_text,
+        )
+        .map_err(text)?;
+        write_text(output, &session.export().map_err(text)?).map_err(text)?;
+        println!("{}", session.cursor().map_err(text)?);
+        return Ok(());
+    }
+    let language = one(&flags, "--language").unwrap_or("zh-Hans");
+    let loaded = r1::load(path).map_err(text)?;
+    let mut minter = ids::Minter::new(Vec::<AuthoredId>::new());
+    let migrated = loaded.migrate(language, &mut minter).map_err(text)?;
+    for (alias, relative) in &migrated.manifest.packages {
+        if let Some(package) = migrated.packages.get(alias) {
+            write_text(&output.join(relative), &pretty(package).map_err(text)?).map_err(text)?;
+        }
+    }
+    write_text(
+        &output.join("project.json"),
+        &pretty(&migrated.manifest).map_err(text)?,
+    )
+    .map_err(text)?;
+    write_text(
+        &output.join("content").join(format!("{language}.json")),
+        &pretty(&migrated.content).map_err(text)?,
+    )
+    .map_err(text)?;
+    println!("{}", hex::encode(loaded.artifact_id().map_err(text)?.0));
+    Ok(())
+}
+
+/// A readable JSON description of a pack: the manifest, and every graph's plans keyed by
+/// alias when the name table is present.
+pub fn inspect(program: &Program, names: Option<&NameTable>) -> Result<serde_json::Value> {
+    let manifest = program.manifest();
+    let product = &manifest.product;
+    let mut graphs = Vec::new();
+    for (reference, entry) in &manifest.graphs {
+        let graph = program.graph(reference)?;
+        let nodes: serde_json::Map<String, serde_json::Value> = graph
+            .nodes
+            .iter()
+            .map(|(id, plan)| {
+                let key = names
+                    .and_then(|names| names.node(reference, id))
+                    .map_or_else(|| id.to_string(), str::to_owned);
+                Ok((
+                    key,
+                    serde_json::json!({"id": id, "plan": serde_json::to_value(plan).map_err(|e| Error::new("encoding", "plan", e.to_string()))?}),
+                ))
+            })
+            .collect::<Result<_>>()?;
+        graphs.push(serde_json::json!({
+            "reference": reference,
+            "exported": entry.exported,
+            "chunk": manifest.chunks.get(entry.chunk as usize),
+            "parameters": entry.signature.parameters,
+            "outcomes": entry.signature.outcomes,
+            "entry": graph.header.entry,
+            "nodes": nodes,
+        }));
+    }
+    let analysis = analyze(program, names)?;
+    Ok(serde_json::json!({
+        "artifact_id": program.artifact_id(),
+        "migrated_from_r1": names.and_then(|names| names.migrated_from_r1),
+        "product": {
+            "id": product.id,
+            "title": product.title,
+            "entry": product.entry,
+            "arguments": product.arguments,
+            "shared": product.shared.iter().map(|(name, variable)| (name.clone(), serde_json::json!({"value": variable.value, "label": variable.label}))).collect::<serde_json::Map<_, _>>(),
+            "endings": product.endings.iter().map(|(outcome, ending)| (outcome.clone(), serde_json::json!({"title": ending.title, "body": ending.body}))).collect::<serde_json::Map<_, _>>(),
+            "bindings": product.bindings.iter().map(|(from, to): (_, &GraphRef)| serde_json::json!({"from": from, "to": to})).collect::<Vec<_>>(),
+        },
+        "packages": manifest.packages.iter().map(|(alias, package)| (alias.clone(), serde_json::json!({"id": package.id, "version": package.version}))).collect::<serde_json::Map<_, _>>(),
+        "node_types": manifest.node_types,
+        "tombstones": program.tombstones().iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+        "graphs": graphs,
+        "diagnostics": analysis.diagnostics,
+    }))
+}
+
 pub fn usage() -> &'static str {
-    "narrata-book compose <project.json> --out <bundle.json> [--locked]\n\
-     narrata-book validate|inspect <bundle.json>\n\
-     narrata-book run <bundle.json> [--actions a,b] [--load save.json] [--save save.json] [--checkout commit]\n\
+    "narrata-book compose <project.json> --out <story.narpack> [--locked]\n\
+     narrata-book ids <project.json>\n\
+     narrata-book inspect <story.narpack>\n\
+     narrata-book run <story.narpack> [--content <pack.json>]... [--language <tag>] [--actions a,b+c,~]\n\
+     \x20                [--load export.json] [--save export.json] [--checkout commit] [--execution id]\n\
+     narrata-book migrate-r1 <r1-project.json> --out <directory> [--language <tag>]\n\
+     narrata-book migrate-r1 <story.narpack> --save <r1-save.json> --content <pack.json> --out <export.json> [--execution id]\n\
      narrata-book schemas --out <directory>\n\
      These commands are also available as narrata gamebook <command>."
 }

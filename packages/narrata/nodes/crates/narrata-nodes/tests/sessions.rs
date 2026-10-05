@@ -228,14 +228,46 @@ fn too_few_available_options_report_no_actions() {
 fn the_page_collects_everything_since_the_passage_was_entered() {
     let compilation = compiled();
     let (mut session, names) = session(&compilation);
+    let root = session.cursor().unwrap();
     choose(&mut session, &names, &["wave"]).unwrap();
+    let waved = session.cursor().unwrap();
     choose(&mut session, &names, &["rope"]).unwrap();
+    let packed = session.cursor().unwrap();
     let page = session.page().unwrap();
     assert_eq!(page.len(), 6);
     assert_eq!(page[0].role, Role::Title);
+    // Each item keeps its own presentation key.
     assert_eq!(
-        page.iter().map(|item| item.occurrence).collect::<Vec<_>>(),
-        (0..6).collect::<Vec<_>>()
+        page.iter()
+            .map(|item| (item.commit, item.occurrence))
+            .collect::<Vec<_>>(),
+        vec![
+            (root, 0),
+            (root, 1),
+            (waved, 0),
+            (waved, 1),
+            (packed, 0),
+            (packed, 1)
+        ]
+    );
+    assert_eq!(session.presentation(&waved).unwrap(), page[2..4].to_vec());
+}
+
+#[test]
+fn a_page_starts_with_the_step_that_entered_the_passage() {
+    let compilation = compiled();
+    let (mut session, names) = session(&compilation);
+    choose(&mut session, &names, &["nod"]).unwrap();
+    choose(&mut session, &names, &[]).unwrap();
+    choose(&mut session, &names, &["left"]).unwrap();
+    let page = session.page().unwrap();
+    // Leaving the gate by a branch presents nothing more of it; the called passage follows.
+    assert_eq!(
+        shown(&page),
+        vec![
+            (Role::Title, Presented::Ref(local("side.talk.title"))),
+            (Role::Body, segment_of("side.talk", None, None)),
+        ]
     );
 }
 

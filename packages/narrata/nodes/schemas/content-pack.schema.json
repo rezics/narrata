@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContentPack",
+  "type": "object",
+  "properties": {
+    "entries": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^\\u0000-\\u001f\\u007f-\\u009f]+$": {
+          "$ref": "#/$defs/Entry"
+        }
+      }
+    },
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "language": {
+      "description": "A BCP 47 language tag.",
+      "type": "string"
+    },
+    "provider": {
+      "$ref": "#/$defs/ProviderId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "provider",
+    "language",
+    "entries"
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "Block": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/AnchorId"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "text"
+          ]
+        },
+        {
+          "description": "Where a choice point appears in the unit; it has no text.",
+          "type": "object",
+          "properties": {
+            "choice_point": {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            "id": {
+              "$ref": "#/$defs/AnchorId"
+            }
+          },
+          "required": [
+            "id",
+            "choice_point"
+          ]
+        }
+      ]
+    },
+    "BlocksEntry": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "blocks"
+      ]
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "Entry": {
+      "description": "A short text, or a unit of blocks that body segments address by anchor.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TextEntry"
+        },
+        {
+          "$ref": "#/$defs/BlocksEntry"
+        }
+      ]
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "TextEntry": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "description": "`{name}` is replaced by the named argument; `{{` and `}}` are literal braces.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ]
+    }
+  }
+}

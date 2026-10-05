@@ -11,14 +11,23 @@ use crate::{
     expr::{Values, expect},
     plan::{GraphRef, NameTable, Outcome, Passage, Plan},
     state::{Finished, Frame, Input, State, check_input, check_size},
-    view::{Interaction, OptionView, OutcomeKind, PresentationItem, Presented, Role},
+    view::{Interaction, OptionView, OutcomeKind, Presented, Role},
 };
+
+/// A presentation item before it is tied to the commit that the step becomes.
+#[derive(Clone, Debug)]
+pub(crate) struct Item {
+    pub role: Role,
+    pub node: NodeId,
+    pub content: Presented,
+    pub args: BTreeMap<String, ViewScalar>,
+}
 
 /// The result of running one input (or of starting the story).
 #[derive(Clone, Debug)]
 pub(crate) struct Step {
     pub state: State,
-    pub presentation: Vec<PresentationItem>,
+    pub presentation: Vec<Item>,
     /// Whether the passage the step stops in was entered during this step, rather than
     /// continued after a local choice.
     pub entered: bool,
@@ -26,7 +35,7 @@ pub(crate) struct Step {
 
 struct Work {
     state: State,
-    items: Vec<PresentationItem>,
+    items: Vec<Item>,
     steps: u32,
     entered: bool,
 }
@@ -74,8 +83,7 @@ impl Work {
         content: Presented,
         args: &BTreeMap<String, ViewScalar>,
     ) {
-        self.items.push(PresentationItem {
-            occurrence: self.items.len() as u32,
+        self.items.push(Item {
             role,
             node,
             content,

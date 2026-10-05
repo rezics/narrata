@@ -2,7 +2,7 @@
   "format_version": 1,
   "id": "narrata.tooling",
   "version": "0.1.0-alpha.1",
-  "implementation": "crates/narrata-node-tools/Cargo.toml",
-  "provides": ["gamebook-compose.v1", "gamebook-cli.v1"],
+  "implementations": ["crates/narrata-node-tools/Cargo.toml", "crates/narrata-content-local/Cargo.toml"],
+  "provides": ["gamebook-compose.v2", "gamebook-cli.v2", "content-local.v1"],
   "requires": ["narrata.nodes"]
 }

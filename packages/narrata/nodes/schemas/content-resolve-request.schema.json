@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResolveRequest",
+  "type": "object",
+  "properties": {
+    "context": {
+      "$ref": "#/$defs/ResolveContext"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ResolveItem"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "context",
+    "items"
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "Content": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Segment"
+        },
+        {
+          "$ref": "#/$defs/ContentRef"
+        }
+      ]
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "ResolveContext": {
+      "type": "object",
+      "properties": {
+        "languages": {
+          "description": "Preferred languages, most preferred first.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolveItem": {
+      "type": "object",
+      "properties": {
+        "args": {
+          "description": "The values `{name}` placeholders take; `ref` values are resolved to their text.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ViewScalar"
+          }
+        },
+        "content": {
+          "$ref": "#/$defs/Content"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "content"
+      ]
+    },
+    "Segment": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/ContentRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "unit"
+      ]
+    },
+    "ViewScalar": {
+      "description": "Exchange form of a value. Integers are decimal strings so that 64-bit values survive\nJavaScript; `ref` values are resolved by the host's content provider.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "int"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ref"
+            },
+            "value": {
+              "$ref": "#/$defs/ContentRef"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        }
+      ]
+    }
+  }
+}

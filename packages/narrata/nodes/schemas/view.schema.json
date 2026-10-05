@@ -407,7 +407,7 @@
       ]
     },
     "PresentationItem": {
-      "description": "One item to present. Together with the execution and the commit, `occurrence` forms the\npresentation key that generative content providers cache by.",
+      "description": "One item to present. `(execution, commit, occurrence)` is the presentation key that\ngenerative content providers cache by.",
       "type": "object",
       "properties": {
         "args": {
@@ -417,6 +417,10 @@
             "$ref": "#/$defs/ViewScalar"
           }
         },
+        "commit": {
+          "description": "The commit whose step presented the item.",
+          "$ref": "#/$defs/CommitId"
+        },
         "content": {
           "$ref": "#/$defs/Presented"
         },
@@ -424,6 +428,7 @@
           "$ref": "#/$defs/NodeId"
         },
         "occurrence": {
+          "description": "The item's position in that commit's presentation.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0
@@ -434,6 +439,7 @@
       },
       "additionalProperties": false,
       "required": [
+        "commit",
         "occurrence",
         "role",
         "node",

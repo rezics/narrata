@@ -4,66 +4,207 @@
   "exports": [
     "visit"
   ],
-  "content": {
-    "fire": {
-      "title": "篝火夜谈",
-      "paragraphs": [
-        "{{parameter.visitor}}在火边坐下。守火老人用树枝拨了拨炭，把空出来的地方让给你。",
-        "这次停留，老人已招呼过你 {{local.greetings}} 次。袋中还剩 {{shared.rations}} 份干粮；此前你在这里歇过 {{shared.rests}} 次脚。"
-      ]
-    },
-    "letter": {
-      "title": "老者的信",
-      "paragraphs": [
-        "老人从衣襟里取出信，抚平封口上的折痕。信封上没有名字，只画着山口石门的轮廓。",
-        "“交到守门人的手里就好。”他说完，便把目光移回火上。"
-      ]
-    },
-    "rest": {
-      "title": "整理行囊",
-      "paragraphs": [
-        "你吃了一份干粮，等湿透的衣袖慢慢烤干。老人替你收紧背带，提醒你沿途当心落石。",
-        "天边还留着一点亮色。现在可以重新上路了。"
-      ]
-    }
-  },
   "graphs": {
     "visit": {
-      "title": "营地互动",
+      "title": {
+        "provider": "local",
+        "key": "camp.visit:title"
+      },
       "parameters": {
-        "visitor": "text"
+        "visitor": "ref"
       },
       "locals": {
         "greetings": 0
       },
       "shared": {
-        "rations": "int",
         "letter": "bool",
+        "rations": "int",
         "rests": "int"
       },
-      "entry": "greet",
+      "imports": {},
       "outcomes": [
         "left",
         "rested"
       ],
+      "entry": "greet",
       "nodes": {
+        "fire": {
+          "id": "node:01a1095c2e437e0b8af31a3db12e31bc",
+          "type_id": "narrata.passage",
+          "data": {
+            "args": {
+              "greetings": {
+                "kind": "read",
+                "name": "greetings",
+                "scope": "local"
+              },
+              "rations": {
+                "kind": "read",
+                "name": "rations",
+                "scope": "shared"
+              },
+              "rests": {
+                "kind": "read",
+                "name": "rests",
+                "scope": "shared"
+              },
+              "visitor": {
+                "kind": "read",
+                "name": "visitor",
+                "scope": "parameter"
+              }
+            },
+            "body": {
+              "unit": {
+                "key": "camp.fire",
+                "provider": "local"
+              }
+            },
+            "choice_points": [
+              {
+                "id": "choice-point:01a1095c2e437906a3ba76615e3fb798",
+                "key": "choice",
+                "options": [
+                  {
+                    "effects": [
+                      {
+                        "target": {
+                          "name": "letter",
+                          "scope": "shared"
+                        },
+                        "value": {
+                          "kind": "literal",
+                          "value": true
+                        }
+                      }
+                    ],
+                    "id": "option:01a1095c2e437c3db0ff5007061fc7c1",
+                    "key": "letter",
+                    "label": {
+                      "key": "camp.visit:fire.letter.label",
+                      "provider": "local"
+                    },
+                    "outcome": {
+                      "kind": "branch",
+                      "target": "letter"
+                    },
+                    "visible_if": {
+                      "kind": "not",
+                      "value": {
+                        "kind": "read",
+                        "name": "letter",
+                        "scope": "shared"
+                      }
+                    }
+                  },
+                  {
+                    "effects": [
+                      {
+                        "target": {
+                          "name": "rations",
+                          "scope": "shared"
+                        },
+                        "value": {
+                          "kind": "binary",
+                          "left": {
+                            "kind": "read",
+                            "name": "rations",
+                            "scope": "shared"
+                          },
+                          "op": "sub",
+                          "right": {
+                            "kind": "literal",
+                            "value": 1
+                          }
+                        }
+                      },
+                      {
+                        "target": {
+                          "name": "rests",
+                          "scope": "shared"
+                        },
+                        "value": {
+                          "kind": "binary",
+                          "left": {
+                            "kind": "read",
+                            "name": "rests",
+                            "scope": "shared"
+                          },
+                          "op": "add",
+                          "right": {
+                            "kind": "literal",
+                            "value": 1
+                          }
+                        }
+                      }
+                    ],
+                    "enabled_if": {
+                      "kind": "binary",
+                      "left": {
+                        "kind": "read",
+                        "name": "rations",
+                        "scope": "shared"
+                      },
+                      "op": "gt",
+                      "right": {
+                        "kind": "literal",
+                        "value": 0
+                      }
+                    },
+                    "id": "option:01a1095c2e437518aa2500bb3c34f80c",
+                    "key": "rest",
+                    "label": {
+                      "key": "camp.visit:fire.rest.label",
+                      "provider": "local"
+                    },
+                    "outcome": {
+                      "kind": "branch",
+                      "target": "rest"
+                    },
+                    "reason": {
+                      "key": "camp.visit:fire.rest.reason",
+                      "provider": "local"
+                    }
+                  },
+                  {
+                    "id": "option:01a1095c2e437b90a32461379f3ccdda",
+                    "key": "leave",
+                    "label": {
+                      "key": "camp.visit:fire.leave.label",
+                      "provider": "local"
+                    },
+                    "outcome": {
+                      "kind": "branch",
+                      "target": "left"
+                    }
+                  }
+                ]
+              }
+            ],
+            "title": {
+              "key": "camp.fire.title",
+              "provider": "local"
+            }
+          }
+        },
         "greet": {
+          "id": "node:01a1095c2e4376e19bd2f11b94bc9329",
           "type_id": "narrata.mutate",
           "data": {
             "assignments": [
               {
                 "target": {
-                  "scope": "local",
-                  "name": "greetings"
+                  "name": "greetings",
+                  "scope": "local"
                 },
                 "value": {
                   "kind": "binary",
-                  "op": "add",
                   "left": {
                     "kind": "read",
-                    "scope": "local",
-                    "name": "greetings"
+                    "name": "greetings",
+                    "scope": "local"
                   },
+                  "op": "add",
                   "right": {
                     "kind": "literal",
                     "value": 1
@@ -74,126 +215,87 @@
             "next": "fire"
           }
         },
-        "fire": {
-          "type_id": "narrata.decision",
-          "data": {
-            "content": "fire",
-            "choices": [
-              {
-                "id": "letter",
-                "label": "询问老人留下的信",
-                "visible_if": {
-                  "kind": "not",
-                  "value": {
-                    "kind": "read",
-                    "scope": "shared",
-                    "name": "letter"
-                  }
-                },
-                "assignments": [
-                  {
-                    "target": {
-                      "scope": "shared",
-                      "name": "letter"
-                    },
-                    "value": {
-                      "kind": "literal",
-                      "value": true
-                    }
-                  }
-                ],
-                "target": "letter"
-              },
-              {
-                "id": "rest",
-                "label": "吃一份干粮，在火边歇脚",
-                "enabled_if": {
-                  "kind": "binary",
-                  "op": "gt",
-                  "left": {
-                    "kind": "read",
-                    "scope": "shared",
-                    "name": "rations"
-                  },
-                  "right": {
-                    "kind": "literal",
-                    "value": 0
-                  }
-                },
-                "disabled_reason": "干粮已经用完",
-                "assignments": [
-                  {
-                    "target": {
-                      "scope": "shared",
-                      "name": "rations"
-                    },
-                    "value": {
-                      "kind": "binary",
-                      "op": "sub",
-                      "left": {
-                        "kind": "read",
-                        "scope": "shared",
-                        "name": "rations"
-                      },
-                      "right": {
-                        "kind": "literal",
-                        "value": 1
-                      }
-                    }
-                  },
-                  {
-                    "target": {
-                      "scope": "shared",
-                      "name": "rests"
-                    },
-                    "value": {
-                      "kind": "binary",
-                      "op": "add",
-                      "left": {
-                        "kind": "read",
-                        "scope": "shared",
-                        "name": "rests"
-                      },
-                      "right": {
-                        "kind": "literal",
-                        "value": 1
-                      }
-                    }
-                  }
-                ],
-                "target": "rest"
-              },
-              {
-                "id": "leave",
-                "label": "收拾行囊，回到驿站",
-                "target": "left"
-              }
-            ]
-          }
-        },
-        "letter": {
-          "type_id": "narrata.content",
-          "data": {
-            "content": "letter",
-            "label": "收好信，回到篝火旁",
-            "next": "fire"
-          }
-        },
-        "rest": {
-          "type_id": "narrata.content",
-          "data": {
-            "content": "rest",
-            "label": "向老人告别",
-            "next": "rested"
-          }
-        },
         "left": {
+          "id": "node:01a1095c2e437bbe963d941a568b0ee3",
           "type_id": "narrata.return",
           "data": {
             "outcome": "left"
           }
         },
+        "letter": {
+          "id": "node:01a1095c2e437ef2b3a496c12a47d840",
+          "type_id": "narrata.passage",
+          "data": {
+            "body": {
+              "unit": {
+                "key": "camp.letter",
+                "provider": "local"
+              }
+            },
+            "choice_points": [
+              {
+                "id": "choice-point:01a1095c2e43715b9ced15ec2498f4cc",
+                "key": "choice",
+                "options": [
+                  {
+                    "id": "option:01a1095c2e437892be733513159087c4",
+                    "key": "continue",
+                    "label": {
+                      "key": "camp.visit:letter.continue.label",
+                      "provider": "local"
+                    },
+                    "outcome": {
+                      "kind": "branch",
+                      "target": "fire"
+                    }
+                  }
+                ]
+              }
+            ],
+            "title": {
+              "key": "camp.letter.title",
+              "provider": "local"
+            }
+          }
+        },
+        "rest": {
+          "id": "node:01a1095c2e437b029d160d108c77f7ee",
+          "type_id": "narrata.passage",
+          "data": {
+            "body": {
+              "unit": {
+                "key": "camp.rest",
+                "provider": "local"
+              }
+            },
+            "choice_points": [
+              {
+                "id": "choice-point:01a1095c2e437452883ff98911ddbf7a",
+                "key": "choice",
+                "options": [
+                  {
+                    "id": "option:01a1095c2e43777699cd5d89668ddff7",
+                    "key": "continue",
+                    "label": {
+                      "key": "camp.visit:rest.continue.label",
+                      "provider": "local"
+                    },
+                    "outcome": {
+                      "kind": "branch",
+                      "target": "rested"
+                    }
+                  }
+                ]
+              }
+            ],
+            "title": {
+              "key": "camp.rest.title",
+              "provider": "local"
+            }
+          }
+        },
         "rested": {
+          "id": "node:01a1095c2e437543b09e3946372eef5d",
           "type_id": "narrata.return",
           "data": {
             "outcome": "rested"

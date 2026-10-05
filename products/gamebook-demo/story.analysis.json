@@ -1,0 +1,481 @@
+{
+  "artifact_id": "artifact:705163c2d401e60115dce5bd457d8e31d77b275ff155205cbefd58a6cf68f7d9",
+  "graphs": [
+    {
+      "reference": {
+        "package": "camp",
+        "graph": "visit"
+      },
+      "title": {
+        "provider": "local",
+        "key": "camp.visit:title"
+      },
+      "entry": "node:01a1095c2e4376e19bd2f11b94bc9329",
+      "exported": true,
+      "nodes": [
+        {
+          "id": "node:01a1095c2e437543b09e3946372eef5d",
+          "key": "rested",
+          "kind": "return",
+          "outcome": "rested",
+          "edges": []
+        },
+        {
+          "id": "node:01a1095c2e4376e19bd2f11b94bc9329",
+          "key": "greet",
+          "kind": "mutate",
+          "edges": [
+            {
+              "kind": "next",
+              "target": {
+                "package": "camp",
+                "graph": "visit",
+                "node": "node:01a1095c2e437e0b8af31a3db12e31bc"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e437b029d160d108c77f7ee",
+          "key": "rest",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "camp.rest.title"
+          },
+          "edges": [
+            {
+              "kind": "choice",
+              "key": "continue",
+              "label": {
+                "provider": "local",
+                "key": "camp.visit:rest.continue.label"
+              },
+              "target": {
+                "package": "camp",
+                "graph": "visit",
+                "node": "node:01a1095c2e437543b09e3946372eef5d"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e437bbe963d941a568b0ee3",
+          "key": "left",
+          "kind": "return",
+          "outcome": "left",
+          "edges": []
+        },
+        {
+          "id": "node:01a1095c2e437e0b8af31a3db12e31bc",
+          "key": "fire",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "camp.fire.title"
+          },
+          "edges": [
+            {
+              "kind": "choice",
+              "key": "letter",
+              "label": {
+                "provider": "local",
+                "key": "camp.visit:fire.letter.label"
+              },
+              "target": {
+                "package": "camp",
+                "graph": "visit",
+                "node": "node:01a1095c2e437ef2b3a496c12a47d840"
+              }
+            },
+            {
+              "kind": "choice",
+              "key": "rest",
+              "label": {
+                "provider": "local",
+                "key": "camp.visit:fire.rest.label"
+              },
+              "target": {
+                "package": "camp",
+                "graph": "visit",
+                "node": "node:01a1095c2e437b029d160d108c77f7ee"
+              }
+            },
+            {
+              "kind": "choice",
+              "key": "leave",
+              "label": {
+                "provider": "local",
+                "key": "camp.visit:fire.leave.label"
+              },
+              "target": {
+                "package": "camp",
+                "graph": "visit",
+                "node": "node:01a1095c2e437bbe963d941a568b0ee3"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e437ef2b3a496c12a47d840",
+          "key": "letter",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "camp.letter.title"
+          },
+          "edges": [
+            {
+              "kind": "choice",
+              "key": "continue",
+              "label": {
+                "provider": "local",
+                "key": "camp.visit:letter.continue.label"
+              },
+              "target": {
+                "package": "camp",
+                "graph": "visit",
+                "node": "node:01a1095c2e437e0b8af31a3db12e31bc"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "reference": {
+        "package": "main",
+        "graph": "journey"
+      },
+      "title": {
+        "provider": "local",
+        "key": "main.journey:title"
+      },
+      "entry": "node:01a1095c2e437b9e9de51d9d951a1e2c",
+      "exported": true,
+      "nodes": [
+        {
+          "id": "node:01a1095c2e43745d8de74c7a20d4e25d",
+          "key": "camp",
+          "kind": "call",
+          "callee": {
+            "package": "camp",
+            "graph": "visit"
+          },
+          "edges": [
+            {
+              "kind": "return",
+              "key": "left",
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e437b9e9de51d9d951a1e2c"
+              }
+            },
+            {
+              "kind": "return",
+              "key": "rested",
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e437b9e9de51d9d951a1e2c"
+              }
+            },
+            {
+              "kind": "call",
+              "target": {
+                "package": "camp",
+                "graph": "visit",
+                "node": "node:01a1095c2e4376e19bd2f11b94bc9329"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e4377c3b19d2d0379951e5b",
+          "key": "arrived",
+          "kind": "return",
+          "outcome": "arrived",
+          "edges": []
+        },
+        {
+          "id": "node:01a1095c2e437b9e9de51d9d951a1e2c",
+          "key": "station",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "main.station.title"
+          },
+          "edges": [
+            {
+              "kind": "choice",
+              "key": "road",
+              "label": {
+                "provider": "local",
+                "key": "main.journey:station.road.label"
+              },
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e437cb3adf31442154f39a4"
+              }
+            },
+            {
+              "kind": "choice",
+              "key": "camp",
+              "label": {
+                "provider": "local",
+                "key": "main.journey:station.camp.label"
+              },
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e43745d8de74c7a20d4e25d"
+              }
+            },
+            {
+              "kind": "choice",
+              "key": "ledger",
+              "label": {
+                "provider": "local",
+                "key": "main.journey:station.ledger.label"
+              },
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095ca7f87b788bdafb59c9031889"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e437cb3adf31442154f39a4",
+          "key": "road",
+          "kind": "call",
+          "callee": {
+            "package": "road",
+            "graph": "crossing"
+          },
+          "edges": [
+            {
+              "kind": "return",
+              "key": "crossed",
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e437f11bd35937bb860612d"
+              }
+            },
+            {
+              "kind": "return",
+              "key": "retreated",
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e437b9e9de51d9d951a1e2c"
+              }
+            },
+            {
+              "kind": "call",
+              "target": {
+                "package": "road",
+                "graph": "crossing",
+                "node": "node:01a1095c2e43768780152bc61c64951c"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e437cc1bdfa2c6bbc6e529b",
+          "key": "delivered",
+          "kind": "return",
+          "outcome": "delivered",
+          "edges": []
+        },
+        {
+          "id": "node:01a1095c2e437f11bd35937bb860612d",
+          "key": "gate",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "main.gate.title"
+          },
+          "edges": [
+            {
+              "kind": "choice",
+              "key": "deliver",
+              "label": {
+                "provider": "local",
+                "key": "main.journey:gate.deliver.label"
+              },
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e437cc1bdfa2c6bbc6e529b"
+              }
+            },
+            {
+              "kind": "choice",
+              "key": "arrive",
+              "label": {
+                "provider": "local",
+                "key": "main.journey:gate.arrive.label"
+              },
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e4377c3b19d2d0379951e5b"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095ca7f87b788bdafb59c9031889",
+          "key": "ledger",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "main.ledger.title"
+          },
+          "edges": [
+            {
+              "kind": "next",
+              "target": {
+                "package": "main",
+                "graph": "journey",
+                "node": "node:01a1095c2e437b9e9de51d9d951a1e2c"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "reference": {
+        "package": "road",
+        "graph": "crossing"
+      },
+      "title": {
+        "provider": "local",
+        "key": "road.crossing:title"
+      },
+      "entry": "node:01a1095c2e43768780152bc61c64951c",
+      "exported": true,
+      "nodes": [
+        {
+          "id": "node:01a1095c2e4371e4a87f44627bda7b31",
+          "key": "trail",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "road.trail.title"
+          },
+          "edges": [
+            {
+              "kind": "choice",
+              "key": "continue",
+              "label": {
+                "provider": "local",
+                "key": "road.crossing:trail.continue.label"
+              },
+              "target": {
+                "package": "road",
+                "graph": "crossing",
+                "node": "node:01a1095c2e43771ca52d99cc33516245"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e43768780152bc61c64951c",
+          "key": "rocks",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "road.rocks.title"
+          },
+          "edges": [
+            {
+              "kind": "choice",
+              "key": "help",
+              "label": {
+                "provider": "local",
+                "key": "road.crossing:rocks.help.label"
+              },
+              "target": {
+                "package": "road",
+                "graph": "crossing",
+                "node": "node:01a1095c2e4371e4a87f44627bda7b31"
+              }
+            },
+            {
+              "kind": "choice",
+              "key": "alone",
+              "label": {
+                "provider": "local",
+                "key": "road.crossing:rocks.alone.label"
+              },
+              "target": {
+                "package": "road",
+                "graph": "crossing",
+                "node": "node:01a1095c2e43797a9c29a5f3850c689a"
+              }
+            },
+            {
+              "kind": "choice",
+              "key": "retreat",
+              "label": {
+                "provider": "local",
+                "key": "road.crossing:rocks.retreat.label"
+              },
+              "target": {
+                "package": "road",
+                "graph": "crossing",
+                "node": "node:01a1095c2e437bafaa84365ad08aafa1"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e43771ca52d99cc33516245",
+          "key": "crossed",
+          "kind": "return",
+          "outcome": "crossed",
+          "edges": []
+        },
+        {
+          "id": "node:01a1095c2e43797a9c29a5f3850c689a",
+          "key": "fog",
+          "kind": "passage",
+          "title": {
+            "provider": "local",
+            "key": "road.fog.title"
+          },
+          "edges": [
+            {
+              "kind": "choice",
+              "key": "continue",
+              "label": {
+                "provider": "local",
+                "key": "road.crossing:fog.continue.label"
+              },
+              "target": {
+                "package": "road",
+                "graph": "crossing",
+                "node": "node:01a1095c2e43771ca52d99cc33516245"
+              }
+            }
+          ]
+        },
+        {
+          "id": "node:01a1095c2e437bafaa84365ad08aafa1",
+          "key": "retreated",
+          "kind": "return",
+          "outcome": "retreated",
+          "edges": []
+        }
+      ]
+    }
+  ],
+  "diagnostics": []
+}

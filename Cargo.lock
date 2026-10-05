@@ -573,8 +573,12 @@ dependencies = [
 name = "narrata-node-tools"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "getrandom 0.3.4",
+ "hex",
+ "narrata-content-local",
+ "narrata-kernel",
  "narrata-nodes",
- "schemars",
+ "serde",
  "serde_json",
  "tempfile",
 ]
