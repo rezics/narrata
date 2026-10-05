@@ -4,7 +4,8 @@
 日期：2026-09-01
 
 与 2026-10-05 决定的关系：精确构件恢复、依赖锁与显式迁移保留。逻辑构件身份不再包含文本
-（[决定 2](../product/decisions.md)），只改文字不需要迁移；身份规则见
+（[决定 2](../product/decisions.md)；Stage 1–5 的 Program 格式 1 与从格式 0 的升级见
+[ADR 0018](../adr/0018-stage-6-text-free-flow-format.md)），只改文字不需要迁移；身份规则见
 [决定 3](../product/decisions.md)。程序按包和块切分（[决定 10](../product/decisions.md)）后，
 锁与迁移以块为单位，由 Goal `narrative-core` 与 `kernel-and-saves` 通过 ADR 落实。
 
@@ -121,6 +122,10 @@ resolution policy：
 依赖某个 save 的 Program Artifact 与 Content Lock 都是 GC closure 的一部分。
 
 ## REZICS 外部内容
+
+本节的 occurrence 解析早于[决定 4](../product/decisions.md)。呈现用的文字现在是内容引用，由宿主
+解析，引擎从不调用内容方（[ADR 0018](../adr/0018-stage-6-text-free-flow-format.md)、[内容引用契约](../contracts/content-references.md)）；
+下文只对会影响分支、作为 Recorded Query 进入回执的内容仍然适用。
 
 Narrata 引用 REZICS `ContentStructureNode` occurrence，而不是 Post ID，详见
 [REZICS Gamebook 集成边界](../../archive/2026-08-31-rezics-gamebook-integration.md)。恢复还需验证：

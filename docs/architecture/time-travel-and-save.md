@@ -5,7 +5,8 @@
 
 与 2026-10-05 决定的关系：不可变提交图、Ref、普通存档与完整时间线的区分保留为 kernel 能力。
 后端接口收窄为[存储与存档契约](../contracts/storage-and-saves.md) 的五个原语
-（[决定 8](../product/decisions.md)），Snapshot 不再包含文本（[决定 2](../product/decisions.md)）。
+（[决定 8](../product/decisions.md)），Snapshot 不再包含文本（[决定 2](../product/decisions.md)；
+Snapshot schema 1 与可选的 `scene` 见 [ADR 0018](../adr/0018-stage-6-text-free-flow-format.md)）。
 存档引擎、键布局、校验边界与 GC 由 [ADR 0014](../adr/0014-save-engine-key-layout.md) 决定；
 其中与领域无关的部分（对象、Ref、Pin、GC、Checkpoint Bundle）属于 kernel 历史层，节点栈等新领域
 的通用提交、transitions 去重、会话 API 与恢复的信任边界由

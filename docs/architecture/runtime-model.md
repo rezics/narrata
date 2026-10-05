@@ -5,7 +5,9 @@
 
 与 2026-10-05 决定的关系：本页描述 Stage 1–5 的 Flow VM 运行模型。确定性归约、safe point 与
 受检输入保留并抽取进 kernel（[决定 11](../product/decisions.md)）；状态中的文本与强制
-`SceneState` 被[决定 2](../product/decisions.md) 取代，由新的格式 ADR 落实。
+`SceneState` 被[决定 2](../product/decisions.md) 取代，由 [ADR 0018](../adr/0018-stage-6-text-free-flow-format.md) 落实：Program
+格式 1 的待处理交互只记录内容表下标，`scene` 在且仅在 Program 使用 `ReconcileScene` 时存在。
+下文的 `scene: SceneState` 按此理解。
 
 ## 目标
 

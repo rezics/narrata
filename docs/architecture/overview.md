@@ -39,7 +39,7 @@
 
 | 栈 | 位置 | 已有 | 与目标的差距 |
 | --- | --- | --- | --- |
-| Stage 1–5 | `crates/narrata-*` | 确定性 Flow VM、Statechart、提交/引用存储与 SQLite 适配、Effect 账本、迁移、C/C#/Wasm/TS 绑定、冻结兼容语料 | 文本在 Program 与 Snapshot 中；`SceneState` 强制存在；`SaveStore` 全量枚举；SQLite 整库重写；Program 单块 |
+| Stage 1–5 | `crates/narrata-*` | 确定性 Flow VM、Statechart、提交/引用存储与 SQLite 适配、Effect 账本、迁移、C/C#/Wasm/TS 绑定、冻结兼容语料；Program 格式 1 与 Snapshot schema 1 只含内容引用，`SceneState` 可选（[ADR 0018](../adr/0018-stage-6-text-free-flow-format.md)） | 格式 0 的旧存档仍带文本，需经升级才能走协议；`SaveStore` 全量枚举；SQLite 整库重写；Program 单块 |
 | 节点栈（R1） | `packages/narrata/nodes`、`packages/narrata/tooling` | 类型化节点与子图、包组合与锁、Gamebook 会话、Wasm 阅读器 | 文本内联；4,096 节点与 4 MiB 整包上限；存档不用对象/引用模型；结局文字硬编码 |
 
 按 [决定 11](../product/decisions.md#11-节点组合模型是长期内核的语义基础)，节点组合模型是长期

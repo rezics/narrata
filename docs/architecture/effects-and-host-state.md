@@ -224,6 +224,9 @@ Commit。它恢复到 barrier 之后，不允许停留或游玩在 barrier 之�
 
 ## Declarative scene reconcile
 
+`SceneState` 是可选组件：Program 格式 1 只在含 `ReconcileScene` 指令时带它，协调器也只在这时
+输出 `ReconcileScene`（[ADR 0018](../adr/0018-stage-6-text-free-flow-format.md)）。
+
 画面、角色、相机和音频长期状态应保存在 `SceneState`：
 
 ```rust
