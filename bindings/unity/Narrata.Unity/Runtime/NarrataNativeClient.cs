@@ -1,6 +1,6 @@
 #if !UNITY_WEBGL || UNITY_EDITOR
 using Narrata.Binding;
-using Narrata.Protocol.V1;
+using Narrata.Protocol.V2;
 
 namespace Narrata.Unity;
 

@@ -119,8 +119,8 @@ message Result {
   uint64 occurrence = 11;
 }
 message Choice {
+  // Field 2 was the version 1 text label; the name now holds the reference.
   reserved 2;
-  reserved "label";
   bytes id = 1;
   ContentRef label = 3;
 }

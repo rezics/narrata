@@ -24,7 +24,7 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
 cargo build -p narrata-ffi
 $nativeDirectory = (Resolve-Path target/debug).Path
 $env:PATH = "$nativeDirectory$([IO.Path]::PathSeparator)$env:PATH"
-dotnet run --project bindings/dotnet/Narrata.Conformance/Narrata.Conformance.csproj --configuration Release -- fixtures/compat/stage5-v0/program-v0.hex
+dotnet run --project bindings/dotnet/Narrata.Conformance/Narrata.Conformance.csproj --configuration Release -- fixtures/compat/stage6-v0/program-v1.hex
 
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     throw "G5 requires Node.js and npm for generated TypeScript DTO and IndexedDB checks."

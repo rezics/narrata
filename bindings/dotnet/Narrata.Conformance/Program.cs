@@ -1,6 +1,6 @@
 using Google.Protobuf;
 using Narrata.Binding;
-using Narrata.Protocol.V1;
+using Narrata.Protocol.V2;
 
 if (args.Length != 1)
     throw new ArgumentException("Pass the frozen Program Artifact hex fixture path.");
@@ -10,7 +10,7 @@ using var engine = new NarrataEngine();
 
 var loaded = engine.Call(new Request
 {
-    ProtocolVersion = 1,
+    ProtocolVersion = 2,
     RequestId = 1,
     ProgramLoad = new ProgramLoad { Artifact = ByteString.CopyFrom(artifact) },
 });
@@ -21,7 +21,7 @@ var execution = new byte[16];
 execution[^1] = 1;
 var created = engine.Call(new Request
 {
-    ProtocolVersion = 1,
+    ProtocolVersion = 2,
     RequestId = 2,
     SessionCreate = new SessionCreate
     {
@@ -36,7 +36,7 @@ var input = new byte[16];
 input[^1] = 1;
 var committed = engine.Call(new Request
 {
-    ProtocolVersion = 1,
+    ProtocolVersion = 2,
     RequestId = 3,
     Dispatch = new Dispatch
     {
@@ -54,5 +54,9 @@ if (committed.BodyCase != Response.BodyOneofCase.Committed
     || committed.Committed.ReceiptId.Length != 32
     || committed.Committed.StateDigest.Length != 32)
     throw new InvalidOperationException("Dispatch did not commit the shared conformance trace.");
+// Version 2 results name the body to show; the host's content provider resolves it.
+if (committed.Committed.Result.Kind != Result.Types.Kind.Say
+    || committed.Committed.Result.Body?.Unit is not { Provider.Length: > 0, Key.Length: > 0 })
+    throw new InvalidOperationException("The first Say did not name its body as a content reference.");
 
 Console.WriteLine(Convert.ToHexString(committed.Committed.StateDigest.Span).ToLowerInvariant());

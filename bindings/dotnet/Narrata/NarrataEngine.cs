@@ -1,5 +1,5 @@
 using Google.Protobuf;
-using Narrata.Protocol.V1;
+using Narrata.Protocol.V2;
 
 namespace Narrata.Binding;
 
@@ -16,7 +16,8 @@ public sealed class NarrataException : Exception
 /// </summary>
 public sealed class NarrataEngine : IDisposable
 {
-    public const uint RequiredAbiVersion = 1;
+    // ABI 2 results name content references instead of text (ADR 0018).
+    public const uint RequiredAbiVersion = 2;
     private readonly NarrataEngineHandle _handle;
 
     public NarrataEngine()

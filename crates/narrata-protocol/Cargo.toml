@@ -15,6 +15,7 @@ prost.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+hex.workspace = true
 narrata-testkit = { path = "../narrata-testkit", version = "=0.1.0-alpha.1" }
 narrata-storage-sqlite = { path = "../../packages/narrata/kernel/crates/narrata-storage-sqlite", version = "=0.1.0-alpha.1" }
 tempfile = "3.27.0"
