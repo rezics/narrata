@@ -23,13 +23,15 @@ pub const TRANSITIONS: KeySpace = KeySpace::new(14);
 
 /// The spaces of this layer with their names, in space order. Spaces 3–6, 8–11 and 13 belong to
 /// the Stage 1–5 registrant.
-pub const SPACES: [(KeySpace, &str); 6] = [
+pub const SPACES: [(KeySpace, &str); 8] = [
     (META, "meta"),
     (TOUCH, "touch"),
     (REFS, "refs"),
     (PINS, "pins"),
     (CHILDREN, "children"),
     (TRANSITIONS, "transitions"),
+    (crate::effect::EFFECTS, "generic-effects"),
+    (crate::effect::LEDGER_FENCES, "generic-ledger-fences"),
 ];
 
 pub const LAYOUT_KEY: &[u8] = b"layout";

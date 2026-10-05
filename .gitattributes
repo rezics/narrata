@@ -6,6 +6,7 @@ fixtures/compat/graph-v1/** -text
 fixtures/compat/kernel-history-v1/** -text
 fixtures/compat/stage6-v0/** -text
 fixtures/compat/kernel-history-v2/** -text
+fixtures/compat/kernel-history-v3/** -text
 fixtures/compat/browser-storage-v1/** -text
 
 # Packed node artifacts are binary envelopes.

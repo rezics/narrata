@@ -181,6 +181,7 @@ impl From<StorageError> for StoreError {
 impl From<HistoryError> for StoreError {
     fn from(value: HistoryError) -> Self {
         match value {
+            HistoryError::Effect(error) => error.into(),
             HistoryError::MissingObject(object) => Self::MissingObject(id(object)),
             HistoryError::Corrupt(object, diagnostic) => Self::Corrupt(id(object), diagnostic),
             HistoryError::ObjectKind(object) => Self::ObjectKind(id(object)),
@@ -391,6 +392,14 @@ pub trait SaveStore {
         by_effect: EffectId,
     ) -> Result<EffectLedgerEntry, StoreError>;
     fn commit(&mut self, transaction: CommitTransaction) -> Result<CommitOutcome, StoreError>;
+    /// Migration publication requires one batch. Implementors must refuse it when they cannot
+    /// guarantee that every object and root mutation is atomic.
+    fn commit_atomic(
+        &mut self,
+        _transaction: CommitTransaction,
+    ) -> Result<CommitOutcome, StoreError> {
+        Err(StoreError::InvalidGraph("atomic commits are unsupported"))
+    }
     fn collect(&mut self, policy: RetentionPolicy) -> Result<GcReport, StoreError>;
     fn integrity_scan(&self) -> Result<Vec<IntegrityIssue>, StoreError>;
 }

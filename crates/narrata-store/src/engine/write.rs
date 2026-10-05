@@ -125,6 +125,7 @@ impl Roots {
 }
 
 struct Request<'t> {
+    atomic: bool,
     transaction: &'t CommitTransaction,
     /// Per-object observation times; the transaction's time otherwise.
     observed: &'t [u64],
@@ -136,9 +137,11 @@ impl<B: StorageBackend> Store<B> {
     pub(super) fn write_transaction(
         &mut self,
         transaction: &CommitTransaction,
+        atomic: bool,
     ) -> Result<CommitOutcome, StoreError> {
         self.write(&Request {
             transaction,
+            atomic,
             observed: &[],
             effects: &[],
             fences: &[],
@@ -200,6 +203,7 @@ impl<B: StorageBackend> Store<B> {
         };
         self.write(&Request {
             transaction: &transaction,
+            atomic: false,
             observed: &observed,
             effects: &contents.effects,
             fences: &contents.ledger_fences,
@@ -239,34 +243,38 @@ impl<B: StorageBackend> Store<B> {
                 .filter_map(|value| value.next)
                 .map(|id| target(id.as_bytes())),
         );
-        let written = self.history.write(
-            &Transaction {
-                objects: transaction
-                    .objects
-                    .iter()
-                    .map(|object| object.object().clone())
-                    .collect(),
-                observed: request.observed.to_vec(),
-                observed_at: transaction.observed_at,
-                refs: Vec::new(),
-                pins: transaction
-                    .pins
-                    .iter()
-                    .map(|pin| narrata_history::Pin {
-                        owner: pin.owner.clone(),
-                        object: target(pin.object.as_bytes()),
-                        expires_at: pin.expires_at,
-                    })
-                    .collect(),
-                remove_pins: transaction
-                    .remove_pins
-                    .iter()
-                    .map(|(owner, object)| (owner.clone(), target(object.as_bytes())))
-                    .collect(),
-                prefetch,
-            },
-            |view| plan(view, request),
-        )?;
+        let history_transaction = Transaction {
+            objects: transaction
+                .objects
+                .iter()
+                .map(|object| object.object().clone())
+                .collect(),
+            observed: request.observed.to_vec(),
+            observed_at: transaction.observed_at,
+            refs: Vec::new(),
+            pins: transaction
+                .pins
+                .iter()
+                .map(|pin| narrata_history::Pin {
+                    owner: pin.owner.clone(),
+                    object: target(pin.object.as_bytes()),
+                    expires_at: pin.expires_at,
+                })
+                .collect(),
+            remove_pins: transaction
+                .remove_pins
+                .iter()
+                .map(|(owner, object)| (owner.clone(), target(object.as_bytes())))
+                .collect(),
+            prefetch,
+        };
+        let written = if request.atomic {
+            self.history
+                .write_atomic(&history_transaction, |view| plan(view, request))?
+        } else {
+            self.history
+                .write(&history_transaction, |view| plan(view, request))?
+        };
         Roots::of(transaction).outcome(written)
     }
 }

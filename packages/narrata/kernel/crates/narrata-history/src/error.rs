@@ -5,6 +5,8 @@ use crate::{ArtifactId, ObjectId, RefKey, RefRevision, RefValue};
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum HistoryError {
+    #[error(transparent)]
+    Effect(#[from] crate::effect::EffectStoreError),
     #[error("object {0} was not found")]
     MissingObject(ObjectId),
     #[error("history was truncated before parent commit {0}")]

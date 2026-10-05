@@ -207,6 +207,7 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
                 roots.push((object, None));
             }
         }
+        roots.extend(crate::effect::generic_roots(&reader)?);
         roots.extend(self.registry.roots(&reader, now)?);
         roots.sort_unstable();
         roots.dedup_by_key(|(id, _)| *id);
@@ -324,6 +325,9 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
         if let Some(object) = object
             && object.kind() != crate::bundle::CHECKPOINT_MANIFEST_KIND
             && object.kind() != shallow::TRUNCATED_PARENT_KIND
+            && object.kind() != crate::effect::EFFECT_RESPONSE_KIND
+            && object.kind() != crate::effect::EFFECT_LEDGER_GUARD_KIND
+            && object.kind() != crate::migration::MIGRATION_INPUT_KIND
         {
             ops.extend(self.registry.unindex(object, &self.reader())?);
         }

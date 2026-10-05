@@ -14,10 +14,12 @@
 mod bundle;
 mod commit;
 mod domain;
+pub mod effect;
 mod engine;
 mod error;
 mod ids;
 pub mod layout;
+pub mod migration;
 mod names;
 mod object;
 mod registry;

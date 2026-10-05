@@ -145,7 +145,7 @@ pub fn references<D: Domain>(object: &Object) -> Result<Vec<Reference>, HistoryE
             .parent
             .map(|id| Reference::object(id, D::COMMIT_KIND)),
     );
-    values.extend(commit.input.map(|id| Reference::object(id, D::INPUT_KIND)));
+    values.extend(commit.input.map(Reference::untyped));
     Ok(values)
 }
 
@@ -178,10 +178,23 @@ pub fn validate<D: Domain, B: StorageBackend, R: Registry>(
     let parent = view.object(parent_id)?;
     if let Some(parent) = parent {
         let parent = Commit::from_object(&parent, D::COMMIT_KIND)?;
-        if parent.artifact != commit.artifact {
-            return Err(HistoryError::InvalidGraph(
-                "commit names another artifact than its parent",
-            ));
+        let input_object = view.require(input, None)?;
+        if input_object.kind() == crate::migration::MIGRATION_INPUT_KIND {
+            let migration = crate::migration::MigrationInput::from_object(&input_object)?;
+            if migration.from != parent.artifact || migration.to != commit.artifact {
+                return Err(HistoryError::InvalidGraph(
+                    "migration input does not link parent and target artifacts",
+                ));
+            }
+        } else {
+            if input_object.kind() != D::INPUT_KIND || input_object.schema() != D::INPUT_SCHEMA {
+                return Err(HistoryError::ObjectKind(input));
+            }
+            if parent.artifact != commit.artifact {
+                return Err(HistoryError::InvalidGraph(
+                    "commit names another artifact than its parent",
+                ));
+            }
         }
         if parent.depth.checked_add(1) != Some(commit.depth) {
             return Err(HistoryError::InvalidGraph(
@@ -190,6 +203,16 @@ pub fn validate<D: Domain, B: StorageBackend, R: Registry>(
         }
     } else {
         view.require_truncated_parent(parent_id)?;
+        let object = view.require(input, None)?;
+        if object.kind() == crate::migration::MIGRATION_INPUT_KIND {
+            if crate::migration::MigrationInput::from_object(&object)?.to != commit.artifact {
+                return Err(HistoryError::InvalidGraph(
+                    "migration input target differs from commit artifact",
+                ));
+            }
+        } else if object.kind() != D::INPUT_KIND || object.schema() != D::INPUT_SCHEMA {
+            return Err(HistoryError::ObjectKind(input));
+        }
     }
     let mut index = vec![Op::put(
         layout::CHILDREN,

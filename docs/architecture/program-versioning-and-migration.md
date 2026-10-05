@@ -9,6 +9,10 @@
 [决定 3](../product/decisions.md)。程序按包和块切分（[决定 10](../product/decisions.md)）后，
 锁与迁移以块为单位，由 Goal `narrative-core` 与 `kernel-and-saves` 通过 ADR 落实。
 
+构件注册、路径发现、干运行与单批原子发布现在由 `narrata-history::migration` 提供，旧栈作为注册方
+保留自己的 relocation 与状态转换。通用提交用显式 MigrationInput 表达构件变化，格式、兼容路径和
+恢复边界见 [ADR 0020](../adr/0020-shared-effects-and-migrations.md)；普通输入不能改变构件身份。
+
 ## 问题
 
 存档不仅保存变量，还保存“程序执行到哪里”。只写产品版本或脚本文件名无法证明旧 frame、

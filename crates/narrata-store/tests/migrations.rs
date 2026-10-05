@@ -99,7 +99,9 @@ fn source_store<S: SaveStore>(
 
 fn migration_creates_child_commit_preserves_source_and_continues<B: Backend>() {
     let (source, target, migration) = programs();
-    let (mut store, source_commit) = source_store(B::store(), source.clone());
+    let counted =
+        narrata_store::Store::open(narrata_storage::testing::Counting::new(B::create())).unwrap();
+    let (mut store, source_commit) = source_store(counted, source.clone());
     let before = image(store.backend());
     let mut registry = MigrationRegistry::new();
     registry.register(migration).unwrap();
@@ -110,6 +112,7 @@ fn migration_creates_child_commit_preserves_source_and_continues<B: Backend>() {
         RefName::new("player").unwrap(),
         RefName::new("migrated").unwrap(),
     );
+    store.backend().take_counts();
     let applied = apply_migration(
         &mut store,
         &registry,
@@ -124,6 +127,7 @@ fn migration_creates_child_commit_preserves_source_and_continues<B: Backend>() {
         &Default::default(),
     )
     .unwrap();
+    assert_eq!(store.backend().take_counts().apply, 1);
     assert_eq!(
         store.read_ref(&migrated_ref).unwrap().unwrap().commit,
         applied.commit

@@ -18,8 +18,8 @@ pub use narrata_history::layout::{
 use narrata_history::{
     HistoryError,
     layout::{
-        decode, decode_single_id, decode_single_unsigned, expect_map, fixed, key, name, named,
-        names, single_bytes, single_unsigned, split,
+        decode, decode_single_id, expect_map, fixed, key, name, named, names, single_bytes,
+        single_unsigned, split,
     },
 };
 use narrata_storage::KeySpace;
@@ -444,10 +444,6 @@ pub(crate) fn encode_fence(fence: LedgerFence) -> Vec<u8> {
     single_unsigned(fence.get())
 }
 
-pub(crate) fn decode_fence(bytes: &[u8]) -> Result<LedgerFence, HistoryError> {
-    decode_single_unsigned("ledger fence value", bytes).map(LedgerFence::from_u64)
-}
-
 // catalog operations
 
 pub(crate) fn catalog_operation_key(
@@ -529,6 +525,7 @@ pub(crate) fn decode_commit_key(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use narrata_history::effect::decode_fence;
 
     fn rejects(result: Result<impl std::fmt::Debug, HistoryError>) {
         assert!(

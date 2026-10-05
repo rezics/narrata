@@ -70,8 +70,8 @@ pub type Root = (ObjectId, Option<u16>);
 
 /// The kinds one engine stores, with their edges, write checks, index keys and roots.
 ///
-/// A registry is a static type, not a set of plugins: the engine calls it directly. Kind 7, the
-/// checkpoint manifest, belongs to the engine; a registry that also claims it is not asked.
+/// A registry is a static type, not a set of plugins: the engine calls it directly. Built-in
+/// history kinds take priority over a registrant; their allocation is in ADR 0015/0019/0020.
 pub trait Registry: Sized {
     /// Errors of the registrant's checks; history failures convert into it.
     type Error: From<HistoryError>;

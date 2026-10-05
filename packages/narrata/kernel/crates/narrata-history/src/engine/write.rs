@@ -346,7 +346,7 @@ fn referents_first<B: StorageBackend, R: Registry>(
 
 /// Checks one new object: the objects it refers to exist with the kinds it requires, and the
 /// registrant's own checks pass. Returns the index keys it adds.
-fn validate<B: StorageBackend, R: Registry>(
+pub(super) fn validate<B: StorageBackend, R: Registry>(
     view: &mut View<'_, B, R>,
     object: &Object,
 ) -> Result<Vec<Op<R::Tag>>, R::Error> {
@@ -373,6 +373,18 @@ fn validate<B: StorageBackend, R: Registry>(
     }
     if object.kind() == bundle::CHECKPOINT_MANIFEST_KIND {
         bundle::validate_manifest(view, object)?;
+        return Ok(Vec::new());
+    }
+    if object.kind() == crate::effect::EFFECT_LEDGER_GUARD_KIND {
+        crate::effect::validate_guard(object)?;
+        return Ok(Vec::new());
+    }
+    if object.kind() == crate::effect::EFFECT_RESPONSE_KIND {
+        crate::effect::validate_response_object(object)?;
+        return Ok(Vec::new());
+    }
+    if object.kind() == crate::migration::MIGRATION_INPUT_KIND {
+        crate::migration::MigrationInput::from_object(object)?;
         return Ok(Vec::new());
     }
     let registry = view.registry();
@@ -405,6 +417,72 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             }
         }
         Err(HistoryError::Busy.into())
+    }
+
+    /// Plans a single batch without writing it. Migration dry-runs use the same checks/limits
+    /// as application; the actual CAS is still checked when the batch is applied.
+    pub fn validate_atomic(&self, transaction: &Transaction) -> Result<(), R::Error> {
+        let plan = self.plan(transaction, self.reader().sweep()?, &mut |_| Ok(Vec::new()))?;
+        self.atomic_ops(plan).map(|_| ())
+    }
+    /// Writes exactly one atomic batch; oversized operations fail before writing any object.
+    pub fn write_atomic(
+        &mut self,
+        transaction: &Transaction,
+        mut extra: impl FnMut(&mut View<'_, B, R>) -> Result<Vec<Op<R::Tag>>, R::Error>,
+    ) -> Result<Written, R::Error> {
+        retry::<_, R::Error>(|| {
+            let plan = self.plan(
+                transaction,
+                self.reader().sweep().map_err(R::Error::from)?,
+                &mut extra,
+            )?;
+            let ops = self.atomic_ops(plan)?;
+            let applied = self.apply(ops)?;
+            Ok(Written {
+                revision: applied.revision,
+                inserted: applied.objects_inserted,
+            })
+        })
+    }
+    fn atomic_ops(&self, plan: Plan<R::Tag>) -> Result<Ops<R::Tag>, R::Error> {
+        for staged in &plan.objects {
+            self.limits
+                .check(
+                    narrata_storage::Limit::ValueBytes,
+                    staged.object.bytes().len() as u64,
+                )
+                .map_err(HistoryError::from)?;
+        }
+        for key in plan
+            .keys
+            .iter()
+            .chain(plan.objects.iter().flat_map(|staged| &staged.index))
+        {
+            self.limits
+                .check(narrata_storage::Limit::KeyBytes, key.op.key.len() as u64)
+                .map_err(HistoryError::from)?;
+            if let KeyAction::Put(value) = &key.op.action {
+                self.limits
+                    .check(narrata_storage::Limit::ValueBytes, value.len() as u64)
+                    .map_err(HistoryError::from)?;
+            }
+        }
+        let count = 2 + plan.objects.iter().map(Staged::ops).sum::<u64>() + plan.keys.len() as u64;
+        let bytes = 64
+            + plan.objects.iter().map(Staged::bytes).sum::<u64>()
+            + plan.keys.iter().map(Op::bytes).sum::<u64>();
+        if count > self.limits.max_batch_ops || bytes > self.limits.max_batch_bytes {
+            return Err(HistoryError::Limit("atomic batch").into());
+        }
+        let mut ops = Ops::new();
+        ops.key(sweep_check(plan.sweep));
+        ops.keys.extend(plan.keys);
+        for object in plan.objects {
+            object.into_ops(&mut ops);
+        }
+        ops.key(graph_bump());
+        Ok(ops)
     }
 
     fn plan(

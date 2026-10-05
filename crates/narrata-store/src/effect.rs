@@ -4,7 +4,6 @@ use narrata_core::{
     codec::{ObjectKind, decode_canonical_value, encode_canonical_value},
     limits::DecodeLimits,
 };
-use thiserror::Error;
 
 use crate::{
     CheckedObject, LeaseId, WireError,
@@ -13,29 +12,7 @@ use crate::{
 
 pub const EFFECT_RESPONSE_SCHEMA_V1: u16 = 1;
 
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-pub struct LedgerFence(u64);
-
-impl LedgerFence {
-    pub const fn zero() -> Self {
-        Self(0)
-    }
-
-    pub const fn from_u64(value: u64) -> Self {
-        Self(value)
-    }
-
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-
-    pub fn next(self) -> Result<Self, EffectStoreError> {
-        self.0
-            .checked_add(1)
-            .map(Self)
-            .ok_or(EffectStoreError::FenceOverflow)
-    }
-}
+pub use narrata_history::effect::{EffectStoreError, LedgerFence};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LedgerStatus {
@@ -142,26 +119,6 @@ pub struct EffectOutcomeRecord {
     pub lease: LeaseId,
     pub outcome: EffectOutcome,
     pub observed_at: u64,
-}
-
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum EffectStoreError {
-    #[error("Effect ID is already bound to a different request digest or contract")]
-    RequestConflict,
-    #[error("Effect is not currently claimed by the supplied lease")]
-    LeaseMismatch,
-    #[error("lease expiration must be later than now")]
-    InvalidLease,
-    #[error("Effect outcome is terminal and cannot move backward")]
-    Terminal,
-    #[error("ledger fence overflow")]
-    FenceOverflow,
-    #[error("Effect ledger entry was not found")]
-    Missing,
-    #[error("compensation relation is invalid")]
-    InvalidCompensation,
-    #[error("recorded response object is invalid: {0}")]
-    InvalidResponse(String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

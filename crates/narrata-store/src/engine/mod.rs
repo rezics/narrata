@@ -15,7 +15,7 @@ use std::fmt;
 
 use narrata_core::{CommitId, EffectId, ExecutionId, InputId, ObjectId, ProgramArtifactId};
 use narrata_history::{History, Reader};
-use narrata_storage::{KeyEntry, KeySpace, KeyValue, MemoryBackend, Revision, StorageBackend};
+use narrata_storage::{KeyEntry, KeySpace, KeyValue, MemoryBackend, StorageBackend};
 pub(crate) use registry::{Legacy, PROGRAM};
 
 use crate::{
@@ -98,11 +98,6 @@ impl<B: StorageBackend> Store<B> {
 
     fn read_key(&self, space: KeySpace, key: &[u8]) -> Result<Option<KeyValue>, StoreError> {
         Ok(self.reader().read_key(space, key)?)
-    }
-
-    /// The revision of `meta/sweep` that writers check.
-    fn sweep(&self) -> Result<Option<Revision>, StoreError> {
-        Ok(self.reader().sweep()?)
     }
 
     fn page<T>(
@@ -428,7 +423,14 @@ impl<B: StorageBackend> SaveStore for Store<B> {
     }
 
     fn commit(&mut self, transaction: CommitTransaction) -> Result<CommitOutcome, StoreError> {
-        self.write_transaction(&transaction)
+        self.write_transaction(&transaction, false)
+    }
+
+    fn commit_atomic(
+        &mut self,
+        transaction: CommitTransaction,
+    ) -> Result<CommitOutcome, StoreError> {
+        self.write_transaction(&transaction, true)
     }
 
     fn collect(&mut self, policy: RetentionPolicy) -> Result<GcReport, StoreError> {

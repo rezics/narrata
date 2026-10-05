@@ -66,7 +66,7 @@ pub enum AuditError<E, S> {
 
 /// Encodes a state and keeps it only if it decodes back to the same bytes, so every stored
 /// state loads again and the state handed back is the decoded one.
-fn checked_state<D: Domain>(
+pub(crate) fn checked_state<D: Domain>(
     domain: &D,
     state: &D::State,
 ) -> Result<(Object, D::State), HistoryError> {

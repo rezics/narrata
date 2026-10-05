@@ -6,6 +6,10 @@
 与 2026-10-05 决定的关系：整体保留为 kernel 能力。生成式系统提出的结构属于受检输入而非
 Effect（[决定 6](../product/decisions.md)）。
 
+通用账本状态机位于 `narrata-history::effect`；旧栈通过注册保留原键值与响应格式。
+新领域的字节契约、单调根与旧引擎 GC 防护见 [ADR 0020](../adr/0020-shared-effects-and-migrations.md)。
+领域负责 pending effect 与 response 的语义，宿主负责 claim 成功后的实际派发；账本不进入可回滚状态。
+
 ## 核心边界
 
 时间旅行只能自动恢复 Narrata 拥有且完整序列化的状态。宿主世界分为两部分：

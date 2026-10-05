@@ -5,6 +5,7 @@
 //! Every object read is re-verified against its identity and every key value is decoded
 //! strictly, so a backend can lose data but cannot make the engine accept data it did not write.
 
+mod effects;
 mod gc;
 mod view;
 mod write;
@@ -148,7 +149,7 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
         Ok(is_empty_except_meta(&self.backend, &self.registry)?)
     }
 
-    /// What the engine knows about kind `code`: the checkpoint manifest, or a registered kind.
+    /// What the engine knows about kind `code`: a built-in history record or a registered kind.
     pub fn kind(&self, code: u16) -> Option<KindInfo> {
         kind_info(&self.registry, code)
     }
@@ -403,6 +404,21 @@ pub(crate) fn kind_info<R: Registry>(registry: &R, code: u16) -> Option<KindInfo
         Some(bundle::CHECKPOINT_MANIFEST_INFO)
     } else if code == shallow::TRUNCATED_PARENT_KIND {
         Some(shallow::TRUNCATED_PARENT_INFO)
+    } else if code == crate::effect::EFFECT_RESPONSE_KIND
+        || code == crate::migration::MIGRATION_INPUT_KIND
+        || code == crate::effect::EFFECT_LEDGER_GUARD_KIND
+    {
+        Some(KindInfo {
+            name: if code == crate::effect::EFFECT_RESPONSE_KIND {
+                "effect response"
+            } else if code == crate::effect::EFFECT_LEDGER_GUARD_KIND {
+                "effect ledger guard"
+            } else {
+                "migration input"
+            },
+            leaf: false,
+            commit: false,
+        })
     } else {
         registry.kind(code)
     }
@@ -418,6 +434,15 @@ pub(crate) fn references<R: Registry>(
         Vec::new()
     } else if object.kind() == bundle::CHECKPOINT_MANIFEST_KIND {
         bundle::manifest_references(object)?
+    } else if object.kind() == crate::effect::EFFECT_LEDGER_GUARD_KIND {
+        crate::effect::validate_guard(object)?;
+        Vec::new()
+    } else if object.kind() == crate::effect::EFFECT_RESPONSE_KIND {
+        crate::effect::validate_response_object(object)?;
+        Vec::new()
+    } else if object.kind() == crate::migration::MIGRATION_INPUT_KIND {
+        crate::migration::MigrationInput::from_object(object)?;
+        Vec::new()
     } else if registry.kind(object.kind()).is_some() {
         registry.references(object)?
     } else {
