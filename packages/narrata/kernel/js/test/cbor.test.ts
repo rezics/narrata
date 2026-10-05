@@ -67,6 +67,15 @@ describe("canonical CBOR", () => {
     expect(decoded).toEqual(new Uint8Array([1, 2, 3]));
   });
 
+  it("checks allocation budgets before reading strings or array members", () => {
+    const limits = { maxMessageBytes: 32, maxStringBytes: 2, maxArrayItems: 2, maxNodes: 4 };
+    expect(() => decode(hex("43"), limits)).toThrow("string exceeds allocation limit");
+    expect(() => decode(hex("83"), limits)).toThrow("array exceeds allocation limit");
+    expect(() => decode(new Uint8Array(33), limits)).toThrow("message exceeds byte limit");
+    expect(() => decode(encode([[0], [0]]), limits)).toThrow("too many CBOR items");
+    expect(decode(encode([new Uint8Array(2), [0]]), limits)).toEqual([new Uint8Array(2), [0]]);
+  });
+
   it("orders bytes as binary IndexedDB keys", () => {
     const keys = [[1], [], [0, 255], [0], [0, 0]].map((key) => new Uint8Array(key));
     keys.sort(compareBytes);

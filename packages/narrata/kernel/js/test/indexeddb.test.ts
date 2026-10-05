@@ -3,6 +3,7 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 
+import { encode } from "../src/cbor";
 import { IndexedDbStore, StoreFormatError } from "../src/indexeddb";
 import {
   type LoadRequest,
@@ -152,6 +153,17 @@ describe("IndexedDbStore", () => {
       opening.onerror = () => reject(opening.error);
     });
     await expect(IndexedDbStore.open("newer", factory)).rejects.toThrow(StoreFormatError);
+  });
+
+  it("refuses an import that would overflow the library revision without writing", async () => {
+    const [store] = await fresh();
+    const before = await load(store);
+    const message = encode(["narrata-store-export", 1, Number.MAX_SAFE_INTEGER,
+      [[digest(1), new Uint8Array([1])]], [[key(1), new Uint8Array([1]), 1]]]);
+    await expect(store.import(message)).rejects.toThrow("safe revision limit");
+    expect(await load(store)).toEqual(before);
+    expect((await load(store, { keys: [key(1)], objects: [digest(1)] })).keys[0]![1]).toBeNull();
+    expect((await load(store, { objects: [digest(1)] })).objects[0]![1]).toBeNull();
   });
 
   it("asks for persistent storage only when it is not granted yet", async () => {

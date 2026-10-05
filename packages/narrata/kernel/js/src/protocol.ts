@@ -5,7 +5,7 @@
  * message completely. Keys are storage keys, `space (u16, big-endian) ‖ key`.
  */
 
-import { type Cbor, compareBytes, decode, encode } from "./cbor";
+import { type Cbor, type DecodeLimits, compareBytes, decode, encode } from "./cbor";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -84,7 +84,7 @@ function bytes(value: Cbor, length?: number): Uint8Array {
 }
 
 function uint(value: Cbor): number {
-  if (typeof value !== "number") fail("expected an unsigned integer");
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) fail("expected a safe unsigned integer");
   return value;
 }
 
@@ -169,8 +169,8 @@ export function encodeLoadRequest(request: LoadRequest): Uint8Array {
   ]);
 }
 
-export function decodeLoadRequest(message: Uint8Array): LoadRequest {
-  const [, keys, objects, keyRanges, objectRanges] = header(decode(message), 5);
+export function decodeLoadRequest(message: Uint8Array, limits?: DecodeLimits): LoadRequest {
+  const [, keys, objects, keyRanges, objectRanges] = header(decode(message, limits), 5);
   const request: LoadRequest = {
     keys: list(keys!).map((key) => bytes(key)),
     objects: list(objects!).map(digest),
@@ -258,8 +258,8 @@ export function encodeFlush(flush: Flush): Uint8Array {
   ]);
 }
 
-export function decodeFlush(message: Uint8Array): Flush {
-  const [, store, batches] = header(decode(message), 3);
+export function decodeFlush(message: Uint8Array, limits?: DecodeLimits): Flush {
+  const [, store, batches] = header(decode(message, limits), 3);
   const flush: Flush = {
     store: bytes(store!, STORE_ID_BYTES),
     batches: list(batches!).map((batch): Persist => {
@@ -283,7 +283,7 @@ export function decodeFlush(message: Uint8Array): Flush {
   if (flush.batches.length === 0) fail("a flush carries at least one batch");
   let previous: number | undefined;
   for (const batch of flush.batches) {
-    if (batch.revision !== batch.base + 1) fail("a batch moves the store revision by one");
+    if (batch.base === Number.MAX_SAFE_INTEGER || batch.revision !== batch.base + 1) fail("a batch moves the store revision by one");
     if (previous !== undefined && previous !== batch.base) fail("flushed batches are not consecutive");
     previous = batch.revision;
     const putObjects = batch.putObjects.map(([digest]) => digest);
@@ -299,8 +299,15 @@ export function decodeFlush(message: Uint8Array): Flush {
 }
 
 function disjoint(left: Uint8Array[], right: Uint8Array[], message: string): void {
-  const seen = new Set(left.map(hex));
-  if (right.some((key) => seen.has(hex(key)))) fail(message);
+  // Merge the checked sorted lists without allocating key strings.
+  let one = 0;
+  let two = 0;
+  while (one < left.length && two < right.length) {
+    const order = compareBytes(left[one]!, right[two]!);
+    if (order === 0) fail(message);
+    if (order < 0) one++;
+    else two++;
+  }
 }
 
 export function hex(bytes: Uint8Array): string {

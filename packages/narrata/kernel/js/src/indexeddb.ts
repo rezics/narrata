@@ -6,6 +6,7 @@
  */
 
 import { type Cbor, compareBytes, decode, encode, equalBytes } from "./cbor";
+import { decodeHostFlush, decodeHostLoadRequest, encodeHostLoaded } from "./limits";
 import {
   DIGEST_BYTES,
   type KeyRecord,
@@ -13,10 +14,7 @@ import {
   type Range,
   STORE_ID_BYTES,
   type StoreState,
-  decodeFlush,
-  decodeLoadRequest,
   encodeFlushReply,
-  encodeLoaded,
 } from "./protocol";
 
 export const DATABASE_VERSION = 1;
@@ -149,7 +147,7 @@ export class IndexedDbStore {
 
   /** Answers an encoded load request from one read transaction. */
   async load(message: Uint8Array): Promise<Uint8Array> {
-    const wanted = decodeLoadRequest(message);
+    const wanted = decodeHostLoadRequest(message);
     const transaction = this.db.transaction([META, KEYS, OBJECTS], "readonly");
     const finished = done(transaction);
     const keys = transaction.objectStore(KEYS);
@@ -186,7 +184,7 @@ export class IndexedDbStore {
     this.reads.objects += wanted.objects.length;
     this.reads.keyEntries += loaded.keyRanges.reduce((sum, [, entries]) => sum + entries.length, 0);
     this.reads.objectEntries += loaded.objectRanges.reduce((sum, [, digests]) => sum + digests.length, 0);
-    return encodeLoaded(loaded);
+    return encodeHostLoaded(loaded);
   }
 
   /**
@@ -195,33 +193,48 @@ export class IndexedDbStore {
    * after the transaction has completed.
    */
   async persist(message: Uint8Array): Promise<Uint8Array> {
-    const flush = decodeFlush(message);
+    const flush = decodeHostFlush(message);
     const first = flush.batches[0]!;
     const last = flush.batches[flush.batches.length - 1]!;
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([META, KEYS, OBJECTS], "readwrite", { durability: "strict" });
       let reply: Uint8Array | undefined;
+      let refused: unknown;
       const metaStore = transaction.objectStore(META);
       const meta = metaStore.get(STORE);
       meta.onsuccess = () => {
-        const state = storeState(meta.result);
-        if (!equalBytes(state.id, flush.store) || state.revision !== first.base) {
-          reply = encodeFlushReply({ conflict: state });
-          return;
+        try {
+          const state = storeState(meta.result);
+          if (!equalBytes(state.id, flush.store) || state.revision !== first.base) {
+            reply = encodeFlushReply({ conflict: state });
+            return;
+          }
+          const objects = transaction.objectStore(OBJECTS);
+          const keys = transaction.objectStore(KEYS);
+          for (const batch of flush.batches) {
+            for (const [digest, bytes] of batch.putObjects) {
+              const added = objects.add(bytes, idbKey(digest));
+              added.onerror = (event) => {
+                if (added.error?.name === "ConstraintError") {
+                  // Only an already-present digest is ignored. Other failures abort the flush.
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+              };
+            }
+            for (const digest of batch.deleteObjects) objects.delete(idbKey(digest));
+            for (const [key, value] of batch.putKeys) keys.put({ value, revision: batch.revision }, idbKey(key));
+            for (const key of batch.deleteKeys) keys.delete(idbKey(key));
+          }
+          metaStore.put({ id: state.id, revision: last.revision }, STORE);
+          reply = encodeFlushReply({ persisted: last.revision });
+        } catch (error) {
+          refused = error;
+          transaction.abort();
         }
-        const objects = transaction.objectStore(OBJECTS);
-        const keys = transaction.objectStore(KEYS);
-        for (const batch of flush.batches) {
-          for (const [digest, bytes] of batch.putObjects) objects.put(bytes, idbKey(digest));
-          for (const digest of batch.deleteObjects) objects.delete(idbKey(digest));
-          for (const [key, value] of batch.putKeys) keys.put({ value, revision: batch.revision }, idbKey(key));
-          for (const key of batch.deleteKeys) keys.delete(idbKey(key));
-        }
-        metaStore.put({ id: state.id, revision: last.revision }, STORE);
-        reply = encodeFlushReply({ persisted: last.revision });
       };
       transaction.oncomplete = () => (reply ? resolve(reply) : reject(new Error("flush transaction ended without a reply")));
-      transaction.onabort = () => reject(transaction.error ?? new Error("flush transaction aborted"));
+      transaction.onabort = () => reject(refused ?? transaction.error ?? new Error("flush transaction aborted"));
     });
   }
 
@@ -268,6 +281,11 @@ export class IndexedDbStore {
           return;
         }
         const current = storeState(meta.result);
+        if (Math.max(current.revision, exported.revision) === Number.MAX_SAFE_INTEGER) {
+          refused = new StoreFormatError("import would exceed the safe revision limit");
+          transaction.abort();
+          return;
+        }
         for (const [digest, bytes] of exported.objects) objects.put(bytes, idbKey(digest));
         for (const [key, value, revision] of exported.keys) keys.put({ value, revision }, idbKey(key));
         metaStore.put({ id: newStoreId(), revision: Math.max(current.revision, exported.revision) + 1 }, STORE);

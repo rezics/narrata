@@ -7,12 +7,60 @@ use narrata_storage::{
     Batch, Expect, KeySpace, KeyValue, ObjectDigest, Revision, StorageBackend, StorageError,
 };
 use narrata_storage_host::{
-    CacheBackend, FlushReply, HostError, LoadRequest, Loaded, Range, StoreId, StoreState,
-    storage_key,
+    CacheBackend, Flush, FlushReply, HostError, LoadRequest, Loaded, Persist, Range, StoreId,
+    StoreState, storage_key,
     testing::{MemoryHost, flush, load},
 };
 
 const SPACE: KeySpace = KeySpace::new(4);
+
+#[test]
+fn direct_flush_object_puts_keep_existing_bytes_until_deleted() {
+    let host = MemoryHost::new(id(1));
+    let object = digest(1);
+    let put = |base, bytes: &'static [u8]| Persist {
+        base,
+        revision: base + 1,
+        put_objects: vec![(object, bytes.into())],
+        delete_objects: vec![],
+        put_keys: vec![],
+        delete_keys: vec![],
+    };
+    let send = |batches| {
+        let message = Flush {
+            store: id(1),
+            batches,
+        };
+        host.persist(&Flush::decode(&message.encode()).unwrap())
+    };
+    assert_eq!(
+        send(vec![put(0, b"first"), put(1, b"second")]),
+        FlushReply::Persisted { revision: 2 }
+    );
+    assert_eq!(
+        send(vec![put(2, b"third")]),
+        FlushReply::Persisted { revision: 3 }
+    );
+    let read = || {
+        let loaded = host.load(&LoadRequest {
+            objects: vec![object],
+            ..LoadRequest::default()
+        });
+        Loaded::decode(&loaded.encode()).unwrap().objects[0]
+            .1
+            .clone()
+            .unwrap()
+    };
+    assert_eq!(read().as_ref(), b"first");
+    let mut deletion = put(3, b"");
+    deletion.put_objects.clear();
+    deletion.delete_objects.push(object);
+    assert_eq!(
+        send(vec![deletion, put(4, b"after deletion")]),
+        FlushReply::Persisted { revision: 5 }
+    );
+    assert_eq!(read().as_ref(), b"after deletion");
+}
 
 fn id(n: u8) -> StoreId {
     StoreId::from_bytes([n; 16])

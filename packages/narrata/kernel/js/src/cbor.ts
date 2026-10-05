@@ -13,6 +13,14 @@ export class CborError extends Error {
 const MAX_DEPTH = 16;
 const TWO_32 = 0x1_0000_0000;
 
+/** Allocation bounds supplied by a boundary that knows the message's resource budget. */
+export interface DecodeLimits {
+  maxMessageBytes: number;
+  maxStringBytes: number;
+  maxArrayItems: number;
+  maxNodes: number;
+}
+
 class Writer {
   private bytes = new Uint8Array(256);
   private length = 0;
@@ -96,8 +104,9 @@ export function encode(value: Cbor): Uint8Array {
 
 class Reader {
   private offset = 0;
+  private nodes = 0;
 
-  constructor(private readonly bytes: Uint8Array) {}
+  constructor(private readonly bytes: Uint8Array, private readonly limits?: DecodeLimits) {}
 
   private take(length: number): Uint8Array {
     if (length > this.bytes.length - this.offset) throw new CborError("unexpected end of input");
@@ -126,7 +135,11 @@ class Reader {
 
   item(depth: number): Cbor {
     if (depth > MAX_DEPTH) throw new CborError("value nests too deeply");
+    if (this.limits && ++this.nodes > this.limits.maxNodes) throw new CborError("too many CBOR items");
     const [major, value] = this.head();
+    if (this.limits && (major === 2 || major === 3) && value > this.limits.maxStringBytes) {
+      throw new CborError("CBOR string exceeds allocation limit");
+    }
     switch (major) {
       case 0:
         return value;
@@ -139,6 +152,7 @@ class Reader {
           throw new CborError("invalid UTF-8 text");
         }
       case 4: {
+        if (this.limits && value > this.limits.maxArrayItems) throw new CborError("CBOR array exceeds allocation limit");
         // Every item takes at least one byte, so a longer array cannot be in the input.
         if (value > this.bytes.length - this.offset) throw new CborError("unexpected end of input");
         const items: Cbor[] = [];
@@ -158,8 +172,9 @@ class Reader {
   }
 }
 
-export function decode(bytes: Uint8Array): Cbor {
-  const reader = new Reader(bytes);
+export function decode(bytes: Uint8Array, limits?: DecodeLimits): Cbor {
+  if (limits && bytes.length > limits.maxMessageBytes) throw new CborError("CBOR message exceeds byte limit");
+  const reader = new Reader(bytes, limits);
   const value = reader.item(0);
   reader.finish();
   return value;

@@ -167,7 +167,10 @@ impl MemoryHost {
         }
         for batch in &flush.batches {
             for (digest, bytes) in &batch.put_objects {
-                store.objects.insert(*digest, Arc::clone(bytes));
+                store
+                    .objects
+                    .entry(*digest)
+                    .or_insert_with(|| Arc::clone(bytes));
             }
             for digest in &batch.delete_objects {
                 store.objects.remove(digest);
