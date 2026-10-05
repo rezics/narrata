@@ -1,0 +1,500 @@
+{
+  "goal": {
+    "slug": "narrative-core",
+    "manager": "narrata-narrative-core",
+    "startedAt": "2026-10-04T18:38:35.163Z",
+    "seenHead": "b494d48450af903fbad659d45cf411e97ca7f3f1"
+  },
+  "tasks": [
+    {
+      "id": "G-006",
+      "title": "发布时图分析、分簇分层布局与细节层级瓦片",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/tooling/crates/narrata-graph/**",
+        "docs/development/benchmarks/graph-layout.md"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/narrative-core/tasks/G-006.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-006",
+      "branch": "goal/g-006",
+      "base": "a0db1e64172a8356799ffecb89a70394515db18b",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 7612,
+          "pidMark": 1791146019747,
+          "session": "01a1089f-4c86-7f22-8bdd-b7d4f316c6c9",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-006\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-006\\attempt-1.last.md",
+          "startedAt": "2026-10-04T20:33:39.754Z",
+          "endedAt": "2026-10-04T21:02:11.036Z"
+        }
+      ],
+      "goal": "narrative-core",
+      "mergedCommit": "6e94fba277022f877f9a5c10faef985aee7c695b",
+      "closedAt": "2026-10-04T21:02:57.663Z"
+    },
+    {
+      "id": "G-005",
+      "title": "R2 不含正文的节点核心、工具、示例作品与阅读器适配",
+      "effort": "xhigh",
+      "engine": "claude",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/**",
+        "packages/narrata/tooling/crates/narrata-node-tools/**",
+        "packages/narrata/tooling/crates/narrata-content-local/**",
+        "packages/narrata/tooling/README.md",
+        "packages/narrata/tooling/narrata-package.json",
+        "products/**",
+        "examples/gamebook-web/**",
+        "packages/narrata/kernel/crates/narrata-kernel/src/content/**",
+        "packages/narrata/kernel/crates/narrata-kernel/src/lib.rs",
+        "packages/narrata/kernel/crates/narrata-kernel/Cargo.toml",
+        "fixtures/compat/nodes-r2/**",
+        "docs/adr/0013-r2-text-free-node-format.md",
+        "docs/adr/0011-r1-node-composition.md",
+        "docs/contracts/content-references.md",
+        "docs/contracts/choices.md",
+        "scripts/check-r1.ps1"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/narrative-core/tasks/G-005.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-005",
+      "branch": "goal/g-005",
+      "base": "732d585a36cb0e923ad0da30380a10f96fa5e3e2",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 41708,
+          "pidMark": 1791146705715,
+          "session": "c037dcb8-0939-4d2c-b22a-b23c62511ca6",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-005\\attempt-1.json",
+          "startedAt": "2026-10-04T20:45:05.721Z",
+          "endedAt": "2026-10-04T23:37:29.744Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 24948,
+          "pidMark": 1791157056835,
+          "session": "c037dcb8-0939-4d2c-b22a-b23c62511ca6",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-005\\attempt-2.json",
+          "startedAt": "2026-10-04T23:37:36.839Z",
+          "endedAt": "2026-10-05T00:39:12.235Z"
+        },
+        {
+          "n": 3,
+          "effort": "medium",
+          "engine": "claude",
+          "pid": 30904,
+          "pidMark": 1791160778248,
+          "session": "c037dcb8-0939-4d2c-b22a-b23c62511ca6",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-005\\attempt-3.json",
+          "startedAt": "2026-10-05T00:39:38.251Z",
+          "endedAt": "2026-10-05T00:46:44.194Z"
+        }
+      ],
+      "goal": "narrative-core",
+      "mergedCommit": "b9da2fd1cb5cdc1338beea77ff8957e6a3fda2d8",
+      "closedAt": "2026-10-05T00:48:43.964Z"
+    },
+    {
+      "id": "G-008",
+      "title": "图分析输出格式：瓦片与语义摘要的 ADR、编解码与冻结语料",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/tooling/crates/narrata-graph/**",
+        "docs/adr/0016-*.md",
+        "fixtures/compat/graph-v1/**",
+        "docs/contracts/graph-and-analysis.md",
+        "docs/development/benchmarks/graph-layout.md"
+      ],
+      "shared": [
+        "adr:0016"
+      ],
+      "depends": [],
+      "brief": "docs/goals/narrative-core/tasks/G-008.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-008",
+      "branch": "goal/g-008",
+      "base": "1fdd90f5ab75d5b981b577f4229ac9194fb31c7a",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 18100,
+          "pidMark": 1791147830230,
+          "session": "",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-008\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-008\\attempt-1.last.md",
+          "startedAt": "2026-10-04T21:03:50.237Z",
+          "endedAt": "2026-10-04T23:37:29.744Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 7008,
+          "pidMark": 1791157058424,
+          "session": "01a108ba-ecc2-72a1-a0a1-6bad770fe2ae",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-008\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-008\\attempt-2.last.md",
+          "startedAt": "2026-10-04T23:37:38.427Z",
+          "endedAt": "2026-10-04T23:43:36.746Z"
+        }
+      ],
+      "goal": "narrative-core",
+      "mergedCommit": "00afc14da51d2255e0c3b79dfe75e7c2e4a7916c",
+      "closedAt": "2026-10-04T23:43:58.696Z"
+    },
+    {
+      "id": "G-011",
+      "title": "动态选项与节点：提议请求、校验、派生 ID 与叠加层",
+      "effort": "xhigh",
+      "engine": "claude",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/crates/narrata-nodes/src/runtime.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/session.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/state.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/wire.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/check.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/view.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/proposal.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/tests/proposals.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/tests/support/**",
+        "packages/narrata/nodes/crates/narrata-nodes-wasm/**",
+        "packages/narrata/nodes/schemas/**",
+        "fixtures/compat/nodes-r2-proposals/**",
+        "docs/adr/0013-r2-text-free-node-format.md",
+        "docs/contracts/choices.md"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/narrative-core/tasks/G-011.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-011",
+      "branch": "goal/g-011",
+      "base": "23fd4b5a52a3d1ac237a9c9b0a25f87620a61471",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 29520,
+          "pidMark": 1791161325741,
+          "session": "b3b6379a-2a11-4434-851b-30f9bd988ae2",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-011\\attempt-1.json",
+          "startedAt": "2026-10-05T00:48:45.746Z",
+          "endedAt": "2026-10-05T01:17:46.535Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 19956,
+          "pidMark": 1791163089409,
+          "session": "b3b6379a-2a11-4434-851b-30f9bd988ae2",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-011\\attempt-2.json",
+          "startedAt": "2026-10-05T01:18:09.413Z",
+          "endedAt": "2026-10-05T01:36:37.779Z"
+        }
+      ],
+      "goal": "narrative-core",
+      "mergedCommit": "bdadc251d25a9a0a11a656063a78dd9cc2b48253",
+      "closedAt": "2026-10-05T01:46:51.213Z"
+    },
+    {
+      "id": "G-012",
+      "title": "合成作品基准与按块懒加载：10 万选择点",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/crates/narrata-nodes/src/program.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/benches/**",
+        "packages/narrata/nodes/crates/narrata-nodes/tests/chunks.rs",
+        "packages/narrata/tooling/crates/narrata-node-bench/**",
+        "scripts/benchmark-nodes.ps1",
+        "docs/development/benchmarks/nodes-scale.md"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/narrative-core/tasks/G-012.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-012",
+      "branch": "goal/g-012",
+      "base": "23fd4b5a52a3d1ac237a9c9b0a25f87620a61471",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 33612,
+          "pidMark": 1791161326536,
+          "session": "",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-012\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-012\\attempt-1.last.md",
+          "startedAt": "2026-10-05T00:48:46.541Z",
+          "endedAt": "2026-10-05T01:17:46.535Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 27592,
+          "pidMark": 1791163090814,
+          "session": "01a10988-dcd9-74f1-987a-098ac9055766",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-012\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-012\\attempt-2.last.md",
+          "startedAt": "2026-10-05T01:18:10.817Z",
+          "endedAt": "2026-10-05T01:18:24.594Z"
+        },
+        {
+          "n": 3,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 32732,
+          "pidMark": 1791164199177,
+          "session": "01a10988-dcd9-74f1-987a-098ac9055766",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-012\\attempt-3.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-012\\attempt-3.last.md",
+          "startedAt": "2026-10-05T01:36:39.180Z",
+          "endedAt": "2026-10-05T02:05:20.704Z"
+        },
+        {
+          "n": 4,
+          "effort": "medium",
+          "engine": "codex",
+          "pid": 31436,
+          "pidMark": 1791165962085,
+          "session": "01a10988-dcd9-74f1-987a-098ac9055766",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-012\\attempt-4.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-012\\attempt-4.last.md",
+          "startedAt": "2026-10-05T02:06:02.132Z",
+          "endedAt": "2026-10-05T02:10:56.775Z"
+        }
+      ],
+      "goal": "narrative-core",
+      "mergedCommit": "ff2c33350b56be363de808961e6f80f8f8f883bf",
+      "closedAt": "2026-10-05T02:11:57.840Z"
+    },
+    {
+      "id": "G-014",
+      "title": "节点会话接入 kernel 历史层与浏览器存储",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/crates/narrata-nodes/src/session.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/runtime.rs",
+        "packages/narrata/tooling/crates/narrata-node-bench/**",
+        "docs/development/benchmarks/nodes-scale.md",
+        "packages/narrata/nodes/crates/narrata-nodes/src/history.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/Cargo.toml",
+        "packages/narrata/nodes/crates/narrata-nodes/tests/history.rs",
+        "packages/narrata/nodes/crates/narrata-nodes-wasm/**",
+        "packages/narrata/tooling/crates/narrata-node-tools/src/play.rs",
+        "examples/gamebook-web/**",
+        "fixtures/compat/nodes-r2-history/**",
+        "docs/adr/0013-r2-text-free-node-format.md"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/narrative-core/tasks/G-014.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-014",
+      "branch": "goal/g-014",
+      "base": "a07eeac64ef866683ed610a630184aba08793a01",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 20428,
+          "pidMark": 1791166321092,
+          "session": "92539266-fc59-41a0-a115-d49cb0c5b661",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-1.json",
+          "startedAt": "2026-10-05T02:12:01.099Z",
+          "endedAt": "2026-10-05T02:12:10.101Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 35044,
+          "pidMark": 1791166330657,
+          "session": "01a109d5-3895-7520-afbf-994e400b0a72",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-2.last.md",
+          "startedAt": "2026-10-05T02:12:10.665Z",
+          "endedAt": "2026-10-05T02:41:03.994Z"
+        },
+        {
+          "n": 3,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 17696,
+          "pidMark": 1791168088229,
+          "session": "01a109d5-3895-7520-afbf-994e400b0a72",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-3.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-3.last.md",
+          "startedAt": "2026-10-05T02:41:28.237Z",
+          "endedAt": "2026-10-05T03:50:00.323Z"
+        },
+        {
+          "n": 4,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 18280,
+          "pidMark": 1791185026302,
+          "session": "01a109d5-3895-7520-afbf-994e400b0a72",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-4.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-4.last.md",
+          "startedAt": "2026-10-05T07:23:46.310Z",
+          "endedAt": "2026-10-05T07:24:41.956Z"
+        },
+        {
+          "n": 5,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 31520,
+          "pidMark": 1791185398640,
+          "session": "01a109d5-3895-7520-afbf-994e400b0a72",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-5.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-014\\attempt-5.last.md",
+          "startedAt": "2026-10-05T07:29:58.648Z",
+          "endedAt": "2026-10-05T08:03:09.499Z"
+        }
+      ],
+      "goal": "narrative-core",
+      "mergedCommit": "4e8dc6400664d9488ca7e9cf83bed7abfc52849d",
+      "closedAt": "2026-10-05T08:23:05.640Z"
+    },
+    {
+      "id": "G-017",
+      "title": "发布时检查：内容大纲诊断与图分析接入 R2",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/tooling/crates/narrata-node-tools/src/compose.rs",
+        "packages/narrata/tooling/crates/narrata-node-tools/src/publish.rs",
+        "packages/narrata/tooling/crates/narrata-node-tools/tests/publish.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/outline.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/src/analysis.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/tests/outline.rs",
+        "packages/narrata/tooling/crates/narrata-graph/**",
+        "products/**",
+        "docs/adr/0016-graph-publication-format.md",
+        "docs/contracts/graph-and-analysis.md",
+        "fixtures/compat/graph-v1-labels/**"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/narrative-core/tasks/G-017.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-017",
+      "branch": "goal/g-017",
+      "base": "a8447ed46d504269042460847606ce6cb570684f",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 3232,
+          "pidMark": 1791185071556,
+          "session": "01a10af3-3a28-76d0-ba73-33d98c84066e",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-017\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-017\\attempt-1.last.md",
+          "startedAt": "2026-10-05T07:24:31.564Z",
+          "endedAt": "2026-10-05T07:25:23.501Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 17056,
+          "pidMark": 1791185399160,
+          "session": "01a10af3-3a28-76d0-ba73-33d98c84066e",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-017\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-017\\attempt-2.last.md",
+          "startedAt": "2026-10-05T07:29:59.167Z",
+          "endedAt": "2026-10-05T08:10:25.266Z"
+        },
+        {
+          "n": 3,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 19684,
+          "pidMark": 1791187840693,
+          "session": "01a10af3-3a28-76d0-ba73-33d98c84066e",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-017\\attempt-3.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-017\\attempt-3.last.md",
+          "startedAt": "2026-10-05T08:10:40.705Z",
+          "endedAt": "2026-10-05T08:27:37.922Z"
+        }
+      ],
+      "goal": "narrative-core",
+      "mergedCommit": "e15bca92995373c587776dd047fa17ed8faca022",
+      "closedAt": "2026-10-05T08:28:07.509Z"
+    },
+    {
+      "id": "G-018",
+      "title": "收尾：图分析的 Wasm 出口、Wasm 按块懒加载、完整的只改文字属性测试",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/crates/narrata-nodes-wasm/**",
+        "packages/narrata/nodes/crates/narrata-nodes/src/program.rs",
+        "packages/narrata/nodes/crates/narrata-nodes/tests/chunks.rs",
+        "packages/narrata/tooling/crates/narrata-node-tools/tests/project.rs",
+        "packages/narrata/tooling/crates/narrata-node-tools/src/publish.rs",
+        "packages/narrata/tooling/crates/narrata-graph/Cargo.toml",
+        "docs/development/benchmarks/nodes-scale.md",
+        "examples/gamebook-web/**"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/narrative-core/tasks/G-018.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-018",
+      "branch": "goal/g-018",
+      "base": "b494d48450af903fbad659d45cf411e97ca7f3f1",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 19684,
+          "pidMark": 1791191707470,
+          "session": "01a10b58-70ee-7b61-8c8a-8e811a5ebe5f",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-018\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-018\\attempt-1.last.md",
+          "startedAt": "2026-10-05T09:15:07.477Z",
+          "endedAt": "2026-10-05T09:52:56.302Z"
+        }
+      ],
+      "goal": "narrative-core",
+      "mergedCommit": "c5f2bc333ea8ea8aefa0379ec21f64b5e1ad8114",
+      "closedAt": "2026-10-05T09:53:22.198Z"
+    }
+  ]
+}
