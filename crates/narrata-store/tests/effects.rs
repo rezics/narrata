@@ -21,12 +21,14 @@ use narrata_store::{
     LedgerStatus, RecordedEffectResponseV1, RefMutation, RefName, RetentionPolicy, SaveStore,
     SessionCoordinator, Store, StoreError,
 };
-use narrata_testkit::generator::{barrier_command_v0, recorded_query_v0, scene_reconcile_v0};
+use narrata_testkit::generator::{
+    barrier_command_v1, recorded_query_v1, scene_reconcile_v0, scene_reconcile_v1,
+};
 use support::{Backend, assert_atomic, effects, refs};
 
 fn checked_query_program() -> Arc<narrata_core::CheckedProgram> {
     load_program(
-        &encode_program_artifact(&recorded_query_v0().unwrap()),
+        &encode_program_artifact(&recorded_query_v1().unwrap()),
         &Default::default(),
     )
     .unwrap()
@@ -247,7 +249,7 @@ fn unknown_outcome_stops_catchup_and_all_other_input<B: Backend>() {
 
 fn completed_barrier_blocks_rewind_before_cursor_mutation<B: Backend>() {
     let program = load_program(
-        &encode_program_artifact(&barrier_command_v0().unwrap()),
+        &encode_program_artifact(&barrier_command_v1().unwrap()),
         &Default::default(),
     )
     .unwrap();
@@ -362,11 +364,13 @@ fn faulty_store<B: StorageBackend>(
 }
 
 fn scene_is_reconciled_from_one_committed_snapshot<B: Backend>() {
-    let program = load_program(
-        &encode_program_artifact(&scene_reconcile_v0().unwrap()),
-        &Default::default(),
-    )
-    .unwrap();
+    for artifact in [scene_reconcile_v0().unwrap(), scene_reconcile_v1().unwrap()] {
+        scene_is_reconciled::<B>(&artifact);
+    }
+}
+
+fn scene_is_reconciled<B: Backend>(artifact: &narrata_core::program::ProgramArtifactV0) {
+    let program = load_program(&encode_program_artifact(artifact), &Default::default()).unwrap();
     let mut coordinator = SessionCoordinator::create(
         B::store(),
         program,

@@ -14,15 +14,23 @@ use narrata_store::{
     BranchId, EffectClaimResult, InitialRecordingMode, LeaseId, RefName, SaveStore,
     SessionCoordinator, TransitionReceiptV1,
 };
-use narrata_testkit::generator::statechart_parallel_history_v0;
+use narrata_testkit::generator::{statechart_parallel_history_v0, statechart_parallel_history_v1};
 use support::Backend;
 
+/// Format 1 states carry the Statechart without a scene (ADR 0018); format 0 always has one.
 fn statechart_effects_commit_before_dispatch_and_rewind_exactly<B: Backend>() {
-    let program = load_program(
-        &encode_program_artifact(&statechart_parallel_history_v0().unwrap()),
-        &Default::default(),
-    )
-    .unwrap();
+    for artifact in [
+        statechart_parallel_history_v0().unwrap(),
+        statechart_parallel_history_v1().unwrap(),
+    ] {
+        statechart_effects_commit_and_rewind::<B>(&artifact);
+    }
+}
+
+fn statechart_effects_commit_and_rewind<B: Backend>(
+    artifact: &narrata_core::program::ProgramArtifactV0,
+) {
+    let program = load_program(&encode_program_artifact(artifact), &Default::default()).unwrap();
     let mut coordinator = SessionCoordinator::create_with_capabilities(
         B::store(),
         Arc::clone(&program),
