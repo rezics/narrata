@@ -48,7 +48,7 @@ CBOR map 只用递增的无符号整数键（ADR 0003）；字段编号由实现
 
 - `provider`：1–32 字节 `[a-z0-9-]`；`key`：1–256 字节 UTF-8、无控制字符，只按字节比较；
   `AnchorId`：1–128 字节可打印 ASCII。
-- 节点正文、局部回应是 `Segment`；选项文字、禁用原因、段落标题、产品与图的标题、共享变量的
+- 节点正文、局部回应与结局正文是 `Segment`；选项文字、禁用原因、段落标题、产品与图的标题、共享变量的
   显示名、结局标题是 `ContentRef`。全部可选的位置由宿主决定回退显示（例如自己的"继续"）。
 - 新增标量类型 `ref`，值为 `ContentRef`，只支持相等比较。可译的名字（如子图参数里的角色称呼）
   用它传递，不再用 `text` 字面量。`text` 标量保留给参与规则判断的数据（决定 2）。
@@ -104,7 +104,8 @@ Option      = { id, key, label?: ContentRef, visible_if?, enabled_if?, reason?: 
   之间（两端都不含），`rejoin ≤ P(k+1)`，且所有块都在正文切片内。这保证未选的回应永远不会被
   呈现。局部结果要求段落有 `body`，`reply` 必须与 `body` 在同一内容单元。
 - 段落走到末尾（没有选择点，或最后一个选择点做了局部选择）后继续到 `next`。可能走到末尾却
-  没有 `next` 是编译错误。
+  没有 `next` 是编译错误；反过来，最后一个选择点只有分支结果、走不到末尾时声明 `next` 也是
+  编译错误。
 - **基数。** `1 ≤ max ≤ 选项数`，`0 ≤ min ≤ max`。多选（`max > 1`）或允许不选（`min = 0`）时，
   所有选项都必须是局部结果并共享同一个 `rejoin`（或都省略）；不选就走这个 `rejoin`。
 - **可用性。** 可见且可选的选项少于 `min` 时，运行时报 `no_actions`。`min = 0` 且没有可用选项
@@ -143,6 +144,8 @@ Input = choose  { choice_point, options: [OptionId] }           // 按选择点�
 - **上限。** 每个请求最多 16 个选项与 16 个节点，每个栈帧最多 256 个动态节点。
   `proposals = true` 的选择点没有可用选项时不报 `no_actions`，交互照常出现，以便宿主提议。
 - 回退、恢复与迁移使用 Input 中记录的结构，从不重新生成。
+- 首个实现只保留格式：源稿 `proposals: true` 编译报 `unsupported`，带提议 Input 或叠加层的
+  对象解码报 `unsupported`。
 
 ### 6. 会话对象
 
@@ -178,13 +181,16 @@ Commit = { artifact: [u8;32], parent?: CommitId, input?: ObjectId, state: Object
 
 运行时只输出引用。view（JSON）给出：
 
-- `presentation`：自上一个交互以来要显示的项，`{ occurrence, role: title|body|reply, node,
-  content: Segment|ContentRef, args }`。某个提交的呈现不存储，而是确定性重算：非根提交由父 State
+- `presentation`：自上一个交互以来要显示的项，`{ commit, occurrence, role: title|body|reply,
+  node, content: Segment|ContentRef, args }`，`(execution, commit, occurrence)` 即呈现键。某个提交的呈现不存储，而是确定性重算：非根提交由父 State
   与 Input 重算，根提交由清单的初始状态推进到第一个交互时重算，`occurrence` 的编号方式相同。
 - `interaction`：`choose { choice_point, min, max, args, options: [{ id, key?, label?, enabled,
   reason?, outcome }] }` 或 `finished { outcome, title?, body? }`。`args` 是段落参数在交互时的
   值，选项文字与禁用原因用它格式化。结局显示由清单的 `endings` 提供。
 - 共享变量（含 `label?: ContentRef`）、栈帧与历史。别名仅在加载名字表时附带。
+
+阅读器的 book view 另给出 `page`：进入当前段落（或结束故事）那一步的呈现，加上此后在该段落内
+各次局部选择的呈现。一页跨多个提交，所以每个呈现项都带自己的 `commit`。
 
 ### 8. 构件：清单、程序块与打包
 
@@ -223,17 +229,20 @@ language, entries: { key: { text } | { blocks: [{ id, text } | { id, choice_poin
   - 铸造 ID；
   - 把 `content`/`decision` 改写为段落：R1 节点 ID 成为节点别名，R1 选项 ID 成为选项 `key`，
     `content` 节点唯一的选项 `key` 为 `continue`。
-- 迁移后的名字表记录 R1 构件的 `artifact_id`。R1 存档只能迁移到由它自己的 R1 构件迁移而来的
-  R2 构件，两者不符时拒绝。
+- 项目清单的 `migrated_from_r1`（R1 `artifact_id` 的 64 位十六进制）记录来源，编译后进入
+  名字表，手工整理迁移结果时保留它。R1 存档只能迁移到由它自己的 R1 构件迁移而来的 R2 构件，
+  两者不符时拒绝。
 - 存档迁移的步骤：
   1. 按存档中的顺序（父在子前）把每个保留的 R1 提交的动作经名字表映射为 Input，在 R2 构件上
      重放，重建整棵提交树；
-  2. 逐个比较共享变量、栈帧位置、参数与局部值；
+  2. 逐个比较共享变量、栈帧位置、参数与局部值：R1 的 `text` 值与替换它的 `ref` 按内容方原文
+     语言的文字比较；只在 R2 中声明的变量必须仍是初值（R1 的游玩不可能改变它们），所以手工
+     整理可以新增变量与路线；
   3. 把游标映射到对应的 R2 提交；
   4. 输出 R2 会话导出。
 - 冻结语料：`fixtures/compat/nodes-r1/` 保存 R1 示例作品的源稿、bundle、lock、分析输出与存档，
-  作为迁移测试的输入；`fixtures/compat/nodes-r2/` 在 R2 实现完成时冻结打包构件、会话导出、
-  本地内容包与内容大纲。
+  作为迁移测试的输入；`fixtures/compat/nodes-r2/` 冻结示例作品的打包构件、本地内容包与内容
+  大纲，以及两份 R1 存档迁移而成的会话导出。
 
 ## 后果
 
@@ -242,3 +251,11 @@ language, entries: { key: { text } | { blocks: [{ id, text } | { id, choice_poin
 - 存档恢复从"整段重放"改为"受检解码"，接入 kernel 的提交 API 时只换容器，不换对象字节。
 - 块以图为单位，单图上限 4,096 节点；如果基准显示需要切分单个图，另写 ADR。
 - 本 ADR 不规定发布时分析的输出格式，只保留 kind code。
+
+## 修订
+
+- 2026-10-05，首个实现：补充原文未规定、实现必须确定的细节——`migrated_from_r1` 写在项目
+  清单中（手工整理的作品也要能接收 R1 存档）、结局正文是 `Segment`（与段落正文同样按块解析）、
+  R1 比较对 `ref` 与新增变量的处理（否则去文本和手工整理都会让迁移失败）、走不到的 `next` 是
+  错误（死边说明作者意图与结构不符）、保留字段报 `unsupported`（未来支持时不改变已有对象的
+  字节）、呈现项带 `commit` 与阅读页 `page`（一页跨多个提交，呈现键需要各自的提交）。

@@ -124,8 +124,8 @@ The node stack keeps text in a per-package `content` map referenced by key. That
 - `Bundle{format_version, product, packages}`.
 - `NarrativePackage{id, version, exports, content: BTreeMap<String, Content{title, paragraphs: Vec<String>}>, graphs}`.
 - `Graph{title, parameters, locals, shared, imports, outcomes, entry, nodes: BTreeMap<String, NodeDefinition{type_id, data: serde_json::Value}>}`.
-- Source: [packages/narrata/nodes/crates/narrata-nodes/src/model.rs:61-140](../../../../packages/narrata/nodes/crates/narrata-nodes/src/model.rs)
-- The lowered `NodePlan` is one of `Content{content: String /*key*/, label, next}`, `Decision{content, choices}`, `Branch`, `Mutate`, `Call{target, arguments, on_return}`, or `Return`. `Choice.label` and `disabled_reason` are **inline strings**. — [model.rs:142-188](../../../../packages/narrata/nodes/crates/narrata-nodes/src/model.rs)
+- Source: `packages/narrata/nodes/crates/narrata-nodes/src/model.rs:61-140`
+- The lowered `NodePlan` is one of `Content{content: String /*key*/, label, next}`, `Decision{content, choices}`, `Branch`, `Mutate`, `Call{target, arguments, on_return}`, or `Return`. `Choice.label` and `disabled_reason` are **inline strings**. — `model.rs:142-188`
 - Templates support `{{parameter.x}}`, `{{local.x}}`, and `{{shared.x}}`. — [expr.rs:93-134](../../../../packages/narrata/nodes/crates/narrata-nodes/src/expr.rs); [nodes README](../../../../packages/narrata/nodes/README.md)
 - The demo package's content map and inline choice labels are both in Chinese. — [products/gamebook-demo/packages/road.json](../../../../products/gamebook-demo/packages/road.json)
 - The node runtime **hard-codes a Chinese end-of-story paragraph** ("这段旅程已经结束。你可以回到任一历史节点，尝试另一条路线。"). — [packages/narrata/nodes/crates/narrata-nodes/src/runtime.rs:653-659](../../../../packages/narrata/nodes/crates/narrata-nodes/src/runtime.rs)
@@ -474,7 +474,7 @@ The verified correctness assets (checked decoding, canonical CBOR, CAS refs, eff
 2. Resolved strings are persisted in Snapshots and checked against program constants on restore, so the text is part of `StateDigest`. — [snapshot/wire.rs:180-235](../../../../crates/narrata-core/src/snapshot/wire.rs); [restore.rs:725-753](../../../../crates/narrata-core/src/snapshot/restore.rs)
 3. A VN-specific `SceneState` (layers, actors, camera, audio) is mandatory in `RuntimeStateV0`, and `ReconcileScene` embeds scene literals in the Program. — [state.rs:24](../../../../crates/narrata-core/src/runtime/state.rs); [scene.rs](../../../../crates/narrata-core/src/scene.rs)
 4. Media is referenced by an untyped `EntityId`: there is no AssetId and no manifest type in code. — [toolchain-roadmap.md:210](../../2026-09-05-narrata-toolchain-roadmap.md)
-5. Node choice labels, `disabled_reason`, titles, and `shared_labels` are inline. The engine also hard-codes Chinese end text. — [model.rs:176-188](../../../../packages/narrata/nodes/crates/narrata-nodes/src/model.rs); [runtime.rs:659](../../../../packages/narrata/nodes/crates/narrata-nodes/src/runtime.rs)
+5. Node choice labels, `disabled_reason`, titles, and `shared_labels` are inline. The engine also hard-codes Chinese end text. — `model.rs:176-188`; [runtime.rs:659](../../../../packages/narrata/nodes/crates/narrata-nodes/src/runtime.rs)
 6. There are no locale or line-ID types, and `StructureOccurrence.occurrence` is a bare `u32`, which REBUILD §9 flags as possibly unstable. — [content.rs](../../../../crates/narrata-core/src/content.rs); [REBUILD_PROPOSAL.md:421-440](../../../../archive/2026-09-05-rebuild-proposal.md)
 
 **Already done well, to preserve (IMPL plus accepted ADRs)**
@@ -498,7 +498,7 @@ The verified correctness assets (checked decoding, canonical CBOR, CAS refs, eff
 - **The node stack's package model:**
   - Explicit imports and exports, bindings, a lock with per-package digests and node-type revisions, and a content map separated from the graph by key.
   - It is a foundation for per-package or per-chapter artifacts.
-  - Source: [model.rs](../../../../packages/narrata/nodes/crates/narrata-nodes/src/model.rs); [project.lock.json](../../../../products/gamebook-demo/project.lock.json)
+  - Source: `model.rs`; [project.lock.json](../../../../products/gamebook-demo/project.lock.json)
 - **Content resolution types** (Pinned, RecordFirstResolution, LivePresentationOnly), which are the right abstraction even though they are unwired. — [content.rs](../../../../crates/narrata-core/src/content.rs)
 
 ### Inferences

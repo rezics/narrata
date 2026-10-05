@@ -1,6 +1,8 @@
 # 0011：R1 类型化节点、子图和 Gamebook 会话
 
-状态：已实施的 alpha 基线。后续类型仍需逐步验证。
+状态：部分被 [ADR 0013](0013-r2-text-free-node-format.md) 取代（2026-10-05）。作者格式、内容呈现、
+构件身份与保存格式以 ADR 0013 为准，R1 作品与存档只经 `narrata-book migrate-r1` 迁移读取；
+组合、调用、作用域与表达式语义仍以本 ADR 为准。
 
 R1 必须能运行没有对白、相机和立绘状态的 Gamebook，并组合独立内容包。旧 Program/RuntimeState
 要求 Flow 入口和 SceneState，因此不能把它们直接包装成新的公共节点格式。
