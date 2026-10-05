@@ -8,7 +8,8 @@ use std::sync::Arc;
 use narrata_content_local::{ContentPack, ResolveRequest};
 use narrata_kernel::content::ProviderId;
 use narrata_nodes::{
-    Analysis, BookView, Error, NameTable, Program, Session, analyze, parse_json_limited, r1,
+    Analysis, BookView, Error, MAX_REQUEST_BYTES, NameTable, Program, ProposalRequest, Session,
+    analyze, parse_json_limited, r1,
 };
 use wasm_bindgen::prelude::*;
 
@@ -96,6 +97,19 @@ impl NodeBook {
             .choose(&expected, choice_point, options)
             .map_err(js_error)?;
         Ok(commit.to_string())
+    }
+
+    /// Records a host proposal (a proposal request as JSON) at the cursor, which must still be
+    /// `expected`, and returns the new book view. The interaction stays at the same choice
+    /// point with the proposed options added.
+    pub fn propose(&mut self, expected: &str, request: &str) -> Result<String, JsError> {
+        let expected = parse(expected, "expected", "commit:<64 hex digits>")?;
+        let request: ProposalRequest =
+            parse_json_limited(request, MAX_REQUEST_BYTES).map_err(js_error)?;
+        self.session
+            .propose(&expected, &request)
+            .map_err(js_error)?;
+        self.inspect()
     }
 
     pub fn checkout(&mut self, commit: &str) -> Result<(), JsError> {
