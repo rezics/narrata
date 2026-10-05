@@ -81,9 +81,9 @@ occurrence)`：Flow 栈每个提交至多产生一个交互，同一交互里的
   都是 2。版本不是 2 的请求，包括 v1 宿主的全部请求，得到 `NAR-P0002 incompatible` 诊断，响应
   按 v2 编码。C ABI 的符号不变，`nar_abi_version()` 返回 2，.NET 绑定据此拒绝不匹配的原生库；
   TypeScript 与 C# 的 DTO 从同一 `.proto` 重新生成。
-- `Result` 保留字段号与名字 3（`text`），新增 `speaker = 7`、`body = 8`、`prompt = 9`
+- `Result` 删除文本字段并保留字段号 3 与名字 `text`（`reserved`），新增 `speaker = 7`、`body = 8`、`prompt = 9`
   （`ContentRef`/`Segment` 消息，锚点是 proto3 `optional`）、`capability = 10`（Effect 的能力 ID，
-  v1 借用 `text`）与 `occurrence = 11`。`Choice` 保留字段号 2，名字 `label` 改指字段 3 的
+  v1 借用 `text`）与 `occurrence = 11`。`Choice` 删除文本字段并保留字段号 2，名字 `label` 改指字段 3 的
   `ContentRef`。`SessionCreated` 增加 `execution_id = 4`，宿主据此组成呈现键。
 - `ProgramLoad` 拒绝格式 0（`NAR-P0002`，提示先升级）：协议只运行不含文字的 Program，宿主从不经
   协议收到文字。
