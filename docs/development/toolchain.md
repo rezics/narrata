@@ -12,7 +12,7 @@
 | Node.js / npm | CI 用 24，本机 26 | Web npm 包、参考阅读器、TypeScript 绑定、IndexedDB 存储适配器 | `.github/workflows/ci.yml` |
 | Playwright | 1.63.0 | Web 包 tarball 安装、阅读器与 IndexedDB 存储适配器的浏览器回归 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json`、`packages/narrata/kernel/js/package.json` |
 | Vite | 8.2.2 | Web 包安装测试的生产构建、阅读器构建、存储适配器浏览器测试页 | 同上 |
-| React | 19.2.8（`@rezics/narrata/react` 的可选 peer：`^18 || ^19`） | Web 包的 React 阅读器组件、参考阅读器 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json` |
+| React | 19.2.8（`@rezics/narrata/react` 的可选 peer，接受 React 18 与 19） | Web 包的 React 阅读器组件、参考阅读器 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json` |
 | Vitest、fake-indexeddb | 5.0.3、6.2.5 | Web 运行时包装与 IndexedDB 存储适配器的单元测试 | `packages/narrata/web/package.json`、`packages/narrata/kernel/js/package.json` |
 | PGlite、node-postgres / @types/pg | 0.5.8、8.23.1 / 8.23.1 | PostgreSQL 协议参考宿主的本机 SQL/事务一致性与 CI 双连接测试；仅开发依赖 | `packages/narrata/kernel/js/package-lock.json` |
 | PostgreSQL | CI 服务镜像 `postgres:18` | 服务器存档的真实行锁竞争与 REPEATABLE READ 快照检查；本机不安装服务 | `.github/workflows/ci.yml` |
