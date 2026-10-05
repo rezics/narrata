@@ -272,13 +272,13 @@ impl<B: StorageBackend, R: Registry> ObjectSource for History<B, R> {
 
 /// `magic ‖ manifest length ‖ manifest ‖ count ‖ (id ‖ kind ‖ schema ‖ length ‖ bytes)*`, big
 /// endian, objects in ascending id order.
-pub fn encode_container(
+pub fn encode_container<'a>(
     magic: &[u8; 8],
     manifest: &Object,
-    objects: &[Object],
+    objects: impl IntoIterator<Item = &'a Object>,
 ) -> Result<Vec<u8>, ContainerError> {
-    let mut sorted = objects.to_vec();
-    sorted.sort_by_key(Object::id);
+    let mut sorted = objects.into_iter().collect::<Vec<_>>();
+    sorted.sort_by_key(|object| object.id());
     if sorted.windows(2).any(|pair| pair[0].id() == pair[1].id()) {
         return Err(ContainerError::DuplicateObject);
     }

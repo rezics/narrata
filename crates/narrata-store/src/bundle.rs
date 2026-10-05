@@ -639,7 +639,7 @@ fn encode_bundle(
     Ok(narrata_history::encode_container(
         magic,
         manifest.object(),
-        &history_objects(objects),
+        objects.iter().map(CheckedObject::object),
     )?)
 }
 
