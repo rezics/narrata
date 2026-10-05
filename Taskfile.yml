@@ -28,6 +28,28 @@ tasks:
       - npm test
       - npx playwright install chromium
       - npm run test:browser
+  web:build:
+    desc: Build the standalone @rezics/narrata ESM, declarations and Wasm package
+    dir: packages/narrata/web
+    cmds:
+      - npm ci
+      - npm run build
+  web:pack:
+    desc: Build and pack @rezics/narrata under .temp/web-pack, printing SHA-256 and SHA-512
+    cmds:
+      - task web:build
+      - npm --prefix packages/narrata/web run pack:artifact
+  check:web:
+    desc: Web package types, unit tests, external tarball install (port 4193) and size budgets
+    dir: packages/narrata/web
+    cmds:
+      - npm ci
+      - npm run build
+      - npm run check
+      - npm test
+      - npm run budget
+      - npx playwright install chromium
+      - npm run test:install
   bench:g2:
     desc: Persistence and kernel benchmarks
     cmds: [pwsh -NoProfile -File scripts/benchmark-g2.ps1]

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { reader } from "./client";
 import { Arrow, GraphMap, Inspector, Outline, Reading } from "./components";
-import type { NodeAddress } from "./generated/book-view";
+import type { NodeAddress } from "@rezics/narrata";
 import { errorMessage, limits, type Command, type ViewReply } from "./protocol";
 import { graphTitle, heading, Texts } from "./texts";
 

@@ -1,6 +1,6 @@
 # Narrata Web Gamebook reference
 
-R2 的可用浏览器宿主，使用独立的 `narrata-nodes-wasm`。网页不实现剧情判断或存档解释器。
+R2 的可用浏览器宿主，通过 `@rezics/narrata` 的公开运行时与存储入口调用 Wasm。网页不实现剧情判断或存档解释器。
 默认作品《山口来信》由三个包组成；结构在打包构件 `story.narpack`，全部文字在本地内容包里。
 
 ## 启动
@@ -15,9 +15,9 @@ npm run prepare:runtime
 npm run dev
 ```
 
-打开 `http://127.0.0.1:4173/`。`prepare:runtime` 按 Cargo.lock 安装对应的 wasm-bindgen CLI
-到仓库 `.temp/wasm-tools`，构建 Wasm，按 lock 重新 compose 样例构件，把构件与内容包复制到
-`src/generated/story/`，并从 Rust schema 生成 TypeScript 与运行时校验器输入。
+打开 `http://127.0.0.1:4173/`。`prepare:runtime` 调用 `task web:build` 构建 npm 包，再按 lock
+重新 compose 样例构件，把构件与内容包复制到 `src/generated/story/`。BookView 类型与
+运行时校验器由 npm 包从 Rust schema 生成。
 `npm run build` 生成可部署到静态 HTTP 服务器的 `dist/`；不需要 API 服务。
 
 ## 已可使用

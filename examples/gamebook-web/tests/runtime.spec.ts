@@ -4,7 +4,7 @@ import { cp, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import type { NodeBook } from "../src/generated/wasm/narrata_nodes_wasm";
+import type { NodeBook } from "../../../packages/narrata/web/dist/wasm/narrata_nodes_wasm";
 import type { checkedBook } from "../src/protocol";
 
 const root = resolve(import.meta.dirname, "../../..");
@@ -64,7 +64,7 @@ test("Wasm publication matches CLI compose bytes with absent, complete and damag
     }
     native(...args);
     const raw: string = await page.evaluate(async ({ pack, outlines }) => {
-      const moduleUrl = "/src/generated/wasm/narrata_nodes_wasm.js";
+      const moduleUrl = "/node_modules/@rezics/narrata/dist/wasm/narrata_nodes_wasm.js";
       const wasm = await import(moduleUrl); await wasm.default();
       return wasm.publishGraph(new Uint8Array(pack), outlines.length ? JSON.stringify(outlines) : undefined);
     }, { pack, outlines });
@@ -83,7 +83,7 @@ test("Wasm publication matches CLI compose bytes with absent, complete and damag
     if (outlines[0] === damaged) expect(result.diagnostics.some(value => value.code === "outline_unit_missing")).toBe(true);
   }
   const errors: string[] = await page.evaluate(async ({ pack, outline }) => {
-    const moduleUrl = "/src/generated/wasm/narrata_nodes_wasm.js";
+    const moduleUrl = "/node_modules/@rezics/narrata/dist/wasm/narrata_nodes_wasm.js";
     const wasm = await import(moduleUrl); await wasm.default();
     const badPack = new Uint8Array(pack); badPack[badPack.length - 1] = (badPack.at(-1) ?? 0) ^ 1;
     const cases: Array<[Uint8Array, string | undefined]> = [
@@ -106,7 +106,7 @@ test("manifest-only Wasm loads the first chunk, then retries cold choices withou
   const parts = splitPack(pack);
   await page.goto("/");
   const result = await page.evaluate(async ({ parts, pack, execution }) => {
-    const moduleUrl = "/src/generated/wasm/narrata_nodes_wasm.js";
+    const moduleUrl = "/node_modules/@rezics/narrata/dist/wasm/narrata_nodes_wasm.js";
     const wasm = await import(moduleUrl); await wasm.default();
     const protocolUrl = "/src/protocol.ts";
     const protocol = await import(protocolUrl);
@@ -233,7 +233,7 @@ test("Wasm retries finish full scans larger than the decoded cache and release s
   expect(parts.chunks.length).toBeGreaterThan(16);
   await page.goto("/");
   const result = await page.evaluate(async ({ parts, target, execution }) => {
-    const moduleUrl = "/src/generated/wasm/narrata_nodes_wasm.js";
+    const moduleUrl = "/node_modules/@rezics/narrata/dist/wasm/narrata_nodes_wasm.js";
     const wasm = await import(moduleUrl); await wasm.default();
     const book = wasm.NodeBook.fromManifest(new Uint8Array(parts.manifest), execution);
     let requests = 0;

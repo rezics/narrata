@@ -1,4 +1,4 @@
-import type { BookView, ContentRef, GraphAnalysis, GraphRef, NodeAddress, NodeAnalysis, ViewScalar } from "./generated/book-view";
+import type { BookView, ContentRef, GraphAnalysis, GraphRef, NodeAddress, NodeAnalysis, ViewScalar } from "@rezics/narrata";
 import { contentKey, type Args, type Content, type Resolved } from "./protocol";
 
 /** Stands in for content the provider did not resolve; the key helps authors find it. */

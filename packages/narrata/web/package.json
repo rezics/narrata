@@ -1,0 +1,30 @@
+{
+  "name": "@rezics/narrata",
+  "version": "0.1.0-alpha.1",
+  "type": "module",
+  "description": "Narrata's Gamebook Wasm runtime and IndexedDB save host.",
+  "license": "AGPL-3.0-only",
+  "files": ["dist", "size-budget.json"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./storage": { "types": "./dist/storage.d.ts", "import": "./dist/storage.js" }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/build.mjs --check && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "pack:artifact": "node scripts/pack.mjs",
+    "test:install": "node scripts/install-test.mjs",
+    "budget": "node scripts/budget.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0",
+    "ajv": "^8.17.1",
+    "fake-indexeddb": "6.2.5",
+    "json-schema-to-typescript": "16.0.0",
+    "typescript": "~5.9.3",
+    "vite": "8.2.2",
+    "vitest": "5.0.3"
+  }
+}

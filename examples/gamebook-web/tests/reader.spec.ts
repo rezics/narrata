@@ -350,28 +350,24 @@ test("a failed interim R2 upgrade preserves the records and falls back to memory
 test("clearing the Wasm cache reloads the same node session from IndexedDB", async ({ page }) => {
   await open(page);
   await act(page, "到营地歇脚", "篝火夜谈");
-  const result = await page.evaluate(async moduleUrl => {
+  const result = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((done, fail) => { const r = indexedDB.open("narrata-gamebook", 1); r.onsuccess = () => done(r.result); r.onerror = () => fail(r.error); });
     const get = (key: string) => new Promise<unknown>((done, fail) => { const r = db.transaction("session", "readonly").objectStore("session").get(key); r.onsuccess = () => done(r.result); r.onerror = () => fail(r.error); });
     const active = await get("active"); const work = await get("work"); db.close();
     if (!active || typeof active !== "object" || !("execution" in active) || typeof active.execution !== "string" || !("database" in active) || typeof active.database !== "string") throw new Error("invalid kernel metadata");
     if (!work || typeof work !== "object" || !("pack" in work) || !(work.pack instanceof Uint8Array)) throw new Error("invalid work");
-    const wasmUrl = "/src/generated/wasm/narrata_nodes_wasm.js";
-    const wasm = await import(wasmUrl);
-    const { IndexedDbStore, StorageHost } = await import(moduleUrl);
-    await wasm.default();
-    const book = new wasm.NodeBook(work.pack, active.execution);
-    const store = await IndexedDbStore.open(active.database); const host = new StorageHost(store, book);
+    const moduleUrl = "/tests/package-api.ts";
+    const { IndexedDbStore, openBook } = await import(moduleUrl);
+    const store = await IndexedDbStore.open(active.database);
+    const book = await openBook({ pack: work.pack, execution: active.execution, storage: store });
     try {
-      await host.run(() => book.open());
-      const before: string = await host.run(() => book.inspect());
-      book.reload();
-      await host.run(() => book.open());
-      const after: string = await host.run(() => book.inspect());
+      const before = await book.inspect();
+      await book.reload();
+      const after = await book.inspect();
       return { before, after, loads: store.reads.loads };
-    } finally { book.free(); store.close(); }
-  }, `/@fs/${resolve(root, "packages/narrata/kernel/js/src/index.ts").replaceAll("\\", "/")}`);
+    } finally { await book.close(); store.close(); }
+  });
   expect(result.after).toBe(result.before);
   expect(result.loads).toBeGreaterThan(0);
-  expect(checkedBook(JSON.parse(result.after)).view.frames).toHaveLength(2);
+  expect(checkedBook(result.after).view.frames).toHaveLength(2);
 });

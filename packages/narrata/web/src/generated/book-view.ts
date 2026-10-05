@@ -1,4 +1,4 @@
-/* Generated from the Rust BookView JSON Schema. Run npm run prepare:runtime. */
+/* Generated from Rust BookView JSON Schema. Run task web:build. */
 
 export type NodeId = string;
 export type EdgeKind = "next" | "choice" | "condition" | "return" | "call";

@@ -1,5 +1,6 @@
 {
-  "name": "@rezics/narrata",
+  "name": "@rezics/narrata-protocol",
+  "private": true,
   "version": "0.1.0-alpha.1",
   "type": "module",
   "description": "Typed pull-protocol and IndexedDB adapters for Narrata Wasm.",

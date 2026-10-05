@@ -11,7 +11,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "ajv": "^8.17.1",
+    "@rezics/narrata": "file:../../packages/narrata/web",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "^4.1.0"
@@ -22,7 +22,6 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.0",
-    "json-schema-to-typescript": "16.0.0",
     "typescript": "~5.9.3",
     "vite": "8.2.2"
   }

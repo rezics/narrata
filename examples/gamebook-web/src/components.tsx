@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import type { BookView, GraphAnalysis, Interaction, NodeAddress, PresentationItem, Segment, VariableView } from "./generated/book-view";
+import type { BookView, GraphAnalysis, Interaction, NodeAddress, PresentationItem, Segment, VariableView } from "@rezics/narrata";
 import type { Args } from "./protocol";
 import { graphTitle, missing, nodeLabel, nodeName, type Texts } from "./texts";
 

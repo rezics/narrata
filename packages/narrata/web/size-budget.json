@@ -1,0 +1,11 @@
+{
+  "measurement": "Release Wasm and all dist/**/*.js; gzip level 9, each JavaScript module compressed separately. Budget leaves about 5% headroom.",
+  "baseline": {
+    "wasm": { "raw": 3828162, "gzip": 784391 },
+    "javascript": { "raw": 191983, "gzip": 30640 }
+  },
+  "maximum": {
+    "wasm": { "raw": 4020000, "gzip": 824000 },
+    "javascript": { "raw": 202000, "gzip": 32300 }
+  }
+}

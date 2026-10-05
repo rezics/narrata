@@ -1,15 +1,8 @@
-import Ajv2020 from "ajv/dist/2020.js";
+import { checkedBook, decodeBook } from "@rezics/narrata";
 import { z } from "zod";
-import schema from "./generated/book-view.schema.json" with { type: "json" };
-import type { BookView, ContentRef, Segment, ViewScalar } from "./generated/book-view";
+import type { ContentRef, Segment, ViewScalar } from "@rezics/narrata";
 
-// The static type and runtime schema are generated from the same Rust BookView definition.
-const validateBook = new Ajv2020({ strict: true, validateFormats: false }).compile<BookView>(schema);
-export function checkedBook(value: unknown): BookView {
-  if (!validateBook(value)) throw new Error("引擎返回了无法识别的界面数据，请重新构建运行时。");
-  return value;
-}
-export function decodeBook(text: string): BookView { const value: unknown = JSON.parse(text); return checkedBook(value); }
+export { checkedBook, decodeBook };
 
 export type Content = ContentRef | Segment;
 export type Args = Record<string, ViewScalar>;
