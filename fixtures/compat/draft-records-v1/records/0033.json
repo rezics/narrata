@@ -1,0 +1,1 @@
+{"choice_order":["choice-point:01a1095c2e437f8eb2c688500318ba37"],"format_version":1,"graph":"crossing","key":"trail","kind":"node","package":"road","payload":{"data":{"body":{"unit":{"key":"road.trail","provider":"local"}},"choice_points":[],"title":{"key":"road.trail.title","provider":"local"}},"id":"node:01a1095c2e4371e4a87f44627bda7b31","type_id":"narrata.passage"}}

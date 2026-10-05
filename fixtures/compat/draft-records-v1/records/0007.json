@@ -1,0 +1,1 @@
+{"choice_order":["choice-point:01a1095c2e43715b9ced15ec2498f4cc"],"format_version":1,"graph":"visit","key":"letter","kind":"node","package":"camp","payload":{"data":{"body":{"unit":{"key":"camp.letter","provider":"local"}},"choice_points":[],"title":{"key":"camp.letter.title","provider":"local"}},"id":"node:01a1095c2e437ef2b3a496c12a47d840","type_id":"narrata.passage"}}

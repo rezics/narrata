@@ -1,0 +1,978 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DraftRecord",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "$ref": "#/$defs/DraftVersion"
+        },
+        "kind": {
+          "type": "string",
+          "const": "project"
+        },
+        "payload": {
+          "$ref": "#/$defs/ProjectManifest"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "format_version",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "$ref": "#/$defs/DraftVersion"
+        },
+        "kind": {
+          "type": "string",
+          "const": "package"
+        },
+        "package": {
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/PackageSource"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "format_version",
+        "package",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "$ref": "#/$defs/DraftVersion"
+        },
+        "graph": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "graph"
+        },
+        "package": {
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/GraphSource"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "format_version",
+        "package",
+        "graph",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "choice_order": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/ChoicePointId"
+          }
+        },
+        "format_version": {
+          "$ref": "#/$defs/DraftVersion"
+        },
+        "graph": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "node"
+        },
+        "package": {
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/NodeSource"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "not": {
+              "required": [
+                "choice_order"
+              ]
+            }
+          },
+          "if": {
+            "properties": {
+              "payload": {
+                "properties": {
+                  "type_id": {
+                    "const": "narrata.passage"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "choice_order": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ChoicePointId"
+                },
+                "maxItems": 64,
+                "uniqueItems": true
+              },
+              "payload": {
+                "properties": {
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "choice_points": {
+                        "type": "array",
+                        "maxItems": 0
+                      }
+                    },
+                    "required": [
+                      "choice_points"
+                    ]
+                  }
+                }
+              }
+            },
+            "required": [
+              "choice_order"
+            ]
+          }
+        }
+      ],
+      "required": [
+        "kind",
+        "format_version",
+        "package",
+        "graph",
+        "key",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "$ref": "#/$defs/DraftVersion"
+        },
+        "graph": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "choice_point"
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "package": {
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ChoicePointSource"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "format_version",
+        "package",
+        "graph",
+        "node",
+        "payload"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "$ref": "#/$defs/DraftVersion"
+        },
+        "kind": {
+          "type": "string",
+          "const": "tombstone"
+        },
+        "package": {
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/AuthoredId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "format_version",
+        "package",
+        "payload"
+      ]
+    }
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "Assignment": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/Variable"
+        },
+        "value": {
+          "$ref": "#/$defs/Expr"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "value"
+      ]
+    },
+    "AuthoredId": {
+      "type": "string",
+      "pattern": "^(node|choice-point|option):[0-9a-f]{32}$"
+    },
+    "BinaryOp": {
+      "type": "string",
+      "enum": [
+        "eq",
+        "ne",
+        "lt",
+        "le",
+        "gt",
+        "ge",
+        "add",
+        "sub",
+        "and",
+        "or"
+      ]
+    },
+    "Binding": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/ImportRef"
+        },
+        "to": {
+          "$ref": "#/$defs/GraphRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "ChoicePointSource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ChoicePointId"
+        },
+        "key": {
+          "type": "string"
+        },
+        "max": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "min": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OptionSource"
+          }
+        },
+        "placement": {
+          "description": "The body block after which the choice point appears; only the last one may omit it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposals": {
+          "description": "Whether the host may propose options and passages here at run time (ADR 0013 §5).",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "options",
+        "id"
+      ]
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "DraftVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "EndingSource": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Segment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Expr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "literal"
+            },
+            "value": {
+              "$ref": "#/$defs/Scalar"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "read"
+            },
+            "name": {
+              "type": "string"
+            },
+            "scope": {
+              "$ref": "#/$defs/Scope"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "scope",
+            "name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "not"
+            },
+            "value": {
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "binary"
+            },
+            "left": {
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "$ref": "#/$defs/BinaryOp"
+            },
+            "right": {
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "op",
+            "left",
+            "right"
+          ]
+        }
+      ]
+    },
+    "GraphRef": {
+      "description": "A graph of one package instance. Package aliases and graph names are composition\nstructure, so unlike node aliases they are part of the artifact identity.",
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "GraphSource": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "description": "Alias of the entry node.",
+          "type": "string"
+        },
+        "imports": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Signature"
+          },
+          "default": {}
+        },
+        "locals": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "nodes": {
+          "type": "object",
+          "maxProperties": 0
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        },
+        "shared": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "outcomes",
+        "entry",
+        "nodes"
+      ]
+    },
+    "ImportRef": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph",
+        "port"
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "NodeSource": {
+      "type": "object",
+      "properties": {
+        "data": true,
+        "id": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "type_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type_id",
+        "data",
+        "id"
+      ]
+    },
+    "OptionId": {
+      "type": "string",
+      "pattern": "^option:[0-9a-f]{32}$"
+    },
+    "OptionSource": {
+      "type": "object",
+      "properties": {
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          }
+        },
+        "enabled_if": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/OptionId"
+        },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/OutcomeSource"
+        },
+        "reason": {
+          "description": "Shown when the option is visible but disabled.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visible_if": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "outcome",
+        "id"
+      ]
+    },
+    "OutcomeSource": {
+      "oneOf": [
+        {
+          "description": "Show `reply`, then continue in the same passage from `rejoin`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "local"
+            },
+            "rejoin": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AnchorId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reply": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Segment"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Enter another node of the same graph, by alias.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "branch"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "target"
+          ]
+        }
+      ]
+    },
+    "PackageSource": {
+      "type": "object",
+      "properties": {
+        "exports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "graphs": {
+          "type": "object",
+          "maxProperties": 0
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "minLength": 1
+        },
+        "tombstones": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "exports",
+        "graphs"
+      ]
+    },
+    "ProductSource": {
+      "type": "object",
+      "properties": {
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "bindings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Binding"
+          }
+        },
+        "endings": {
+          "description": "How each outcome of the entry graph is shown when the story ends.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/EndingSource"
+          }
+        },
+        "entry": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "id": {
+          "type": "string"
+        },
+        "shared": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "default": {}
+        },
+        "shared_labels": {
+          "description": "Display names of shared variables.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ContentRef"
+          }
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "entry"
+      ]
+    },
+    "ProjectManifest": {
+      "description": "Resolved by tooling, never by the deterministic runtime.",
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "type": "integer",
+          "const": 2
+        },
+        "migrated_from_r1": {
+          "description": "The R1 artifact this work was migrated from; recorded in the name table so that R1\nsaves can only migrate onto it (ADR 0013 §10).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/R1ArtifactId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "packages": {
+          "description": "Package instance alias to a path relative to the manifest.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "product": {
+          "$ref": "#/$defs/ProductSource"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "format_version",
+        "product",
+        "packages"
+      ]
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "R1ArtifactId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Scalar": {
+      "description": "A state value. `text` is data that rules compare (decision 2); translatable names travel as\n`ref`, which only supports equality.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/ContentRef"
+        }
+      ]
+    },
+    "ScalarType": {
+      "type": "string",
+      "enum": [
+        "bool",
+        "int",
+        "text",
+        "ref"
+      ]
+    },
+    "Scope": {
+      "type": "string",
+      "enum": [
+        "parameter",
+        "local",
+        "shared"
+      ]
+    },
+    "Segment": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/ContentRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "unit"
+      ]
+    },
+    "Signature": {
+      "description": "Parameters and outcomes; checked signatures keep outcomes sorted and unique.",
+      "type": "object",
+      "properties": {
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ScalarType"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "outcomes"
+      ]
+    },
+    "Variable": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "name"
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"choice_order":["choice-point:01a1095c2e437ba59dd48fd4be0bbc61"],"format_version":1,"graph":"journey","key":"station","kind":"node","package":"main","payload":{"data":{"body":{"unit":{"key":"main.station","provider":"local"}},"choice_points":[],"title":{"key":"main.station.title","provider":"local"}},"id":"node:01a1095c2e437b9e9de51d9d951a1e2c","type_id":"narrata.passage"}}

@@ -111,6 +111,7 @@ mod native {
             for (name, schema) in narrata_nodes::schemas()
                 .into_iter()
                 .chain(narrata_content_local::schemas())
+                .chain(narrata_authoring::schemas())
             {
                 write_text(
                     &Path::new(output).join(name),

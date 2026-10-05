@@ -1,13 +1,10 @@
 //! Composition with ID continuity (ADR 0013 §3): compared with the previous artifact, vanished
 //! IDs gain tombstones, tombstones never disappear and a live ID never changes owner.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use narrata_nodes::{
-    AuthoredId, Compilation, CompositionLock, Error, NodeRegistry, Owner, Program, Result, compile,
-    parse_json,
-};
+use narrata_nodes::{AuthoredId, Compilation, CompositionLock, Error, Program, Result, parse_json};
 
 use crate::files::{ProjectFiles, pretty, read_text, write_text};
 
@@ -65,97 +62,46 @@ pub struct Composed {
     pub compared: bool,
 }
 
-/// The package that owned `id` in `owners`.
-fn package_of(owners: &BTreeMap<AuthoredId, Owner>, id: &AuthoredId) -> Option<String> {
-    let mut current = *id;
-    for _ in 0..3 {
-        match owners.get(&current)? {
-            Owner::Graph(graph) => return Some(graph.package.clone()),
-            Owner::Node(node) => current = AuthoredId::Node(*node),
-            Owner::ChoicePoint(point) => current = AuthoredId::ChoicePoint(*point),
-        }
-    }
-    None
-}
-
-/// Compiles the project. With a previous artifact, appends tombstones for vanished IDs to the
-/// package sources (and rewrites those files) unless `locked`, in which case needing one fails.
+/// Reads the baseline and expected lock, delegates continuity to the pure authoring core,
+/// and writes source files only after composition has succeeded.
 pub fn compose(
     project: &mut ProjectFiles,
     previous: Option<&[u8]>,
     locked: bool,
 ) -> Result<Composed> {
-    let registry = NodeRegistry::gamebook();
-    let compilation = compile(&project.source, &registry)?;
-    let Some(previous) = previous else {
-        return Ok(Composed {
-            compilation,
-            appended: Vec::new(),
-            compared: false,
-        });
+    let previous = previous
+        .map(Program::from_pack)
+        .transpose()?
+        .map(|(program, _)| program);
+    let expected = if locked {
+        Some(parse_json::<CompositionLock>(&read_text(
+            &project.lock_path(),
+        )?)?)
+    } else {
+        None
     };
-    let (old, _) = Program::from_pack(previous)?;
-    let old_owners = old.owners()?;
-    let new_owners = compilation.program.owners()?;
-    let declared: BTreeSet<AuthoredId> = project
-        .source
-        .packages
-        .values()
-        .flat_map(|package| package.tombstones.iter().copied())
-        .collect();
-    if let Some(removed) = old.tombstones()?.iter().find(|id| !declared.contains(id)) {
-        return Err(Error::new(
-            "tombstone_removed",
-            removed.to_string(),
-            "tombstones only grow; restore the deleted tombstone",
-        ));
-    }
-    let mut appended = Vec::new();
-    for (id, owner) in &old_owners {
-        match new_owners.get(id) {
-            Some(new_owner) if new_owner != owner => {
-                return Err(Error::new(
-                    "owner_changed",
-                    id.to_string(),
-                    "a moved or copied node, choice point or option needs a new ID",
-                ));
+    let mode = expected.as_ref().map_or(
+        narrata_authoring::ComposeMode::Update,
+        narrata_authoring::ComposeMode::Locked,
+    );
+    let composed = narrata_authoring::compose_source(&project.source, previous.as_ref(), mode)
+        .map_err(|error| {
+            if error.code == "lock_mismatch" {
+                Error::new(
+                    &error.code,
+                    project.lock_path().display().to_string(),
+                    error.message,
+                )
+            } else {
+                error
             }
-            Some(_) => {}
-            None if declared.contains(id) => {}
-            None => {
-                let alias = package_of(&old_owners, id)
-                    .filter(|alias| project.source.packages.contains_key(alias))
-                    .ok_or_else(|| {
-                        Error::new(
-                            "tombstone",
-                            id.to_string(),
-                            "the package that owned this deleted ID is no longer in the project",
-                        )
-                    })?;
-                appended.push((alias, *id));
-            }
-        }
-    }
-    if appended.is_empty() {
-        return Ok(Composed {
-            compilation,
-            appended,
-            compared: true,
-        });
-    }
-    if locked {
-        return Err(Error::new(
-            "tombstones_needed",
-            appended[0].1.to_string(),
-            "deleted IDs need tombstones; compose without --locked to append them",
-        ));
-    }
-    for (alias, id) in &appended {
+        })?;
+    for (alias, id) in &composed.appended {
         if let Some(package) = project.source.packages.get_mut(alias) {
             package.tombstones.push(*id);
         }
     }
-    let changed: BTreeSet<&String> = appended.iter().map(|(alias, _)| alias).collect();
+    let changed: BTreeSet<&String> = composed.appended.iter().map(|(alias, _)| alias).collect();
     for alias in changed {
         if let (Some(package), Some(path)) = (
             project.source.packages.get(alias),
@@ -165,12 +111,11 @@ pub fn compose(
         }
     }
     Ok(Composed {
-        compilation: compile(&project.source, &registry)?,
-        appended,
-        compared: true,
+        compilation: composed.compilation,
+        appended: composed.appended,
+        compared: composed.compared,
     })
 }
-
 pub fn verify_lock(lock: &CompositionLock, project: &ProjectFiles) -> Result<()> {
     let path = project.lock_path();
     let recorded: CompositionLock = parse_json(&read_text(&path)?)?;

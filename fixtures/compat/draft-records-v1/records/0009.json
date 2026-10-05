@@ -1,0 +1,1 @@
+{"choice_order":["choice-point:01a1095c2e437452883ff98911ddbf7a"],"format_version":1,"graph":"visit","key":"rest","kind":"node","package":"camp","payload":{"data":{"body":{"unit":{"key":"camp.rest","provider":"local"}},"choice_points":[],"title":{"key":"camp.rest.title","provider":"local"}},"id":"node:01a1095c2e437b029d160d108c77f7ee","type_id":"narrata.passage"}}

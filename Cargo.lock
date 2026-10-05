@@ -487,6 +487,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "narrata-authoring"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "narrata-kernel",
+ "narrata-node-tools",
+ "narrata-nodes",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "narrata-cli"
 version = "0.1.0-alpha.1"
 dependencies = [
@@ -597,6 +609,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "getrandom 0.3.4",
  "hex",
+ "narrata-authoring",
  "narrata-content-local",
  "narrata-graph",
  "narrata-history",

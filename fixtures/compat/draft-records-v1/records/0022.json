@@ -1,0 +1,1 @@
+{"format_version":1,"graph":"journey","key":"road","kind":"node","package":"main","payload":{"data":{"arguments":{},"on_return":{"crossed":"gate","retreated":"station"},"target":{"kind":"import","port":"road"}},"id":"node:01a1095c2e437cb3adf31442154f39a4","type_id":"narrata.call"}}

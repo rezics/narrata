@@ -1,0 +1,1 @@
+{"format_version":1,"graph":"crossing","kind":"graph","package":"road","payload":{"entry":"rocks","imports":{},"locals":{},"nodes":{},"outcomes":["crossed","retreated"],"parameters":{},"shared":{"helped":"bool","rations":"int"},"title":{"key":"road.crossing:title","provider":"local"}}}

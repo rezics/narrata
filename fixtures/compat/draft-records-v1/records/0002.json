@@ -1,0 +1,1 @@
+{"format_version":1,"graph":"visit","kind":"graph","package":"camp","payload":{"entry":"greet","imports":{},"locals":{"greetings":0},"nodes":{},"outcomes":["left","rested"],"parameters":{"visitor":"ref"},"shared":{"letter":"bool","rations":"int","rests":"int"},"title":{"key":"camp.visit:title","provider":"local"}}}

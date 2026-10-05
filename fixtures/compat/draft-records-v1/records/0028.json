@@ -1,0 +1,1 @@
+{"choice_order":["choice-point:01a1095c2e437b4289168f4c509d77b4"],"format_version":1,"graph":"crossing","key":"fog","kind":"node","package":"road","payload":{"data":{"body":{"unit":{"key":"road.fog","provider":"local"}},"choice_points":[],"title":{"key":"road.fog.title","provider":"local"}},"id":"node:01a1095c2e43797a9c29a5f3850c689a","type_id":"narrata.passage"}}

@@ -1,0 +1,1 @@
+{"choice_order":["choice-point:01a1095c2e437534b3686842af8acea9"],"format_version":1,"graph":"journey","key":"gate","kind":"node","package":"main","payload":{"data":{"body":{"unit":{"key":"main.gate","provider":"local"}},"choice_points":[],"title":{"key":"main.gate.title","provider":"local"}},"id":"node:01a1095c2e437f11bd35937bb860612d","type_id":"narrata.passage"}}

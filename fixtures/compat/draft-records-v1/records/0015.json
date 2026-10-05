@@ -1,0 +1,1 @@
+{"format_version":1,"graph":"journey","key":"camp","kind":"node","package":"main","payload":{"data":{"arguments":{"visitor":{"kind":"literal","value":{"key":"main:visitor","provider":"local"}}},"on_return":{"left":"station","rested":"station"},"target":{"kind":"import","port":"camp"}},"id":"node:01a1095c2e43745d8de74c7a20d4e25d","type_id":"narrata.call"}}

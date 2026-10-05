@@ -1,0 +1,21 @@
+[package]
+name = "narrata-authoring"
+description = "Checked, filesystem-free authoring of Narrata node works"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
+narrata-nodes = { path = "../../../nodes/crates/narrata-nodes", version = "=0.1.0-alpha.1" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+
+[dev-dependencies]
+narrata-node-tools = { path = "../narrata-node-tools", version = "=0.1.0-alpha.1" }
+
+[lints]
+workspace = true
