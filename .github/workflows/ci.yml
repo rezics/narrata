@@ -7,6 +7,7 @@ on:
 jobs:
   docs-and-scripts:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -21,6 +22,7 @@ jobs:
         run: bun test scripts
   gamebook-r1:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -56,6 +58,7 @@ jobs:
           if [ -n "$drift" ]; then echo "$drift"; exit 1; fi
   gate-g3:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -629,6 +629,22 @@ function program(): string {
 }
 
 describe('lifecycle', () => {
+  test('dispatch resolves repository and brief aliases before checking ownership', () => {
+    const dir = program();
+    const alias = join(tempDir('alias'), 'repository');
+    symlinkSync(dir, alias, windows ? 'junction' : 'dir');
+    ok(dir, ['goal', 'start', 'alpha', '--manager', 'a']);
+    const path = 'docs/goals/alpha/tasks/G-001.md';
+    write(dir, path, briefText('G-001', ['crates/alpha/**']));
+    // Git and the caller can use different names for the same directory (including Windows 8.3 names).
+    for (const { cwd, brief } of [{ cwd: dir, brief: join(alias, path) }, { cwd: alias, brief: join(dir, path) }]) {
+      expect(ok(cwd, ['dispatch', brief, '--dry-run'])).toContain('G-001: claims ok');
+      const refused = goalctl(cwd, ['dispatch', brief, '--dry-run'], { GOAL_ID: 'beta' });
+      expect(refused.code).toBe(1);
+      expect(refused.out).toContain('docs/goals/alpha/tasks/G-001.md belongs to Goal alpha, not beta');
+    }
+  }, 60_000);
+
   test('dispatch, wait, merge and close archive the brief and handoff in one commit', () => {
     const dir = program();
     ok(dir, ['goal', 'start', 'alpha', '--manager', 'alpha-manager']);

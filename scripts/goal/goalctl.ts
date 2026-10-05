@@ -4,7 +4,7 @@
 import { dlopen, FFIType, ptr } from 'bun:ffi';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync,
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync,
   renameSync, rmSync, statfsSync, statSync, writeFileSync } from 'node:fs';
 import { devNull, homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
@@ -534,7 +534,7 @@ export function parsePorcelainZ(text: string): string[] {
 let cachedRoot: string | undefined;
 /** The main checkout, from any of its worktrees. */
 export function repoRoot(): string {
-  return cachedRoot ??= resolve(dirname(git(process.cwd(), ['rev-parse', '--path-format=absolute', '--git-common-dir'])));
+  return cachedRoot ??= realpathSync.native(dirname(git(process.cwd(), ['rev-parse', '--path-format=absolute', '--git-common-dir'])));
 }
 const stateDir = (): string => join(repoRoot(), '.temp', 'goal');
 const ledgerPath = (): string => join(stateDir(), 'ledger.json');
@@ -1167,7 +1167,8 @@ function describe(task: Task, paths = task.paths): string {
 /** Resolves a brief argument to its repository path and checks that it sits in its Goal's tasks directory under its
  * own ID. */
 function briefLocation(briefPath: string, brief: Brief): { absolute: string; path: string; goal: string } {
-  const absolute = resolve(briefPath);
+  // Git expands Windows short names; resolve both sides so aliases cannot make an in-repository brief look external.
+  const absolute = realpathSync.native(resolve(briefPath));
   const path = repoPath(absolute);
   const goal = goalOfBriefPath(path);
   if (!goal) throw new Error(`${path}: briefs live at ${GOALS_DIR}/<goal>/tasks/G-NNN.md (\`new\` writes them there)`);
