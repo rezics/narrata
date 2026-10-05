@@ -11,7 +11,7 @@ use narrata_protocol::{
         response, runtime_input,
     },
 };
-use narrata_testkit::generator::branch_call_choice_v0;
+use narrata_testkit::generator::branch_call_choice_v1;
 use prost::Message;
 
 unsafe extern "C" {
@@ -41,7 +41,7 @@ unsafe extern "C" {
 
 fn request(id: u64, body: request::Body) -> Vec<u8> {
     Request {
-        protocol_version: 1,
+        protocol_version: narrata_protocol::PROTOCOL_VERSION,
         request_id: id,
         body: Some(body),
     }
@@ -51,7 +51,7 @@ fn request(id: u64, body: request::Body) -> Vec<u8> {
 #[test]
 fn c_harness_calls_protocol_and_ownership_is_single_use() {
     let request = Request {
-        protocol_version: 1,
+        protocol_version: narrata_protocol::PROTOCOL_VERSION,
         request_id: 7,
         body: Some(request::Body::EngineCreate(EngineCreate {
             max_message_bytes: 0,
@@ -110,7 +110,7 @@ fn invalid_handles_and_arguments_are_rejected() {
 
 #[test]
 fn c_harness_runs_the_shared_program_session_dispatch_trace() {
-    let artifact = encode_program_artifact(&branch_call_choice_v0());
+    let artifact = encode_program_artifact(&branch_call_choice_v1());
     let program = narrata_core::load_program(&artifact, &Default::default()).unwrap();
     let load = request(1, request::Body::ProgramLoad(ProgramLoad { artifact }));
     let create = request(

@@ -172,7 +172,7 @@ fn linear_chart(state_count: u8) -> ProgramArtifactV0 {
             }],
         }],
         capabilities: Vec::new(),
-        external_content: Vec::new(),
+        content: Vec::new(),
         statechart: Some(StatechartV0 {
             root: StateId::from_u128(1),
             events: (1..state_count)

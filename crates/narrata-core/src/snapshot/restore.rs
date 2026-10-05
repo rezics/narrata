@@ -1,16 +1,16 @@
-use std::{collections::BTreeSet, error::Error, fmt, sync::Arc};
+use std::{collections::BTreeSet, error::Error, fmt};
 
 use crate::{
     codec::{DecodeError, ObjectKind, decode_envelope_versions},
     limits::SnapshotLoadLimits,
-    program::{CheckedProgram, OpV0, SlotRefV0},
+    program::{CheckedProgram, ContentOperand, OpV0, SlotRefV0},
     runtime::{
-        FrameStateV0, PendingChoiceItemV0, PendingEffectV0, PendingInteractionV0, RuntimeStateV0,
-        RuntimeStatusV0, derive_interaction_id,
+        FrameStateV0, PendingChoiceItemV0, PendingContent, PendingEffectV0, PendingInteractionV0,
+        RuntimeStateV0, RuntimeStatusV0, derive_interaction_id,
     },
     statechart::{DeferredStatechartWorkV0, StateKindV0, StatechartActionV0},
     value::Value,
-    version::{SEMANTICS_V0, SNAPSHOT_SCHEMA_V0},
+    version::{SEMANTICS_V0, SNAPSHOT_SCHEMA_V0, SNAPSHOT_SCHEMA_V1, SnapshotSchemaVersion},
 };
 
 use super::{decode_state_payload, encode_state_payload};
@@ -46,23 +46,16 @@ pub fn restore_snapshot(
     let envelope = decode_envelope_versions(
         bytes,
         ObjectKind::Snapshot,
-        &[SNAPSHOT_SCHEMA_V0.get()],
+        &[SNAPSHOT_SCHEMA_V0.get(), SNAPSHOT_SCHEMA_V1.get()],
         &limits.decode,
     )
     .map_err(SnapshotRestoreError::Decode)?;
-    let state = match envelope.schema_version {
-        0 => {
-            decode_state_payload(envelope.payload, limits).map_err(SnapshotRestoreError::Decode)?
-        }
-        version => {
-            return Err(SnapshotRestoreError::Decode(
-                DecodeError::UnsupportedVersion {
-                    axis: "Snapshot schema",
-                    version,
-                },
-            ));
-        }
-    };
+    let state = decode_state_payload(
+        envelope.payload,
+        SnapshotSchemaVersion::new(envelope.schema_version),
+        limits,
+    )
+    .map_err(SnapshotRestoreError::Decode)?;
     if encode_state_payload(&state) != envelope.payload {
         return Err(SnapshotRestoreError::Decode(DecodeError::NonCanonical(
             "Snapshot payload round-trip mismatch",
@@ -86,6 +79,15 @@ pub(crate) fn validate_state(
         return Err(SnapshotRestoreError::Incompatible(
             "Program Artifact identity",
         ));
+    }
+    if state.snapshot_schema != program.snapshot_schema() {
+        return Err(SnapshotRestoreError::Incompatible(
+            "Snapshot schema does not match the Program format",
+        ));
+    }
+    let scene_expected = state.snapshot_schema == SNAPSHOT_SCHEMA_V0 || program.uses_scene();
+    if state.scene.is_some() != scene_expected {
+        return Err(SnapshotRestoreError::InvalidState("scene presence"));
     }
     if state.globals.len() != program.artifact().globals.len() {
         return Err(SnapshotRestoreError::InvalidState("global slot set"));
@@ -749,8 +751,8 @@ fn validate_pending(
                 ));
             };
             if *resume_to != next
-                || speaker.as_deref() != optional_text(program, expected_speaker)?.as_deref()
-                || text.as_ref() != constant_text(program, expected_text)?.as_ref()
+                || *speaker != optional_content(program, expected_speaker)?
+                || *text != expected_content(program, expected_text)?
             {
                 return Err(SnapshotRestoreError::InvalidState("pending Say payload"));
             }
@@ -792,7 +794,7 @@ fn validate_pending(
                     "pending Choice points to another opcode",
                 ));
             };
-            if prompt.as_deref() != optional_text(program, *expected_prompt)?.as_deref() {
+            if *prompt != optional_content(program, *expected_prompt)? {
                 return Err(SnapshotRestoreError::InvalidState("Choice prompt"));
             }
             let recomputed = recompute_offered(state, frame, choices, program)?;
@@ -847,7 +849,7 @@ fn recompute_offered(
         if visible {
             offered.push(PendingChoiceItemV0 {
                 id: choice.id,
-                label: constant_text(program, choice.label)?,
+                label: expected_content(program, choice.label)?,
                 target: choice.target,
             });
         }
@@ -860,21 +862,33 @@ fn recompute_offered(
     Ok(offered)
 }
 
-fn optional_text(
+fn optional_content(
     program: &CheckedProgram,
-    index: Option<crate::program::ConstIndex>,
-) -> Result<Option<Arc<str>>, SnapshotRestoreError> {
-    index.map(|index| constant_text(program, index)).transpose()
+    operand: Option<ContentOperand>,
+) -> Result<Option<PendingContent>, SnapshotRestoreError> {
+    operand
+        .map(|operand| expected_content(program, operand))
+        .transpose()
 }
 
-fn constant_text(
+/// What a pending interaction must record for `operand`: the text for format 0, the content
+/// index for format 1.
+fn expected_content(
     program: &CheckedProgram,
-    index: crate::program::ConstIndex,
-) -> Result<Arc<str>, SnapshotRestoreError> {
-    match program.constant(index) {
-        Some(Value::String(text)) => Ok(text.clone()),
-        _ => Err(SnapshotRestoreError::InvalidState(
-            "interaction text constant",
-        )),
+    operand: ContentOperand,
+) -> Result<PendingContent, SnapshotRestoreError> {
+    match operand {
+        ContentOperand::Constant(index) => match program.constant(index) {
+            Some(Value::String(text)) => Ok(PendingContent::LegacyText(text.clone())),
+            _ => Err(SnapshotRestoreError::InvalidState(
+                "interaction text constant",
+            )),
+        },
+        ContentOperand::Content(index) => program
+            .content(index)
+            .map(|_| PendingContent::Content(index))
+            .ok_or(SnapshotRestoreError::InvalidState(
+                "interaction content entry",
+            )),
     }
 }

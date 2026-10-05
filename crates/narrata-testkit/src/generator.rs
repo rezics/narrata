@@ -9,13 +9,58 @@ use narrata_core::{
     StatechartActionV0, StatechartV0, TransitionId, TransitionKindV0, TransitionTargetV0,
     TransitionV0, Value, ValueKindV0, ValueSchemaV0,
     program::{
-        BinaryOpV0, ChoiceArmV0, ConstIndex, FlowV0, GlobalDeclV0, InstructionRecordV0,
-        LocalDeclV0, OpV0, ProgramArtifactV0, ReturnModeV0, SlotRefV0, UnaryOpV0,
+        BinaryOpV0, ChoiceArmV0, ConstIndex, ContentEntryV1, ContentIndex, ContentOperand,
+        ContentRef, FlowV0, GlobalDeclV0, InstructionRecordV0, LocalDeclV0, OpV0,
+        ProgramArtifactV0, ReturnModeV0, Segment, SlotRefV0, UnaryOpV0,
     },
-    version::{PROGRAM_FORMAT_V0, SEMANTICS_V0},
+    upgrade::{LocalContentPack, LocalTextEntry, UPGRADE_CONTENT_PROVIDER},
+    version::{PROGRAM_FORMAT_V0, PROGRAM_FORMAT_V1, ProgramFormatVersion, SEMANTICS_V0},
 };
 
+/// Every generator builds one story in two formats. Format 0 (`*_v0`) keeps the text in
+/// constants and is frozen with the Stage 1-5 corpora; format 1 (`*_v1`, ADR 0018) names
+/// content-table entries whose text [`story_content`] holds.
+const STORY_TEXTS: &[(&str, &str)] = &[
+    ("choose-a-path", "Choose a path"),
+    ("continue", "Continue"),
+    ("effect-completed", "Effect completed"),
+    ("hello", "Hello"),
+    ("hidden", "Hidden"),
+    ("inside-callee", "Inside callee"),
+    ("narrator", "Narrator"),
+    ("scene-ready", "Scene ready"),
+    ("unexpected-branch", "Unexpected branch"),
+];
+
+/// The local content pack holding the text of every format 1 story.
+pub fn story_content() -> LocalContentPack {
+    let mut pack = LocalContentPack::new("en");
+    for (key, text) in STORY_TEXTS {
+        pack.entries.insert(
+            (*key).to_owned(),
+            LocalTextEntry {
+                text: (*text).to_owned(),
+            },
+        );
+    }
+    pack
+}
+
+/// The reference a story names for `key`; `None` only for a key the local provider rejects.
+pub fn story_reference(key: &str) -> Option<ContentRef> {
+    ContentRef::new(UPGRADE_CONTENT_PROVIDER, key).ok()
+}
+
 pub fn scene_reconcile_v0() -> Result<ProgramArtifactV0, SceneError> {
+    scene_reconcile(PROGRAM_FORMAT_V0)
+}
+
+pub fn scene_reconcile_v1() -> Result<ProgramArtifactV0, SceneError> {
+    scene_reconcile(PROGRAM_FORMAT_V1)
+}
+
+fn scene_reconcile(format: ProgramFormatVersion) -> Result<ProgramArtifactV0, SceneError> {
+    let legacy = format == PROGRAM_FORMAT_V0;
     let flow = FlowId::from_u128(40);
     let layer = LayerId::from_u128(1);
     let actor = ActorId::from_u128(1);
@@ -58,11 +103,15 @@ pub fn scene_reconcile_v0() -> Result<ProgramArtifactV0, SceneError> {
         None,
     )?;
     Ok(ProgramArtifactV0 {
-        format_version: PROGRAM_FORMAT_V0,
+        format_version: format,
         semantics_version: SEMANTICS_V0,
         program_id: ProgramId::from_u128(40),
         entry_flow: flow,
-        constants: vec![Value::from("Scene ready")],
+        constants: if legacy {
+            vec![Value::from("Scene ready")]
+        } else {
+            Vec::new()
+        },
         globals: Vec::new(),
         flows: vec![FlowV0 {
             id: flow,
@@ -82,7 +131,7 @@ pub fn scene_reconcile_v0() -> Result<ProgramArtifactV0, SceneError> {
                     2,
                     OpV0::Say {
                         speaker: None,
-                        text: ConstIndex(0),
+                        text: present(legacy, 0, 0),
                         next: InstructionId::from_u128(3),
                     },
                 ),
@@ -95,45 +144,69 @@ pub fn scene_reconcile_v0() -> Result<ProgramArtifactV0, SceneError> {
             ],
         }],
         capabilities: Vec::new(),
-        external_content: Vec::new(),
+        content: table(legacy, &[segment("scene-ready")]),
         statechart: None,
     })
 }
 
 pub fn recorded_query_v0() -> Result<ProgramArtifactV0, CapabilityIdError> {
-    effect_v0(
+    recorded_query(PROGRAM_FORMAT_V0)
+}
+
+pub fn recorded_query_v1() -> Result<ProgramArtifactV0, CapabilityIdError> {
+    recorded_query(PROGRAM_FORMAT_V1)
+}
+
+fn recorded_query(format: ProgramFormatVersion) -> Result<ProgramArtifactV0, CapabilityIdError> {
+    effect_program(
         "host.query",
         DeliveryPolicy::RecordedQuery,
         RewindPolicy::ReuseRecordedResponse,
         30,
+        format,
     )
 }
 
 pub fn barrier_command_v0() -> Result<ProgramArtifactV0, CapabilityIdError> {
-    effect_v0(
+    barrier_command(PROGRAM_FORMAT_V0)
+}
+
+pub fn barrier_command_v1() -> Result<ProgramArtifactV0, CapabilityIdError> {
+    barrier_command(PROGRAM_FORMAT_V1)
+}
+
+fn barrier_command(format: ProgramFormatVersion) -> Result<ProgramArtifactV0, CapabilityIdError> {
+    effect_program(
         "host.command",
         DeliveryPolicy::AtLeastOnceIdempotent,
         RewindPolicy::Barrier,
         31,
+        format,
     )
 }
 
-fn effect_v0(
+fn effect_program(
     capability: &str,
     delivery: DeliveryPolicy,
     rewind: RewindPolicy,
     program: u128,
+    format: ProgramFormatVersion,
 ) -> Result<ProgramArtifactV0, CapabilityIdError> {
+    let legacy = format == PROGRAM_FORMAT_V0;
     let flow = FlowId::from_u128(30);
     let result = GlobalId::from_u128(30);
     let capability = CapabilityId::new(capability)?;
     let version = CapabilityVersion::new(1).ok_or(CapabilityIdError::Invalid)?;
     Ok(ProgramArtifactV0 {
-        format_version: PROGRAM_FORMAT_V0,
+        format_version: format,
         semantics_version: SEMANTICS_V0,
         program_id: ProgramId::from_u128(program),
         entry_flow: flow,
-        constants: vec![Value::I64(7), Value::from("Effect completed")],
+        constants: if legacy {
+            vec![Value::I64(7), Value::from("Effect completed")]
+        } else {
+            vec![Value::I64(7)]
+        },
         globals: vec![GlobalDeclV0 {
             id: result,
             kind: ValueKindV0::I64,
@@ -171,7 +244,7 @@ fn effect_v0(
                     4,
                     OpV0::Say {
                         speaker: None,
-                        text: ConstIndex(1),
+                        text: present(legacy, 1, 0),
                         next: InstructionId::from_u128(5),
                     },
                 ),
@@ -192,21 +265,34 @@ fn effect_v0(
             delivery,
             rewind,
         }],
-        external_content: Vec::new(),
+        content: table(legacy, &[segment("effect-completed")]),
         statechart: None,
     })
 }
 
 pub fn hello_v0() -> ProgramArtifactV0 {
+    hello(PROGRAM_FORMAT_V0)
+}
+
+pub fn hello_v1() -> ProgramArtifactV0 {
+    hello(PROGRAM_FORMAT_V1)
+}
+
+fn hello(format: ProgramFormatVersion) -> ProgramArtifactV0 {
+    let legacy = format == PROGRAM_FORMAT_V0;
     let flow = FlowId::from_u128(1);
     let say = InstructionId::from_u128(1);
     let finish = InstructionId::from_u128(2);
     ProgramArtifactV0 {
-        format_version: PROGRAM_FORMAT_V0,
+        format_version: format,
         semantics_version: SEMANTICS_V0,
         program_id: ProgramId::from_u128(1),
         entry_flow: flow,
-        constants: vec![Value::from("Hello")],
+        constants: if legacy {
+            vec![Value::from("Hello")]
+        } else {
+            Vec::new()
+        },
         globals: Vec::new(),
         flows: vec![FlowV0 {
             id: flow,
@@ -219,7 +305,7 @@ pub fn hello_v0() -> ProgramArtifactV0 {
                     id: say,
                     op: OpV0::Say {
                         speaker: None,
-                        text: ConstIndex(0),
+                        text: present(legacy, 0, 0),
                         next: finish,
                     },
                 },
@@ -232,12 +318,25 @@ pub fn hello_v0() -> ProgramArtifactV0 {
             ],
         }],
         capabilities: Vec::new(),
-        external_content: Vec::new(),
+        content: table(legacy, &[segment("hello")]),
         statechart: None,
     }
 }
 
 pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
+    branch_call_choice(PROGRAM_FORMAT_V0)
+}
+
+pub fn branch_call_choice_v1() -> ProgramArtifactV0 {
+    branch_call_choice(PROGRAM_FORMAT_V1)
+}
+
+/// Format 1 keeps the constants rules use (`"argument"` is a call argument, not text) and
+/// renumbers them; presentation operands move to the content table.
+fn branch_call_choice(format: ProgramFormatVersion) -> ProgramArtifactV0 {
+    let legacy = format == PROGRAM_FORMAT_V0;
+    let data =
+        |legacy_index: u32, index: u32| ConstIndex(if legacy { legacy_index } else { index });
     let entry = FlowId::from_u128(10);
     let callee = FlowId::from_u128(20);
     let score = GlobalId::from_u128(1);
@@ -249,23 +348,33 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
     let choice = ChoiceId::from_u128(1);
     let hidden_choice = ChoiceId::from_u128(2);
     ProgramArtifactV0 {
-        format_version: PROGRAM_FORMAT_V0,
+        format_version: format,
         semantics_version: SEMANTICS_V0,
         program_id: ProgramId::from_u128(2),
         entry_flow: entry,
-        constants: vec![
-            Value::I64(2),
-            Value::Bool(false),
-            Value::from("Choose a path"),
-            Value::from("Continue"),
-            Value::from("Hidden"),
-            Value::from("argument"),
-            Value::from("Narrator"),
-            Value::from("Inside callee"),
-            Value::I64(41),
-            Value::I64(1),
-            Value::from("Unexpected branch"),
-        ],
+        constants: if legacy {
+            vec![
+                Value::I64(2),
+                Value::Bool(false),
+                Value::from("Choose a path"),
+                Value::from("Continue"),
+                Value::from("Hidden"),
+                Value::from("argument"),
+                Value::from("Narrator"),
+                Value::from("Inside callee"),
+                Value::I64(41),
+                Value::I64(1),
+                Value::from("Unexpected branch"),
+            ]
+        } else {
+            vec![
+                Value::I64(2),
+                Value::Bool(false),
+                Value::from("argument"),
+                Value::I64(41),
+                Value::I64(1),
+            ]
+        },
         globals: vec![
             GlobalDeclV0 {
                 id: score,
@@ -293,7 +402,7 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
                     record(
                         1,
                         OpV0::Const {
-                            constant: ConstIndex(0),
+                            constant: data(0, 0),
                             next: instruction(2),
                         },
                     ),
@@ -307,7 +416,7 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
                     record(
                         3,
                         OpV0::Const {
-                            constant: ConstIndex(1),
+                            constant: data(1, 1),
                             next: instruction(4),
                         },
                     ),
@@ -335,7 +444,7 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
                     record(
                         7,
                         OpV0::Const {
-                            constant: ConstIndex(0),
+                            constant: data(0, 0),
                             next: instruction(8),
                         },
                     ),
@@ -363,24 +472,24 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
                         11,
                         OpV0::Say {
                             speaker: None,
-                            text: ConstIndex(2),
+                            text: present(legacy, 2, 0),
                             next: instruction(12),
                         },
                     ),
                     record(
                         12,
                         OpV0::Choice {
-                            prompt: Some(ConstIndex(2)),
+                            prompt: Some(present(legacy, 2, 1)),
                             choices: vec![
                                 ChoiceArmV0 {
                                     id: choice,
-                                    label: ConstIndex(3),
+                                    label: present(legacy, 3, 2),
                                     visible_if: Some(SlotRefV0::Local(flag)),
                                     target: instruction(13),
                                 },
                                 ChoiceArmV0 {
                                     id: hidden_choice,
-                                    label: ConstIndex(4),
+                                    label: present(legacy, 4, 3),
                                     visible_if: Some(SlotRefV0::Global(hidden)),
                                     target: instruction(90),
                                 },
@@ -390,7 +499,7 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
                     record(
                         13,
                         OpV0::Const {
-                            constant: ConstIndex(5),
+                            constant: data(5, 2),
                             next: instruction(14),
                         },
                     ),
@@ -419,7 +528,7 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
                     record(
                         17,
                         OpV0::Const {
-                            constant: ConstIndex(9),
+                            constant: data(9, 4),
                             next: instruction(18),
                         },
                     ),
@@ -447,7 +556,7 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
                         90,
                         OpV0::Say {
                             speaker: None,
-                            text: ConstIndex(10),
+                            text: present(legacy, 10, 4),
                             next: instruction(20),
                         },
                     ),
@@ -471,15 +580,15 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
                     record(
                         101,
                         OpV0::Say {
-                            speaker: Some(ConstIndex(6)),
-                            text: ConstIndex(7),
+                            speaker: Some(present(legacy, 6, 5)),
+                            text: present(legacy, 7, 6),
                             next: instruction(102),
                         },
                     ),
                     record(
                         102,
                         OpV0::Const {
-                            constant: ConstIndex(8),
+                            constant: data(8, 3),
                             next: instruction(103),
                         },
                     ),
@@ -507,12 +616,34 @@ pub fn branch_call_choice_v0() -> ProgramArtifactV0 {
             },
         ],
         capabilities: Vec::new(),
-        external_content: Vec::new(),
+        content: table(
+            legacy,
+            &[
+                segment("choose-a-path"),
+                reference("choose-a-path"),
+                reference("continue"),
+                reference("hidden"),
+                segment("unexpected-branch"),
+                reference("narrator"),
+                segment("inside-callee"),
+            ],
+        ),
         statechart: None,
     }
 }
 
 pub fn statechart_parallel_history_v0() -> Result<ProgramArtifactV0, CapabilityIdError> {
+    statechart_parallel_history(PROGRAM_FORMAT_V0)
+}
+
+/// The Statechart story has no text; format 1 differs only in its format version.
+pub fn statechart_parallel_history_v1() -> Result<ProgramArtifactV0, CapabilityIdError> {
+    statechart_parallel_history(PROGRAM_FORMAT_V1)
+}
+
+fn statechart_parallel_history(
+    format: ProgramFormatVersion,
+) -> Result<ProgramArtifactV0, CapabilityIdError> {
     let entry = FlowId::from_u128(500);
     let invoked = FlowId::from_u128(501);
     let result = GlobalId::from_u128(500);
@@ -561,7 +692,7 @@ pub fn statechart_parallel_history_v0() -> Result<ProgramArtifactV0, CapabilityI
             source_span: None,
         };
     Ok(ProgramArtifactV0 {
-        format_version: PROGRAM_FORMAT_V0,
+        format_version: format,
         semantics_version: SEMANTICS_V0,
         program_id: ProgramId::from_u128(500),
         entry_flow: entry,
@@ -650,7 +781,7 @@ pub fn statechart_parallel_history_v0() -> Result<ProgramArtifactV0, CapabilityI
             delivery: DeliveryPolicy::RecordedQuery,
             rewind: RewindPolicy::ReuseRecordedResponse,
         }],
-        external_content: Vec::new(),
+        content: Vec::new(),
         statechart: Some(StatechartV0 {
             root: state(1),
             events: (1..=6).map(event).collect(),
@@ -809,6 +940,39 @@ pub fn statechart_parallel_history_v0() -> Result<ProgramArtifactV0, CapabilityI
             source_span: None,
         }),
     })
+}
+
+/// A format 0 presentation operand: the string constant at `index`.
+fn legacy_text(index: u32) -> ContentOperand {
+    ContentOperand::Constant(ConstIndex(index))
+}
+
+/// The operand of one presentation in either format: a string constant in format 0, a
+/// content-table entry in format 1.
+fn present(legacy: bool, constant: u32, entry: u32) -> ContentOperand {
+    if legacy {
+        legacy_text(constant)
+    } else {
+        ContentOperand::Content(ContentIndex(entry))
+    }
+}
+
+/// Format 0 has no content table. Story keys are valid literals; a rejected one would drop
+/// its entry and fail Program validation.
+fn table(legacy: bool, entries: &[Option<ContentEntryV1>]) -> Vec<ContentEntryV1> {
+    if legacy {
+        Vec::new()
+    } else {
+        entries.iter().flatten().cloned().collect()
+    }
+}
+
+fn reference(key: &str) -> Option<ContentEntryV1> {
+    story_reference(key).map(ContentEntryV1::Ref)
+}
+
+fn segment(key: &str) -> Option<ContentEntryV1> {
+    story_reference(key).map(|unit| ContentEntryV1::Segment(Segment::unit(unit)))
 }
 
 fn record(id: u128, op: OpV0) -> InstructionRecordV0 {

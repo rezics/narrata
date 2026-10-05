@@ -15,8 +15,8 @@ use narrata_core::{
     },
     program::{OpV0, encode_program_artifact, load_program},
     runtime::{
-        CheckedRuntimeInput, PendingInteractionV0, SliceBudget, SliceOutcome, begin_transition,
-        begin_transition_with_parent_commit,
+        CheckedRuntimeInput, PendingContent, PendingInteractionV0, SliceBudget, SliceOutcome,
+        begin_transition, begin_transition_with_parent_commit,
     },
 };
 use narrata_store::{
@@ -144,7 +144,7 @@ fn migration_creates_child_commit_preserves_source_and_continues<B: Backend>() {
     assert!(matches!(
         loaded.state.pending(),
         Some(narrata_core::runtime::PendingInteractionV0::Say { text, .. })
-            if text.as_ref() == "Hello after migration"
+            if *text == PendingContent::LegacyText("Hello after migration".into())
     ));
 }
 
@@ -212,8 +212,8 @@ fn flow_scoped_instruction_and_local_relocations_do_not_cross_wires<B: Backend>(
     callee.locals[0].id = LocalId::from_u128(1);
     callee.instructions[0].id = InstructionId::from_u128(1);
     callee.instructions[0].op = OpV0::Say {
-        speaker: Some(narrata_core::program::ConstIndex(6)),
-        text: narrata_core::program::ConstIndex(7),
+        speaker: Some(legacy_text(6)),
+        text: legacy_text(7),
         next: InstructionId::from_u128(2),
     };
     callee.instructions[1].id = InstructionId::from_u128(2);
@@ -244,8 +244,8 @@ fn flow_scoped_instruction_and_local_relocations_do_not_cross_wires<B: Backend>(
     callee.locals[0].id = LocalId::from_u128(10);
     callee.instructions[0].id = InstructionId::from_u128(201);
     callee.instructions[0].op = OpV0::Say {
-        speaker: Some(narrata_core::program::ConstIndex(6)),
-        text: narrata_core::program::ConstIndex(7),
+        speaker: Some(legacy_text(6)),
+        text: legacy_text(7),
         next: InstructionId::from_u128(202),
     };
     callee.instructions[1].id = InstructionId::from_u128(202);
@@ -349,7 +349,6 @@ fn flow_scoped_instruction_and_local_relocations_do_not_cross_wires<B: Backend>(
         &state,
         &source,
         &target,
-        0,
         MigrationOptions::default(),
         &Default::default(),
     )
@@ -406,7 +405,6 @@ fn lossy_recovery_and_barrier_crossing_require_separate_confirmation<B: Backend>
             &state,
             &source,
             &target,
-            0,
             MigrationOptions::default(),
             &Default::default(),
         )
@@ -419,7 +417,6 @@ fn lossy_recovery_and_barrier_crossing_require_separate_confirmation<B: Backend>
             &state,
             &source,
             &target,
-            0,
             MigrationOptions {
                 allow_lossy_recovery: true,
                 ..MigrationOptions::default()
@@ -434,7 +431,6 @@ fn lossy_recovery_and_barrier_crossing_require_separate_confirmation<B: Backend>
         &state,
         &source,
         &target,
-        0,
         MigrationOptions {
             allow_lossy_recovery: true,
             allow_cross_barrier_recovery: true,
@@ -529,7 +525,6 @@ fn pending_effect_rekey_requires_confirmation_and_reports_new_identity<B: Backen
             &state,
             &source,
             &target,
-            0,
             MigrationOptions::default(),
             &Default::default(),
         )
@@ -541,7 +536,6 @@ fn pending_effect_rekey_requires_confirmation_and_reports_new_identity<B: Backen
         &state,
         &source,
         &target,
-        0,
         MigrationOptions {
             allow_effect_rekey: true,
             ..MigrationOptions::default()
@@ -605,7 +599,6 @@ fn statechart_pending_effect_migrates_without_spurious_rekey_when_identity_is_st
         &state,
         &source,
         &target,
-        0,
         MigrationOptions::default(),
         &Default::default(),
     )
@@ -641,3 +634,8 @@ backend_tests!(
     pending_effect_rekey_requires_confirmation_and_reports_new_identity,
     statechart_pending_effect_migrates_without_spurious_rekey_when_identity_is_stable,
 );
+
+/// A format 0 presentation operand: the string constant at `index`.
+fn legacy_text(index: u32) -> narrata_core::program::ContentOperand {
+    narrata_core::program::ContentOperand::Constant(narrata_core::program::ConstIndex(index))
+}

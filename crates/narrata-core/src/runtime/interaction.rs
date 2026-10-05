@@ -9,6 +9,7 @@ use crate::{
         ActionId, ChoiceId, EventTypeId, ExecutionId, GlobalId, InputPayloadDigest, InstructionId,
         InteractionId, StateDigest,
     },
+    program::{CheckedProgram, ContentEntryV1, ContentIndex, ContentRef, Segment},
     value::Value,
 };
 
@@ -69,10 +70,19 @@ impl PendingEffectV0 {
     }
 }
 
+/// A presentation operand as a pending interaction records it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingContent {
+    /// Snapshot schema 0: the reader text copied from a format 0 Program.
+    LegacyText(Arc<str>),
+    /// Snapshot schema 1: a format 1 content-table index (ADR 0018).
+    Content(ContentIndex),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingChoiceItemV0 {
     pub id: ChoiceId,
-    pub label: Arc<str>,
+    pub label: PendingContent,
     pub(crate) target: InstructionId,
 }
 
@@ -90,8 +100,8 @@ pub enum PendingInteractionV0 {
         origin_parent_state: StateDigest,
         origin_input_digest: InputPayloadDigest,
         occurrence: u64,
-        speaker: Option<Arc<str>>,
-        text: Arc<str>,
+        speaker: Option<PendingContent>,
+        text: PendingContent,
         resume_to: InstructionId,
     },
     Choice {
@@ -100,7 +110,7 @@ pub enum PendingInteractionV0 {
         origin_parent_state: StateDigest,
         origin_input_digest: InputPayloadDigest,
         occurrence: u64,
-        prompt: Option<Arc<str>>,
+        prompt: Option<PendingContent>,
         offered: Vec<PendingChoiceItemV0>,
     },
 }
@@ -113,25 +123,58 @@ impl PendingInteractionV0 {
             }
         }
     }
+
+    pub fn occurrence(&self) -> u64 {
+        match self {
+            Self::Say { occurrence, .. } | Self::Choice { occurrence, .. } => *occurrence,
+        }
+    }
+
+    /// The presentation operands in order: speaker and text, or prompt and labels.
+    pub fn contents(&self) -> impl Iterator<Item = &PendingContent> {
+        let (first, second, labels) = match self {
+            Self::Say { speaker, text, .. } => (speaker.as_ref(), Some(text), &[][..]),
+            Self::Choice {
+                prompt, offered, ..
+            } => (prompt.as_ref(), None, offered.as_slice()),
+        };
+        first
+            .into_iter()
+            .chain(second)
+            .chain(labels.iter().map(|item| &item.label))
+    }
 }
 
+/// What the host presents for one operand. Format 1 Programs give content references that the
+/// host resolves; only format 0 Programs still carry text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContentView {
+    Ref(ContentRef),
+    Segment(Segment),
+    LegacyText(Arc<str>),
+}
+
+/// `occurrence` with the Execution and the Commit forms the presentation key
+/// `(ExecutionId, CommitId, occurrence)` of everything this interaction presents.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SayView {
     pub interaction_id: InteractionId,
-    pub speaker: Option<Arc<str>>,
-    pub text: Arc<str>,
+    pub occurrence: u64,
+    pub speaker: Option<ContentView>,
+    pub text: ContentView,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChoiceViewItem {
     pub id: ChoiceId,
-    pub label: Arc<str>,
+    pub label: ContentView,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChoiceView {
     pub interaction_id: InteractionId,
-    pub prompt: Option<Arc<str>>,
+    pub occurrence: u64,
+    pub prompt: Option<ContentView>,
     pub choices: Vec<ChoiceViewItem>,
 }
 
@@ -144,35 +187,59 @@ pub enum DraftResult {
     StatechartStable(crate::statechart::StatechartView),
 }
 
-pub(crate) fn interaction_view(pending: &PendingInteractionV0) -> DraftResult {
-    match pending {
+/// The view of a pending interaction. Content indices resolve against `program`; `None` means
+/// the interaction names an entry `program` does not have.
+pub fn pending_view(
+    program: &CheckedProgram,
+    pending: &PendingInteractionV0,
+) -> Option<DraftResult> {
+    let view = |content: &PendingContent| match content {
+        PendingContent::LegacyText(text) => Some(ContentView::LegacyText(text.clone())),
+        PendingContent::Content(index) => match program.content(*index)? {
+            ContentEntryV1::Ref(reference) => Some(ContentView::Ref(reference.clone())),
+            ContentEntryV1::Segment(segment) => Some(ContentView::Segment(segment.clone())),
+        },
+    };
+    Some(match pending {
         PendingInteractionV0::Say {
             interaction_id,
+            occurrence,
             speaker,
             text,
             ..
         } => DraftResult::AwaitSay(SayView {
             interaction_id: *interaction_id,
-            speaker: speaker.clone(),
-            text: text.clone(),
+            occurrence: *occurrence,
+            speaker: match speaker {
+                Some(speaker) => Some(view(speaker)?),
+                None => None,
+            },
+            text: view(text)?,
         }),
         PendingInteractionV0::Choice {
             interaction_id,
+            occurrence,
             prompt,
             offered,
             ..
         } => DraftResult::AwaitChoice(ChoiceView {
             interaction_id: *interaction_id,
-            prompt: prompt.clone(),
+            occurrence: *occurrence,
+            prompt: match prompt {
+                Some(prompt) => Some(view(prompt)?),
+                None => None,
+            },
             choices: offered
                 .iter()
-                .map(|choice| ChoiceViewItem {
-                    id: choice.id,
-                    label: choice.label.clone(),
+                .map(|choice| {
+                    Some(ChoiceViewItem {
+                        id: choice.id,
+                        label: view(&choice.label)?,
+                    })
                 })
-                .collect(),
+                .collect::<Option<_>>()?,
         }),
-    }
+    })
 }
 
 pub(crate) fn derive_interaction_id(

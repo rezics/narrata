@@ -17,13 +17,15 @@ use crate::{
         effect_request_digest,
     },
     limits::SnapshotLoadLimits,
-    program::{CheckedProgram, OpV0},
+    program::{CheckedProgram, ContentOperand, OpV0},
     runtime::{
-        EffectPathV0, FrameStateV0, PendingChoiceItemV0, PendingEffectV0, PendingInteractionV0,
-        RuntimeStateV0, RuntimeStatusV0, VmStateV0, derive_interaction_id,
+        EffectPathV0, FrameStateV0, PendingChoiceItemV0, PendingContent, PendingEffectV0,
+        PendingInteractionV0, RuntimeStateV0, RuntimeStatusV0, VmStateV0, derive_interaction_id,
     },
+    scene::SceneState,
     snapshot::{export_snapshot, validate_state},
     statechart::{DeferredStatechartWorkV0, InvokedFlowV0, StatechartStateV0},
+    version::SNAPSHOT_SCHEMA_V0,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -164,6 +166,10 @@ pub enum MigrationError {
     EffectRekeyConfirmationRequired,
     #[error("recovery checkpoint cannot resume a Statechart invocation")]
     UnsupportedRecoveryState,
+    #[error("migration cannot move a state to an older Program format")]
+    FormatDowngrade,
+    #[error("target Program has no scene instructions but the state has a non-default scene")]
+    SceneWithoutTarget,
     #[error("migrated state failed target validation: {0}")]
     TargetValidation(String),
 }
@@ -194,12 +200,13 @@ impl TrustedMigration for DeclarativeMigration {
     }
 }
 
+/// The source state's Snapshot schema must be one the descriptor accepts. The target Program's
+/// format decides the migrated state's schema; formats never move backwards (ADR 0018).
 pub fn migrate_checked_state(
     migration: &dyn TrustedMigration,
     source: &RuntimeStateV0,
     source_program: &CheckedProgram,
     target_program: &CheckedProgram,
-    snapshot_schema: u16,
     options: MigrationOptions,
     limits: &SnapshotLoadLimits,
 ) -> Result<(RuntimeStateV0, MigrationReport), MigrationError> {
@@ -212,11 +219,15 @@ pub fn migrate_checked_state(
     {
         return Err(MigrationError::ArtifactMismatch);
     }
+    let snapshot_schema = source.snapshot_schema.get();
     if !descriptor
         .accepted_snapshot_schemas
         .contains(snapshot_schema)
     {
         return Err(MigrationError::SnapshotSchema(snapshot_schema));
+    }
+    if target_program.format_version() < source_program.format_version() {
+        return Err(MigrationError::FormatDowngrade);
     }
 
     let mut report = MigrationReport {
@@ -228,6 +239,8 @@ pub fn migrate_checked_state(
     let mut next = source.clone();
     next.program_artifact_id = descriptor.to;
     next.semantics_version = target_program.artifact().semantics_version;
+    next.snapshot_schema = target_program.snapshot_schema();
+    next.scene = migrate_scene(source.scene.as_ref(), target_program)?;
     next.globals = migrate_globals(migration, source, target_program, &mut report)?;
 
     if let Some(recovery) = find_recovery(source, descriptor, target_program)? {
@@ -247,6 +260,21 @@ pub fn migrate_checked_state(
         .map_err(|error| MigrationError::TargetValidation(error.to_string()))?;
     export_snapshot(&next).map_err(|error| MigrationError::TargetValidation(error.to_string()))?;
     Ok((next, report))
+}
+
+/// Schema 0 states always carry a scene; schema 1 states carry one exactly when the target
+/// Program uses `ReconcileScene`, and only a default scene may be dropped.
+fn migrate_scene(
+    source: Option<&SceneState>,
+    target: &CheckedProgram,
+) -> Result<Option<SceneState>, MigrationError> {
+    if target.snapshot_schema() == SNAPSHOT_SCHEMA_V0 || target.uses_scene() {
+        return Ok(Some(source.cloned().unwrap_or_default()));
+    }
+    match source {
+        Some(scene) if *scene != SceneState::default() => Err(MigrationError::SceneWithoutTarget),
+        _ => Ok(None),
+    }
 }
 
 fn validate_descriptor(descriptor: &MigrationDescriptor) -> Result<(), MigrationError> {
@@ -645,8 +673,10 @@ fn migrate_pending_interaction(
                 origin_parent_state,
                 origin_input_digest,
                 occurrence,
-                speaker: optional_constant_text(target, *speaker)?,
-                text: constant_text(target, *text)?,
+                speaker: speaker
+                    .map(|operand| target_content(target, operand))
+                    .transpose()?,
+                text: target_content(target, *text)?,
                 resume_to: *next,
             })
         }
@@ -694,7 +724,7 @@ fn migrate_pending_interaction(
                 if offered_ids.contains(&choice.id) {
                     migrated_offered.push(PendingChoiceItemV0 {
                         id: choice.id,
-                        label: constant_text(target, choice.label)?,
+                        label: target_content(target, choice.label)?,
                         target: choice.target,
                     });
                 }
@@ -719,7 +749,9 @@ fn migrate_pending_interaction(
                 origin_parent_state,
                 origin_input_digest,
                 occurrence,
-                prompt: optional_constant_text(target, *prompt)?,
+                prompt: prompt
+                    .map(|operand| target_content(target, operand))
+                    .transpose()?,
                 offered: migrated_offered,
             })
         }
@@ -1142,20 +1174,23 @@ fn state_frames(state: &RuntimeStateV0) -> &[FrameStateV0] {
     }
 }
 
-fn optional_constant_text(
+/// The pending record of a target operand: its text in format 0, its content index in format 1.
+fn target_content(
     program: &CheckedProgram,
-    index: Option<crate::program::ConstIndex>,
-) -> Result<Option<std::sync::Arc<str>>, MigrationError> {
-    index.map(|value| constant_text(program, value)).transpose()
-}
-
-fn constant_text(
-    program: &CheckedProgram,
-    index: crate::program::ConstIndex,
-) -> Result<std::sync::Arc<str>, MigrationError> {
-    match program.constant(index) {
-        Some(Value::String(value)) => Ok(value.clone()),
-        _ => Err(MigrationError::ValueKind),
+    operand: ContentOperand,
+) -> Result<PendingContent, MigrationError> {
+    match operand {
+        ContentOperand::Constant(index) => match program.constant(index) {
+            Some(Value::String(value)) => Ok(PendingContent::LegacyText(value.clone())),
+            _ => Err(MigrationError::ValueKind),
+        },
+        ContentOperand::Content(index) => program
+            .content(index)
+            .map(|_| PendingContent::Content(index))
+            .ok_or_else(|| MigrationError::MissingTarget {
+                kind: "content entry",
+                id: index.0.to_string(),
+            }),
     }
 }
 

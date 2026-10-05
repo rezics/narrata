@@ -58,7 +58,8 @@ pub struct CommittedRunResult {
     pub reused: bool,
     pub state: Arc<RuntimeStateV0>,
     pub result: DraftResult,
-    pub reconcile_scene: ReconcileScene,
+    /// `None` when the Program has no scene component (ADR 0018).
+    pub reconcile_scene: Option<ReconcileScene>,
 }
 
 #[derive(Clone, Debug)]
@@ -222,13 +223,13 @@ impl<S: SaveStore> SessionCoordinator<S> {
         let program_object = checked_existing_object(
             &encode_program_artifact(program.artifact()),
             ObjectKind::Program,
-            0,
+            program.format_version().get(),
         )?;
         let snapshot_object = checked_existing_object(
             &export_snapshot(&state)
                 .map_err(|error| CoordinatorError::Snapshot(error.to_string()))?,
             ObjectKind::Snapshot,
-            0,
+            state.snapshot_schema.get(),
         )?;
         let snapshot = SnapshotId::from_bytes(*snapshot_object.id().as_bytes());
         let commit = CommitV1 {
@@ -731,7 +732,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
                     ));
                 }
             };
-            let result = result_from_state(&loaded.state)?;
+            let result = result_from_state(&self.program, &loaded.state)?;
             let active = self
                 .store
                 .read_ref(&self.session_key)?
@@ -768,9 +769,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
                 reused: true,
                 state: self.state.clone(),
                 result,
-                reconcile_scene: ReconcileScene {
-                    target: self.state.scene.clone(),
-                },
+                reconcile_scene: reconcile_scene(&self.state),
             }));
         }
         Ok(None)
@@ -808,7 +807,11 @@ impl<S: SaveStore> SessionCoordinator<S> {
         let result = draft.result().clone();
         let snapshot_bytes = export_snapshot(draft.next_state())
             .map_err(|error| CoordinatorError::Snapshot(error.to_string()))?;
-        let snapshot_object = checked_existing_object(&snapshot_bytes, ObjectKind::Snapshot, 0)?;
+        let snapshot_object = checked_existing_object(
+            &snapshot_bytes,
+            ObjectKind::Snapshot,
+            draft.next_state().snapshot_schema.get(),
+        )?;
         let snapshot_id = SnapshotId::from_bytes(*snapshot_object.id().as_bytes());
         let receipt = TransitionReceiptV1::from_draft(
             self.execution,
@@ -932,9 +935,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
             reused: false,
             state: self.state.clone(),
             result,
-            reconcile_scene: ReconcileScene {
-                target: self.state.scene.clone(),
-            },
+            reconcile_scene: reconcile_scene(&self.state),
         })
     }
 
@@ -1969,38 +1970,20 @@ fn checked_existing_object(
         .map_err(|error| CoordinatorError::Object(error.to_string()))
 }
 
-fn result_from_state(state: &RuntimeStateV0) -> Result<DraftResult, CoordinatorError> {
+fn reconcile_scene(state: &RuntimeStateV0) -> Option<ReconcileScene> {
+    state.scene.clone().map(|target| ReconcileScene { target })
+}
+
+fn result_from_state(
+    program: &CheckedProgram,
+    state: &RuntimeStateV0,
+) -> Result<DraftResult, CoordinatorError> {
     match &state.status {
-        narrata_core::runtime::RuntimeStatusV0::Awaiting { pending, .. } => match pending {
-            narrata_core::runtime::PendingInteractionV0::Say {
-                interaction_id,
-                speaker,
-                text,
-                ..
-            } => Ok(DraftResult::AwaitSay(narrata_core::runtime::SayView {
-                interaction_id: *interaction_id,
-                speaker: speaker.clone(),
-                text: text.clone(),
-            })),
-            narrata_core::runtime::PendingInteractionV0::Choice {
-                interaction_id,
-                prompt,
-                offered,
-                ..
-            } => Ok(DraftResult::AwaitChoice(
-                narrata_core::runtime::ChoiceView {
-                    interaction_id: *interaction_id,
-                    prompt: prompt.clone(),
-                    choices: offered
-                        .iter()
-                        .map(|choice| narrata_core::runtime::ChoiceViewItem {
-                            id: choice.id,
-                            label: choice.label.clone(),
-                        })
-                        .collect(),
-                },
-            )),
-        },
+        narrata_core::runtime::RuntimeStatusV0::Awaiting { pending, .. } => {
+            narrata_core::runtime::pending_view(program, pending).ok_or_else(|| {
+                CoordinatorError::Snapshot("pending interaction names missing content".to_owned())
+            })
+        }
         narrata_core::runtime::RuntimeStatusV0::Finished { result, .. } => {
             Ok(DraftResult::Finished(result.clone()))
         }

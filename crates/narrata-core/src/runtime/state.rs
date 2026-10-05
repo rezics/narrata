@@ -5,7 +5,7 @@ use crate::{
     scene::SceneState,
     statechart::StatechartStateV0,
     value::Value,
-    version::SemanticsVersion,
+    version::{SemanticsVersion, SnapshotSchemaVersion},
 };
 
 use super::{FrameStateV0, PendingEffectV0, PendingInteractionV0, VmStateV0};
@@ -15,13 +15,17 @@ pub struct Turn(pub u64);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeStateV0 {
+    /// Follows the Program format: schema 0 for format 0, schema 1 for format 1 (ADR 0018).
+    pub snapshot_schema: SnapshotSchemaVersion,
     pub semantics_version: SemanticsVersion,
     pub execution_id: ExecutionId,
     pub program_artifact_id: ProgramArtifactId,
     pub turn: Turn,
     pub interaction_counter: u64,
     pub globals: BTreeMap<GlobalId, Value>,
-    pub scene: SceneState,
+    /// Always present in schema 0. In schema 1, present exactly when the Program uses
+    /// `ReconcileScene`.
+    pub scene: Option<SceneState>,
     pub statechart: Option<StatechartStateV0>,
     pub status: RuntimeStatusV0,
 }

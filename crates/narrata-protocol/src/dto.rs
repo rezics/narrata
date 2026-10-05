@@ -56,6 +56,8 @@ pub struct Response {
 pub mod response {
     use super::*;
 
+    // Committed results are most responses; boxing them would allocate for each one.
+    #[allow(clippy::large_enum_variant)]
     #[derive(Clone, PartialEq, Oneof)]
     pub enum Body {
         #[prost(message, tag = "10")]
@@ -260,6 +262,8 @@ pub struct SessionCreated {
     pub commit_id: Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
     pub snapshot: Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub execution_id: Vec<u8>,
 }
 
 #[derive(Clone, Copy, PartialEq, Message)]
@@ -296,20 +300,29 @@ pub struct CommittedRunResult {
     pub result: Option<RunResult>,
 }
 
+/// Field 3 (`text`) is reserved: version 2 results carry content references (ADR 0018).
 #[derive(Clone, PartialEq, Message)]
 pub struct RunResult {
     #[prost(enumeration = "RunResultKind", tag = "1")]
     pub kind: i32,
     #[prost(bytes = "vec", tag = "2")]
     pub interaction_or_effect_id: Vec<u8>,
-    #[prost(string, tag = "3")]
-    pub text: String,
     #[prost(message, repeated, tag = "4")]
     pub choices: Vec<Choice>,
     #[prost(bytes = "vec", tag = "5")]
     pub canonical_value: Vec<u8>,
     #[prost(bytes = "vec", repeated, tag = "6")]
     pub active_states: Vec<Vec<u8>>,
+    #[prost(message, optional, tag = "7")]
+    pub speaker: Option<ContentRef>,
+    #[prost(message, optional, tag = "8")]
+    pub body: Option<Segment>,
+    #[prost(message, optional, tag = "9")]
+    pub prompt: Option<ContentRef>,
+    #[prost(string, tag = "10")]
+    pub capability: String,
+    #[prost(uint64, tag = "11")]
+    pub occurrence: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Enumeration, PartialEq)]
@@ -322,12 +335,31 @@ pub enum RunResultKind {
     StatechartStable = 4,
 }
 
+/// Field 2 (the text `label`) is reserved.
 #[derive(Clone, PartialEq, Message)]
 pub struct Choice {
     #[prost(bytes = "vec", tag = "1")]
     pub id: Vec<u8>,
+    #[prost(message, optional, tag = "3")]
+    pub label: Option<ContentRef>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct ContentRef {
+    #[prost(string, tag = "1")]
+    pub provider: String,
     #[prost(string, tag = "2")]
-    pub label: String,
+    pub key: String,
+}
+
+#[derive(Clone, PartialEq, Message)]
+pub struct Segment {
+    #[prost(message, optional, tag = "1")]
+    pub unit: Option<ContentRef>,
+    #[prost(string, optional, tag = "2")]
+    pub first: Option<String>,
+    #[prost(string, optional, tag = "3")]
+    pub last: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Message)]

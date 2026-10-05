@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 use crate::{
     CapabilityId, CapabilityVersion, DeliveryPolicy, EffectRequestV0, RewindPolicy,
@@ -9,20 +9,34 @@ use crate::{
         InteractionId, LocalId, ProgramArtifactId, StateDigest,
     },
     limits::SnapshotLoadLimits,
+    program::ContentIndex,
     runtime::{
-        EffectPathV0, FrameStateV0, PendingChoiceItemV0, PendingEffectV0, PendingInteractionV0,
-        RuntimeStateV0, RuntimeStatusV0, Turn, VmStateV0,
+        EffectPathV0, FrameStateV0, PendingChoiceItemV0, PendingContent, PendingEffectV0,
+        PendingInteractionV0, RuntimeStateV0, RuntimeStatusV0, Turn, VmStateV0,
     },
     scene::{SceneState, decode_scene, encode_scene},
     statechart::{decode_statechart_state, encode_statechart_state},
-    version::SemanticsVersion,
+    version::{SNAPSHOT_SCHEMA_V0, SemanticsVersion, SnapshotSchemaVersion},
 };
+
+/// Schema 0 always has a scene and writes it only when it differs from the default or a
+/// Statechart is present. Schema 1 writes exactly the scene the state has (ADR 0018).
+fn written_scene(state: &RuntimeStateV0) -> Option<Cow<'_, SceneState>> {
+    if state.snapshot_schema != SNAPSHOT_SCHEMA_V0 {
+        return state.scene.as_ref().map(Cow::Borrowed);
+    }
+    let scene = state
+        .scene
+        .as_ref()
+        .map_or_else(|| Cow::Owned(SceneState::default()), Cow::Borrowed);
+    (state.statechart.is_some() || *scene != SceneState::default()).then_some(scene)
+}
 
 pub(crate) fn encode_state_payload(state: &RuntimeStateV0) -> Vec<u8> {
     let mut writer = CborWriter::new();
     let has_statechart = state.statechart.is_some();
-    let has_scene = state.scene != SceneState::default() || has_statechart;
-    let field_count = 7 + u64::from(has_scene) + u64::from(has_statechart);
+    let scene = written_scene(state);
+    let field_count = 7 + u64::from(scene.is_some()) + u64::from(has_statechart);
     writer.map(field_count);
     writer.unsigned(0);
     writer.unsigned(u64::from(state.semantics_version.get()));
@@ -42,9 +56,9 @@ pub(crate) fn encode_state_payload(state: &RuntimeStateV0) -> Vec<u8> {
     }
     writer.unsigned(6);
     encode_status(&mut writer, &state.status);
-    if has_scene {
+    if let Some(scene) = scene {
         writer.unsigned(7);
-        encode_scene(&mut writer, &state.scene);
+        encode_scene(&mut writer, &scene);
     }
     if let Some(statechart) = &state.statechart {
         writer.unsigned(8);
@@ -177,6 +191,15 @@ fn encode_frame(writer: &mut CborWriter, frame: &FrameStateV0) {
     }
 }
 
+/// Schema 0 writes the text, schema 1 the content index. Decoding accepts only the form of its
+/// schema, so a state mixing the two never restores.
+fn encode_content(writer: &mut CborWriter, content: &PendingContent) {
+    match content {
+        PendingContent::LegacyText(text) => writer.text(text),
+        PendingContent::Content(index) => writer.unsigned(u64::from(index.0)),
+    }
+}
+
 fn encode_pending(writer: &mut CborWriter, pending: &PendingInteractionV0) {
     match pending {
         PendingInteractionV0::Say {
@@ -197,10 +220,10 @@ fn encode_pending(writer: &mut CborWriter, pending: &PendingInteractionV0) {
             writer.bytes(origin_input_digest.as_bytes());
             writer.unsigned(*occurrence);
             match speaker {
-                Some(speaker) => writer.text(speaker),
+                Some(speaker) => encode_content(writer, speaker),
                 None => writer.null(),
             }
-            writer.text(text);
+            encode_content(writer, text);
             writer.bytes(resume_to.as_bytes());
         }
         PendingInteractionV0::Choice {
@@ -220,14 +243,14 @@ fn encode_pending(writer: &mut CborWriter, pending: &PendingInteractionV0) {
             writer.bytes(origin_input_digest.as_bytes());
             writer.unsigned(*occurrence);
             match prompt {
-                Some(prompt) => writer.text(prompt),
+                Some(prompt) => encode_content(writer, prompt),
                 None => writer.null(),
             }
             writer.array(offered.len() as u64);
             for choice in offered {
                 writer.array(3);
                 writer.bytes(choice.id.as_bytes());
-                writer.text(&choice.label);
+                encode_content(writer, &choice.label);
                 writer.bytes(choice.target_for_runtime().as_bytes());
             }
         }
@@ -236,6 +259,7 @@ fn encode_pending(writer: &mut CborWriter, pending: &PendingInteractionV0) {
 
 pub(crate) fn decode_state_payload(
     bytes: &[u8],
+    schema: SnapshotSchemaVersion,
     limits: &SnapshotLoadLimits,
 ) -> Result<RuntimeStateV0, DecodeError> {
     let mut reader = CborReader::new(bytes);
@@ -273,25 +297,53 @@ pub(crate) fn decode_state_payload(
         );
     }
     expect_key(&mut reader, 6)?;
-    let status = decode_status(&mut reader, limits, &mut value_nodes)?;
-    let scene = if field_count >= 8 {
-        expect_key(&mut reader, 7)?;
-        decode_scene(&mut reader, &limits.decode)?
+    let status = decode_status(&mut reader, schema, limits, &mut value_nodes)?;
+    let (scene, statechart) = if schema == SNAPSHOT_SCHEMA_V0 {
+        let scene = if field_count >= 8 {
+            expect_key(&mut reader, 7)?;
+            decode_scene(&mut reader, &limits.decode)?
+        } else {
+            SceneState::default()
+        };
+        let statechart = if field_count == 9 {
+            expect_key(&mut reader, 8)?;
+            Some(decode_statechart_state(
+                &mut reader,
+                limits,
+                &mut value_nodes,
+            )?)
+        } else {
+            None
+        };
+        (Some(scene), statechart)
     } else {
-        SceneState::default()
-    };
-    let statechart = if field_count == 9 {
-        expect_key(&mut reader, 8)?;
-        Some(decode_statechart_state(
-            &mut reader,
-            limits,
-            &mut value_nodes,
-        )?)
-    } else {
-        None
+        // Keys 7 (scene) and 8 (Statechart) are each optional, in key order.
+        let mut scene = None;
+        let mut statechart = None;
+        for _ in 7..field_count {
+            match reader.unsigned()? {
+                7 if scene.is_none() && statechart.is_none() => {
+                    scene = Some(decode_scene(&mut reader, &limits.decode)?);
+                }
+                8 if statechart.is_none() => {
+                    statechart = Some(decode_statechart_state(
+                        &mut reader,
+                        limits,
+                        &mut value_nodes,
+                    )?);
+                }
+                _ => {
+                    return Err(DecodeError::NonCanonical(
+                        "state map key order or unknown field",
+                    ));
+                }
+            }
+        }
+        (scene, statechart)
     };
     reader.finish()?;
     Ok(RuntimeStateV0 {
+        snapshot_schema: schema,
         semantics_version,
         execution_id,
         program_artifact_id,
@@ -306,6 +358,7 @@ pub(crate) fn decode_state_payload(
 
 fn decode_status(
     reader: &mut CborReader<'_>,
+    schema: SnapshotSchemaVersion,
     limits: &SnapshotLoadLimits,
     nodes: &mut u64,
 ) -> Result<RuntimeStatusV0, DecodeError> {
@@ -317,7 +370,7 @@ fn decode_status(
         }),
         (1, 3) => Ok(RuntimeStatusV0::Awaiting {
             vm: decode_vm(reader, limits, nodes)?,
-            pending: decode_pending(reader, limits)?,
+            pending: decode_pending(reader, schema, limits)?,
         }),
         (2, 3) => {
             let result = crate::value::decode_value(reader, &limits.decode, 1, nodes)?;
@@ -505,8 +558,24 @@ fn decode_frame(
     })
 }
 
+fn decode_content(
+    reader: &mut CborReader<'_>,
+    schema: SnapshotSchemaVersion,
+    limits: &SnapshotLoadLimits,
+) -> Result<PendingContent, DecodeError> {
+    if schema == SNAPSHOT_SCHEMA_V0 {
+        Ok(PendingContent::LegacyText(Arc::from(
+            reader.text(limits.decode.max_string_bytes)?,
+        )))
+    } else {
+        let index = u32::try_from(reader.unsigned()?).map_err(|_| DecodeError::IntegerOverflow)?;
+        Ok(PendingContent::Content(ContentIndex(index)))
+    }
+}
+
 fn decode_pending(
     reader: &mut CborReader<'_>,
+    schema: SnapshotSchemaVersion,
     limits: &SnapshotLoadLimits,
 ) -> Result<PendingInteractionV0, DecodeError> {
     let length = reader.array_len()?;
@@ -523,16 +592,12 @@ fn decode_pending(
             origin_parent_state,
             origin_input_digest,
             occurrence,
-            speaker: reader
-                .optional(|reader| reader.text(limits.decode.max_string_bytes))?
-                .map(Arc::from),
-            text: Arc::from(reader.text(limits.decode.max_string_bytes)?),
+            speaker: reader.optional(|reader| decode_content(reader, schema, limits))?,
+            text: decode_content(reader, schema, limits)?,
             resume_to: InstructionId::from_bytes(reader.bytes_exact::<16>()?),
         }),
         (1, 8) => {
-            let prompt = reader
-                .optional(|reader| reader.text(limits.decode.max_string_bytes))?
-                .map(Arc::from);
+            let prompt = reader.optional(|reader| decode_content(reader, schema, limits))?;
             let offered_len = reader.array_len()?;
             if offered_len > limits.decode.max_collection_items {
                 return Err(DecodeError::Limit("offered choices"));
@@ -545,7 +610,7 @@ fn decode_pending(
                 }
                 offered.push(PendingChoiceItemV0 {
                     id: ChoiceId::from_bytes(reader.bytes_exact::<16>()?),
-                    label: Arc::from(reader.text(limits.decode.max_string_bytes)?),
+                    label: decode_content(reader, schema, limits)?,
                     target: InstructionId::from_bytes(reader.bytes_exact::<16>()?),
                 });
             }

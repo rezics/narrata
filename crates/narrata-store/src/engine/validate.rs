@@ -11,7 +11,7 @@ use narrata_core::{
 use narrata_history::{Object, Op, Tag, View, layout::child_key};
 use narrata_storage::{Expect, StorageBackend};
 
-use super::registry::{Legacy, LegacyOp, PROGRAM};
+use super::registry::{Legacy, LegacyOp, PROGRAM, SNAPSHOT_SCHEMAS};
 use crate::{
     CATALOG_EVENT_SCHEMA_V1, COMPOUND_SAVE_MANIFEST_SCHEMA_V1, CommitCauseV1, CommitV1,
     CompoundSaveManifestV1, EFFECT_RESPONSE_SCHEMA_V1, HOST_TIMELINE_MANIFEST_SCHEMA_V1,
@@ -56,8 +56,14 @@ pub(super) fn validate<B: StorageBackend>(
     };
     match kind {
         ObjectKind::Program => return index_program(legacy, object, view),
+        // A Snapshot's content is checked against its Program when a Commit names it.
+        ObjectKind::Snapshot => {
+            if !SNAPSHOT_SCHEMAS.contains(&object.schema()) {
+                return Err(StoreError::ObjectKind(id(object.id())));
+            }
+        }
         // The history layer checks the checkpoint manifest, which it owns.
-        ObjectKind::Snapshot | ObjectKind::Value | ObjectKind::CheckpointBundleManifest => {}
+        ObjectKind::Value | ObjectKind::CheckpointBundleManifest => {}
         ObjectKind::Receipt => {
             schema(STORED_RECEIPT_SCHEMA_V1)?;
             TransitionReceiptV1::decode(payload).map_err(|error| corrupt(object, error))?;

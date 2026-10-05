@@ -161,7 +161,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::{ExecutionId, ProgramArtifactId, runtime::Turn, version::SEMANTICS_V0};
+    use crate::{
+        ExecutionId, ProgramArtifactId,
+        runtime::Turn,
+        version::{SEMANTICS_V0, SNAPSHOT_SCHEMA_V1},
+    };
 
     #[test]
     fn inspection_redacts_selected_globals_and_nested_fields() {
@@ -170,6 +174,7 @@ mod tests {
         let hidden = FieldId::from_u128(1);
         let visible = FieldId::from_u128(2);
         let state = RuntimeStateV0 {
+            snapshot_schema: SNAPSHOT_SCHEMA_V1,
             semantics_version: SEMANTICS_V0,
             execution_id: ExecutionId::from_u128(1),
             program_artifact_id: ProgramArtifactId::from_bytes([1; 32]),
@@ -185,7 +190,7 @@ mod tests {
                     ])),
                 ),
             ]),
-            scene: Default::default(),
+            scene: None,
             statechart: None,
             status: RuntimeStatusV0::StatechartStable,
         };

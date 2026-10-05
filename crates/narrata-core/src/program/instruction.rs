@@ -7,6 +7,28 @@ use crate::{
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ConstIndex(pub u32);
 
+/// An index into the Program content table (format 1).
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ContentIndex(pub u32);
+
+/// What a presentation operand (`Say` speaker and text, `Choice` prompt and labels) names.
+/// Both encode as the same unsigned integer; the Program format decides which one it is.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ContentOperand {
+    /// Program format 0: a string constant holding the reader text.
+    Constant(ConstIndex),
+    /// Program format 1: a content-table entry the host resolves.
+    Content(ContentIndex),
+}
+
+impl ContentOperand {
+    pub(crate) const fn raw(self) -> u32 {
+        match self {
+            Self::Constant(ConstIndex(index)) | Self::Content(ContentIndex(index)) => index,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SlotRefV0 {
     Global(GlobalId),
@@ -85,7 +107,7 @@ impl ReturnModeV0 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChoiceArmV0 {
     pub id: ChoiceId,
-    pub label: ConstIndex,
+    pub label: ContentOperand,
     pub visible_if: Option<SlotRefV0>,
     pub target: InstructionId,
 }
@@ -128,12 +150,12 @@ pub enum OpV0 {
         value: ReturnModeV0,
     },
     Say {
-        speaker: Option<ConstIndex>,
-        text: ConstIndex,
+        speaker: Option<ContentOperand>,
+        text: ContentOperand,
         next: InstructionId,
     },
     Choice {
-        prompt: Option<ConstIndex>,
+        prompt: Option<ContentOperand>,
         choices: Vec<ChoiceArmV0>,
     },
     Effect {

@@ -262,7 +262,7 @@ pub fn verify_receipt_replay(
     let snapshot_object = CheckedObject::from_bytes(
         &snapshot_bytes,
         ObjectKind::Snapshot,
-        0,
+        draft.next_state().snapshot_schema.get(),
         SnapshotLoadLimits::default().decode.max_envelope_bytes,
     )
     .map_err(|error| ReceiptVerificationError::Snapshot(error.to_string()))?;

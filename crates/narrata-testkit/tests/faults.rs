@@ -6,8 +6,9 @@ use narrata_core::{
     ChoiceId, ExecutionId, FlowId, GlobalId, InputId, InstructionId, ProgramId, Value,
     limits::{MacrostepLimits, ProgramLoadLimits, RuntimeLimits},
     program::{
-        BinaryOpV0, ChoiceArmV0, ConstIndex, FlowV0, GlobalDeclV0, InstructionRecordV0, OpV0,
-        ProgramArtifactV0, ReturnModeV0, SlotRefV0, encode_program_artifact, load_program,
+        BinaryOpV0, ChoiceArmV0, ConstIndex, ContentOperand, FlowV0, GlobalDeclV0,
+        InstructionRecordV0, OpV0, ProgramArtifactV0, ReturnModeV0, SlotRefV0,
+        encode_program_artifact, load_program,
     },
     runtime::{CheckedRuntimeInput, RuntimeFault, SliceBudget, new_execution},
     snapshot::export_snapshot,
@@ -178,7 +179,7 @@ fn binary_program(op: BinaryOpV0, left: i64, right: i64) -> ProgramArtifactV0 {
             ],
         }],
         capabilities: Vec::new(),
-        external_content: Vec::new(),
+        content: Vec::new(),
         statechart: None,
     }
 }
@@ -212,7 +213,7 @@ fn hidden_choice_program() -> ProgramArtifactV0 {
                     prompt: None,
                     choices: vec![ChoiceArmV0 {
                         id: ChoiceId::from_u128(1),
-                        label: ConstIndex(0),
+                        label: ContentOperand::Constant(ConstIndex(0)),
                         visible_if: Some(SlotRefV0::Global(hidden)),
                         target: InstructionId::from_u128(2),
                     }],
@@ -292,7 +293,7 @@ fn recursive_call_program() -> ProgramArtifactV0 {
             },
         ],
         capabilities: Vec::new(),
-        external_content: Vec::new(),
+        content: Vec::new(),
         statechart: None,
     }
 }
@@ -318,7 +319,7 @@ fn bare_program(
             instructions,
         }],
         capabilities: Vec::new(),
-        external_content: Vec::new(),
+        content: Vec::new(),
         statechart: None,
     }
 }

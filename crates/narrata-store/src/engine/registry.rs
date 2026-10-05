@@ -9,7 +9,9 @@ use std::{
 
 use narrata_core::{
     CheckedProgram, CommitId, CompoundSaveManifestId, ProgramArtifactId, TimelineArchiveManifestId,
-    TimelineCatalogEventId, codec::ObjectKind,
+    TimelineCatalogEventId,
+    codec::ObjectKind,
+    version::{PROGRAM_FORMAT_V0, PROGRAM_FORMAT_V1, SNAPSHOT_SCHEMA_V0, SNAPSHOT_SCHEMA_V1},
 };
 use narrata_history::{
     HistoryError, KindInfo, Object, ObjectId, Op, Reader, Reference, Registry, Root, Tag, View,
@@ -54,6 +56,12 @@ pub(crate) type LegacyOp = Op<RootKey>;
 /// The Stage 1–5 registrant. Programs decoded from verified object bytes are cached by object
 /// identity; an entry stays valid whether or not the object is still stored, because presence
 /// is always read from the backend.
+/// Program formats this registrant reads: 0 carries reader text, 1 content references
+/// (ADR 0018). A Program object of another schema stays unindexed, so no Commit can name it.
+pub(crate) const PROGRAM_SCHEMAS: [u16; 2] = [PROGRAM_FORMAT_V0.get(), PROGRAM_FORMAT_V1.get()];
+/// Snapshot schemas this registrant accepts; each matches the Program format of the same number.
+pub(crate) const SNAPSHOT_SCHEMAS: [u16; 2] = [SNAPSHOT_SCHEMA_V0.get(), SNAPSHOT_SCHEMA_V1.get()];
+
 #[derive(Default)]
 pub(crate) struct Legacy {
     programs: Mutex<BTreeMap<ObjectId, Option<Arc<CheckedProgram>>>>,
@@ -61,7 +69,7 @@ pub(crate) struct Legacy {
 
 impl Legacy {
     pub(crate) fn program(&self, object: &Object) -> Option<Arc<CheckedProgram>> {
-        if object.kind() != PROGRAM || object.schema() != 0 {
+        if object.kind() != PROGRAM || !PROGRAM_SCHEMAS.contains(&object.schema()) {
             return None;
         }
         let mut programs = self.programs.lock().unwrap_or_else(PoisonError::into_inner);

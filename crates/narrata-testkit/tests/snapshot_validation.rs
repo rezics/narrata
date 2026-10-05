@@ -5,7 +5,9 @@ use std::sync::Arc;
 use narrata_core::{
     ExecutionId, InputId,
     program::{encode_program_artifact, load_program},
-    runtime::{CheckedRuntimeInput, PendingInteractionV0, SliceBudget, new_execution},
+    runtime::{
+        CheckedRuntimeInput, PendingContent, PendingInteractionV0, SliceBudget, new_execution,
+    },
     snapshot::{copy_as_new_execution, export_snapshot, restore_snapshot},
 };
 use narrata_testkit::{
@@ -53,7 +55,7 @@ fn restore_rejects_wrong_program_corruption_and_tampered_offered_set() {
         narrata_core::runtime::RuntimeStatusV0::Awaiting { pending, .. } => Some(pending),
         _ => None,
     } {
-        offered[0].label = Arc::from("tampered");
+        offered[0].label = PendingContent::LegacyText(Arc::from("tampered"));
     }
     let tampered_snapshot = export_snapshot(&tampered).unwrap();
     assert!(restore_snapshot(&tampered_snapshot, &program, &Default::default()).is_err());

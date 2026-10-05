@@ -10,13 +10,13 @@ use narrata_core::{
     codec::{ObjectKind, decode_canonical_value, encode_canonical_value},
     effect::{EffectResponseV0, HostCapabilities, negotiate_capabilities},
     limits::{DecodeLimits, MacrostepLimits, ProgramLoadLimits, SnapshotLoadLimits},
-    program::load_program,
+    program::{ContentRef, Segment, load_program},
     runtime::{
-        CheckedRuntimeInput, DraftResult, RuntimeStateV0, SliceBudget, SliceOutcome,
+        CheckedRuntimeInput, ContentView, DraftResult, RuntimeStateV0, SliceBudget, SliceOutcome,
         TransitionRunner, begin_transition_with_parent_commit, new_execution,
     },
     snapshot::{export_snapshot, state_digest},
-    version::PROTOCOL_V1,
+    version::{PROGRAM_FORMAT_V0, PROTOCOL_V2},
 };
 use narrata_storage::{MemoryBackend, StorageBackend, StorageError};
 use narrata_store::{
@@ -30,7 +30,10 @@ use thiserror::Error;
 
 use crate::dto::{self, request, response, runtime_input};
 
-pub const PROTOCOL_ABI_VERSION: u32 = 1;
+/// Version 2 carries content references instead of reader text (ADR 0018).
+pub const PROTOCOL_ABI_VERSION: u32 = 2;
+/// The `protocol_version` every request must carry and every response carries.
+pub const PROTOCOL_VERSION: u32 = PROTOCOL_V2.get() as u32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProtocolLimits {
@@ -167,6 +170,7 @@ impl<B: StorageBackend> ProtocolEngine<B> {
         coordinator: SessionCoordinator<Store<B>>,
     ) -> Result<dto::SessionCreated, ProtocolDiagnostic> {
         let commit = coordinator.timeline().cursor;
+        let execution = coordinator.state().execution_id;
         let snapshot = protocol_snapshot(coordinator.state(), self.limits)?;
         let session = self.allocate_session(Session {
             program,
@@ -177,6 +181,7 @@ impl<B: StorageBackend> ProtocolEngine<B> {
             session,
             commit_id: commit.as_bytes().to_vec(),
             snapshot,
+            execution_id: execution.as_bytes().to_vec(),
         })
     }
 
@@ -198,7 +203,7 @@ impl<B: StorageBackend> ProtocolEngine<B> {
 
     pub fn handle(&mut self, request: dto::Request) -> dto::Response {
         let request_id = request.request_id;
-        if request.protocol_version != u32::from(PROTOCOL_V1.get()) {
+        if request.protocol_version != u32::from(PROTOCOL_V2.get()) {
             return diagnostic_response(
                 request_id,
                 ProtocolDiagnostic::incompatible(format!(
@@ -231,7 +236,7 @@ impl<B: StorageBackend> ProtocolEngine<B> {
         };
         match body {
             Ok(body) => dto::Response {
-                protocol_version: u32::from(PROTOCOL_V1.get()),
+                protocol_version: u32::from(PROTOCOL_V2.get()),
                 request_id,
                 body: Some(body),
             },
@@ -270,6 +275,12 @@ impl<B: StorageBackend> ProtocolEngine<B> {
         }
         let program = load_program(&request.artifact, &self.limits.program)
             .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
+        // Hosts never receive text through the protocol; format 0 keeps it in the Program.
+        if program.format_version() == PROGRAM_FORMAT_V0 {
+            return Err(ProtocolDiagnostic::incompatible(
+                "Program format 0 carries reader text; upgrade it to format 1 (ADR 0018)",
+            ));
+        }
         let id = program.artifact_id();
         self.programs.insert(id, program);
         Ok(response::Body::ProgramLoaded(dto::ProgramLoaded {
@@ -678,7 +689,7 @@ fn committed_response(
         snapshot: protocol_snapshot(&committed.state, limits)?,
         state_digest: state_digest(&committed.state).as_bytes().to_vec(),
         reused: committed.reused,
-        result: Some(result_dto(&committed.result)),
+        result: Some(result_dto(&committed.result)?),
     }))
 }
 
@@ -749,59 +760,92 @@ fn parse_input(
     }
 }
 
-fn result_dto(result: &DraftResult) -> dto::RunResult {
-    match result {
+fn result_dto(result: &DraftResult) -> Result<dto::RunResult, ProtocolDiagnostic> {
+    let empty = |kind: dto::RunResultKind| dto::RunResult {
+        kind: kind as i32,
+        interaction_or_effect_id: Vec::new(),
+        choices: Vec::new(),
+        canonical_value: Vec::new(),
+        active_states: Vec::new(),
+        speaker: None,
+        body: None,
+        prompt: None,
+        capability: String::new(),
+        occurrence: 0,
+    };
+    Ok(match result {
         DraftResult::AwaitSay(value) => dto::RunResult {
-            kind: dto::RunResultKind::Say as i32,
             interaction_or_effect_id: value.interaction_id.as_bytes().to_vec(),
-            text: value.text.to_string(),
-            choices: Vec::new(),
-            canonical_value: Vec::new(),
-            active_states: Vec::new(),
+            speaker: value.speaker.as_ref().map(reference_dto).transpose()?,
+            body: Some(segment_dto(&value.text)?),
+            occurrence: value.occurrence,
+            ..empty(dto::RunResultKind::Say)
         },
         DraftResult::AwaitChoice(value) => dto::RunResult {
-            kind: dto::RunResultKind::Choice as i32,
             interaction_or_effect_id: value.interaction_id.as_bytes().to_vec(),
-            text: value.prompt.as_deref().unwrap_or_default().to_owned(),
+            prompt: value.prompt.as_ref().map(reference_dto).transpose()?,
             choices: value
                 .choices
                 .iter()
-                .map(|choice| dto::Choice {
-                    id: choice.id.as_bytes().to_vec(),
-                    label: choice.label.to_string(),
+                .map(|choice| {
+                    Ok(dto::Choice {
+                        id: choice.id.as_bytes().to_vec(),
+                        label: Some(reference_dto(&choice.label)?),
+                    })
                 })
-                .collect(),
-            canonical_value: Vec::new(),
-            active_states: Vec::new(),
+                .collect::<Result<_, ProtocolDiagnostic>>()?,
+            occurrence: value.occurrence,
+            ..empty(dto::RunResultKind::Choice)
         },
         DraftResult::AwaitEffect(value) => dto::RunResult {
-            kind: dto::RunResultKind::Effect as i32,
             interaction_or_effect_id: value.id.as_bytes().to_vec(),
-            text: value.capability.to_string(),
-            choices: Vec::new(),
+            capability: value.capability.to_string(),
             canonical_value: encode_canonical_value(&value.payload),
-            active_states: Vec::new(),
+            ..empty(dto::RunResultKind::Effect)
         },
         DraftResult::Finished(value) => dto::RunResult {
-            kind: dto::RunResultKind::Finished as i32,
-            interaction_or_effect_id: Vec::new(),
-            text: String::new(),
-            choices: Vec::new(),
             canonical_value: encode_canonical_value(value),
-            active_states: Vec::new(),
+            ..empty(dto::RunResultKind::Finished)
         },
         DraftResult::StatechartStable(value) => dto::RunResult {
-            kind: dto::RunResultKind::StatechartStable as i32,
-            interaction_or_effect_id: Vec::new(),
-            text: String::new(),
-            choices: Vec::new(),
-            canonical_value: Vec::new(),
             active_states: value
                 .active
                 .iter()
                 .map(|state| state.as_bytes().to_vec())
                 .collect(),
+            ..empty(dto::RunResultKind::StatechartStable)
         },
+    })
+}
+
+fn content_ref_dto(reference: &ContentRef) -> dto::ContentRef {
+    dto::ContentRef {
+        provider: reference.provider.to_string(),
+        key: reference.key.to_string(),
+    }
+}
+
+/// Format 1 validation makes speakers, prompts and labels references and bodies segments;
+/// only a format 0 Program, which `ProgramLoad` refuses, yields text.
+fn reference_dto(view: &ContentView) -> Result<dto::ContentRef, ProtocolDiagnostic> {
+    match view {
+        ContentView::Ref(reference) => Ok(content_ref_dto(reference)),
+        ContentView::Segment(_) | ContentView::LegacyText(_) => Err(
+            ProtocolDiagnostic::incompatible("result content is not a content reference"),
+        ),
+    }
+}
+
+fn segment_dto(view: &ContentView) -> Result<dto::Segment, ProtocolDiagnostic> {
+    match view {
+        ContentView::Segment(Segment { unit, first, last }) => Ok(dto::Segment {
+            unit: Some(content_ref_dto(unit)),
+            first: first.as_ref().map(ToString::to_string),
+            last: last.as_ref().map(ToString::to_string),
+        }),
+        ContentView::Ref(_) | ContentView::LegacyText(_) => Err(ProtocolDiagnostic::incompatible(
+            "result content is not a content segment",
+        )),
     }
 }
 
@@ -915,7 +959,7 @@ impl ProtocolDiagnostic {
 
 fn diagnostic_response(request_id: u64, error: ProtocolDiagnostic) -> dto::Response {
     dto::Response {
-        protocol_version: u32::from(PROTOCOL_V1.get()),
+        protocol_version: u32::from(PROTOCOL_V2.get()),
         request_id,
         body: Some(response::Body::Diagnostic(error.into_dto())),
     }

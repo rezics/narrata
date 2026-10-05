@@ -13,12 +13,12 @@ use crate::{
     identity::{ChoiceId, FlowId, InstructionId, ProgramArtifactId},
     limits::ProgramLoadLimits,
     statechart::{StatechartIndices, validate_statechart},
-    version::{PROGRAM_FORMAT_V0, SEMANTICS_V0},
+    version::{PROGRAM_FORMAT_V0, PROGRAM_FORMAT_V1, SEMANTICS_V0},
 };
 
 use super::{
-    CheckedProgram, OpV0, ProgramArtifactV0, ReturnModeV0, SlotRefV0, decode_program_artifact,
-    stack_analysis,
+    CheckedProgram, ContentEntryV1, ContentOperand, OpV0, ProgramArtifactV0, ReturnModeV0,
+    SlotRefV0, decode_program_artifact, stack_analysis,
 };
 
 #[derive(Clone, Debug)]
@@ -63,7 +63,8 @@ pub fn validate_program(
     limits: &ProgramLoadLimits,
 ) -> Result<CheckedProgram, Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
-    if artifact.format_version != PROGRAM_FORMAT_V0 {
+    if artifact.format_version != PROGRAM_FORMAT_V0 && artifact.format_version != PROGRAM_FORMAT_V1
+    {
         diagnostics.push(Diagnostic::new(
             DiagnosticClass::Incompatible,
             UNSUPPORTED_VERSION,
@@ -224,7 +225,16 @@ pub fn validate_program(
     }
 
     let payload = super::wire::encode_program_payload(&artifact);
-    let artifact_id = ProgramArtifactId::from_bytes(digest_bytes("program-artifact", 0, &payload));
+    let artifact_id = ProgramArtifactId::from_bytes(digest_bytes(
+        "program-artifact",
+        artifact.format_version.get(),
+        &payload,
+    ));
+    let uses_scene = artifact.flows.iter().any(|flow| {
+        flow.instructions
+            .iter()
+            .any(|instruction| matches!(instruction.op, OpV0::ReconcileScene { .. }))
+    });
     let mut checked = CheckedProgram {
         artifact,
         artifact_id,
@@ -233,6 +243,7 @@ pub fn validate_program(
         global_indices,
         stack_limits: BTreeMap::new(),
         statechart_indices: StatechartIndices::default(),
+        uses_scene,
     };
     if diagnostics.is_empty() {
         validate_references(&checked, &mut diagnostics);
@@ -276,6 +287,7 @@ fn check_counts(
         .sum();
     let too_many = artifact.flows.len() as u64 > limits.program.max_flows
         || artifact.constants.len() as u64 > limits.program.max_constants
+        || artifact.content.len() as u64 > limits.program.max_content_entries
         || artifact.globals.len() as u64 > limits.program.max_globals
         || artifact.capabilities.len() as u64 > limits.program.max_capabilities
         || instruction_count > limits.program.max_instructions
@@ -300,7 +312,7 @@ fn check_counts(
             "Program exceeds configured limits",
         ));
     }
-    if !artifact.external_content.is_empty() {
+    if artifact.format_version == PROGRAM_FORMAT_V0 && !artifact.content.is_empty() {
         diagnostics.push(Diagnostic::new(
             DiagnosticClass::Validation,
             CONTROL_FLOW_INVALID,
@@ -377,18 +389,18 @@ fn validate_references(program: &CheckedProgram, diagnostics: &mut Vec<Diagnosti
                     next,
                 } => {
                     if let Some(speaker) = speaker {
-                        constant_ref(
+                        content_operand(
                             program,
                             *speaker,
-                            Some(crate::value::ValueKindV0::String),
+                            ContentRole::Reference,
                             path.clone(),
                             diagnostics,
                         );
                     }
-                    constant_ref(
+                    content_operand(
                         program,
                         *text,
-                        Some(crate::value::ValueKindV0::String),
+                        ContentRole::Segment,
                         path.clone(),
                         diagnostics,
                     );
@@ -396,19 +408,19 @@ fn validate_references(program: &CheckedProgram, diagnostics: &mut Vec<Diagnosti
                 }
                 OpV0::Choice { prompt, choices } => {
                     if let Some(prompt) = prompt {
-                        constant_ref(
+                        content_operand(
                             program,
                             *prompt,
-                            Some(crate::value::ValueKindV0::String),
+                            ContentRole::Reference,
                             path.clone(),
                             diagnostics,
                         );
                     }
                     for choice in choices {
-                        constant_ref(
+                        content_operand(
                             program,
                             choice.label,
-                            Some(crate::value::ValueKindV0::String),
+                            ContentRole::Reference,
                             path.clone(),
                             diagnostics,
                         );
@@ -504,6 +516,59 @@ fn constant_ref(
             MISSING_REFERENCE,
             path,
             format!("constant index {} does not exist", index.0),
+        )),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ContentRole {
+    /// A speaker, a prompt or an option label.
+    Reference,
+    /// The body of a `Say`.
+    Segment,
+}
+
+/// Format 0 operands name string constants; format 1 operands name content-table entries of
+/// the kind their role needs (ADR 0018).
+fn content_operand(
+    program: &CheckedProgram,
+    operand: ContentOperand,
+    role: ContentRole,
+    path: DiagnosticPath,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    match (program.format_version() == PROGRAM_FORMAT_V0, operand) {
+        (true, ContentOperand::Constant(index)) => constant_ref(
+            program,
+            index,
+            Some(crate::value::ValueKindV0::String),
+            path,
+            diagnostics,
+        ),
+        (false, ContentOperand::Content(index)) => match (program.content(index), role) {
+            (Some(ContentEntryV1::Ref(_)), ContentRole::Reference)
+            | (Some(ContentEntryV1::Segment(_)), ContentRole::Segment) => {}
+            (Some(_), ContentRole::Reference) => diagnostics.push(kind_mismatch(
+                path,
+                "speaker, prompt and option label must name content references",
+            )),
+            (Some(_), ContentRole::Segment) => {
+                diagnostics.push(kind_mismatch(path, "Say text must name a content segment"))
+            }
+            (None, _) => diagnostics.push(Diagnostic::new(
+                DiagnosticClass::Validation,
+                MISSING_REFERENCE,
+                path,
+                format!("content index {} does not exist", index.0),
+            )),
+        },
+        (true, ContentOperand::Content(_)) => diagnostics.push(kind_mismatch(
+            path,
+            "Program format 0 presents string constants, not content entries",
+        )),
+        (false, ContentOperand::Constant(_)) => diagnostics.push(kind_mismatch(
+            path,
+            "Program format 1 presents content entries, never constants",
         )),
     }
 }

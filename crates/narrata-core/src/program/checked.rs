@@ -8,9 +8,12 @@ use crate::{
         ActionRecordV0, HistoryV0, RegionV0, StateV0, StatechartIndices, StatechartV0, TransitionV0,
     },
     value::{Value, ValueKindV0},
+    version::{ProgramFormatVersion, SNAPSHOT_SCHEMA_V0, SnapshotSchemaVersion},
 };
 
-use super::{FlowV0, GlobalDeclV0, InstructionRecordV0, ProgramArtifactV0};
+use super::{
+    ContentEntryV1, ContentIndex, FlowV0, GlobalDeclV0, InstructionRecordV0, ProgramArtifactV0,
+};
 
 #[derive(Clone, Debug)]
 pub struct CheckedProgram {
@@ -21,6 +24,7 @@ pub struct CheckedProgram {
     pub(crate) global_indices: BTreeMap<GlobalId, usize>,
     pub(crate) stack_limits: BTreeMap<FlowId, usize>,
     pub(crate) statechart_indices: StatechartIndices,
+    pub(crate) uses_scene: bool,
 }
 
 impl CheckedProgram {
@@ -52,6 +56,28 @@ impl CheckedProgram {
 
     pub fn constant(&self, index: super::ConstIndex) -> Option<&Value> {
         self.artifact.constants.get(index.0 as usize)
+    }
+
+    pub fn content(&self, index: ContentIndex) -> Option<&ContentEntryV1> {
+        self.artifact.content.get(index.0 as usize)
+    }
+
+    pub fn format_version(&self) -> ProgramFormatVersion {
+        self.artifact.format_version
+    }
+
+    /// The Snapshot schema of every state of this Program (ADR 0018).
+    pub fn snapshot_schema(&self) -> SnapshotSchemaVersion {
+        self.artifact
+            .format_version
+            .snapshot_schema()
+            .unwrap_or(SNAPSHOT_SCHEMA_V0)
+    }
+
+    /// Whether the Program contains `ReconcileScene`, which makes `SceneState` part of a
+    /// format 1 state.
+    pub fn uses_scene(&self) -> bool {
+        self.uses_scene
     }
 
     pub fn global(&self, id: GlobalId) -> Option<&GlobalDeclV0> {

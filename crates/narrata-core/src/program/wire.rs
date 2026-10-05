@@ -9,12 +9,13 @@ use crate::{
     scene::{decode_scene, encode_scene},
     statechart::{StatechartV0, decode_statechart, encode_statechart},
     value::{Value, ValueKindV0},
-    version::{ProgramFormatVersion, SemanticsVersion},
+    version::{PROGRAM_FORMAT_V0, PROGRAM_FORMAT_V1, ProgramFormatVersion, SemanticsVersion},
 };
 
 use super::{
-    BinaryOpV0, CapabilityDeclV0, ChoiceArmV0, ConstIndex, ExternalContentDeclV0, FlowV0,
-    GlobalDeclV0, InstructionRecordV0, LocalDeclV0, OpV0, ReturnModeV0, SlotRefV0, UnaryOpV0,
+    BinaryOpV0, CapabilityDeclV0, ChoiceArmV0, ConstIndex, ContentEntryV1, ContentIndex,
+    ContentOperand, FlowV0, GlobalDeclV0, InstructionRecordV0, LocalDeclV0, OpV0, ReturnModeV0,
+    SlotRefV0, UnaryOpV0,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,7 +28,8 @@ pub struct ProgramArtifactV0 {
     pub globals: Vec<GlobalDeclV0>,
     pub flows: Vec<FlowV0>,
     pub capabilities: Vec<CapabilityDeclV0>,
-    pub external_content: Vec<ExternalContentDeclV0>,
+    /// Format 1 content table. Format 0 keeps this slot (wire key 8) empty.
+    pub content: Vec<ContentEntryV1>,
     pub statechart: Option<StatechartV0>,
 }
 
@@ -68,7 +70,10 @@ pub(crate) fn encode_program_payload(artifact: &ProgramArtifactV0) -> Vec<u8> {
         encode_capability(&mut writer, capability);
     }
     writer.unsigned(8);
-    writer.array(0);
+    writer.array(artifact.content.len() as u64);
+    for entry in &artifact.content {
+        entry.encode(&mut writer);
+    }
     if let Some(statechart) = &artifact.statechart {
         writer.unsigned(9);
         encode_statechart(&mut writer, statechart);
@@ -80,16 +85,17 @@ pub fn decode_program_artifact(
     bytes: &[u8],
     limits: &ProgramLoadLimits,
 ) -> Result<ProgramArtifactV0, DecodeError> {
-    let envelope = decode_envelope_versions(bytes, ObjectKind::Program, &[0], &limits.decode)?;
-    let artifact = match envelope.schema_version {
-        0 => decode_program_payload(envelope.payload, limits)?,
-        version => {
-            return Err(DecodeError::UnsupportedVersion {
-                axis: "Program schema",
-                version,
-            });
-        }
-    };
+    let envelope = decode_envelope_versions(
+        bytes,
+        ObjectKind::Program,
+        &[PROGRAM_FORMAT_V0.get(), PROGRAM_FORMAT_V1.get()],
+        &limits.decode,
+    )?;
+    let artifact = decode_program_payload(
+        envelope.payload,
+        ProgramFormatVersion::new(envelope.schema_version),
+        limits,
+    )?;
     if encode_program_payload(&artifact) != envelope.payload {
         return Err(DecodeError::NonCanonical(
             "program payload round-trip mismatch",
@@ -98,8 +104,10 @@ pub fn decode_program_artifact(
     Ok(artifact)
 }
 
+/// The envelope schema selects the format, and the payload must name the same one.
 fn decode_program_payload(
     bytes: &[u8],
+    format: ProgramFormatVersion,
     limits: &ProgramLoadLimits,
 ) -> Result<ProgramArtifactV0, DecodeError> {
     let mut reader = CborReader::new(bytes);
@@ -109,6 +117,11 @@ fn decode_program_payload(
     }
     expect_key(&mut reader, 0)?;
     let format_version = ProgramFormatVersion::new(read_u16(&mut reader)?);
+    if format_version != format {
+        return Err(DecodeError::Schema(
+            "Program format version differs from its envelope schema",
+        ));
+    }
     expect_key(&mut reader, 1)?;
     let semantics_version = SemanticsVersion::new(read_u16(&mut reader)?);
     expect_key(&mut reader, 2)?;
@@ -148,6 +161,7 @@ fn decode_program_payload(
     for _ in 0..flows_len {
         flows.push(decode_flow(
             &mut reader,
+            format,
             limits,
             &mut value_nodes,
             &mut total_instructions,
@@ -167,10 +181,19 @@ fn decode_program_payload(
         capabilities.push(decode_capability(&mut reader, limits, &mut schema_nodes)?);
     }
     expect_key(&mut reader, 8)?;
-    if reader.array_len()? != 0 {
+    let content_len = reader.array_len()?;
+    if format == PROGRAM_FORMAT_V0 && content_len != 0 {
         return Err(DecodeError::Schema(
             "Program v0 external content declarations must be empty; use a checked resolver Effect",
         ));
+    }
+    if content_len > limits.program.max_content_entries {
+        return Err(DecodeError::Limit("program content entries"));
+    }
+    let mut content =
+        Vec::with_capacity(usize::try_from(content_len).map_err(|_| DecodeError::LengthOverflow)?);
+    for _ in 0..content_len {
+        content.push(ContentEntryV1::decode(&mut reader)?);
     }
     let statechart = if field_count == 10 {
         expect_key(&mut reader, 9)?;
@@ -188,7 +211,7 @@ fn decode_program_payload(
         globals,
         flows,
         capabilities,
-        external_content: Vec::new(),
+        content,
         statechart,
     })
 }
@@ -258,6 +281,7 @@ fn encode_flow(writer: &mut CborWriter, flow: &FlowV0) {
 
 fn decode_flow(
     reader: &mut CborReader<'_>,
+    format: ProgramFormatVersion,
     limits: &ProgramLoadLimits,
     value_nodes: &mut u64,
     total_instructions: &mut u64,
@@ -298,7 +322,7 @@ fn decode_flow(
         expect_array(reader, 2, "instruction")?;
         instructions.push(InstructionRecordV0 {
             id: InstructionId::from_bytes(reader.bytes_exact::<16>()?),
-            op: decode_op(reader, limits)?,
+            op: decode_op(reader, format, limits)?,
         });
     }
     Ok(FlowV0 {
@@ -338,9 +362,9 @@ fn decode_slot(reader: &mut CborReader<'_>) -> Result<SlotRefV0, DecodeError> {
     }
 }
 
-fn encode_optional_index(writer: &mut CborWriter, index: Option<ConstIndex>) {
-    match index {
-        Some(index) => writer.unsigned(u64::from(index.0)),
+fn encode_optional_operand(writer: &mut CborWriter, operand: Option<ContentOperand>) {
+    match operand {
+        Some(operand) => writer.unsigned(u64::from(operand.raw())),
         None => writer.null(),
     }
 }
@@ -409,19 +433,19 @@ fn encode_op(writer: &mut CborWriter, op: &OpV0) {
         } => {
             writer.array(4);
             writer.unsigned(9);
-            encode_optional_index(writer, *speaker);
-            writer.unsigned(u64::from(text.0));
+            encode_optional_operand(writer, *speaker);
+            writer.unsigned(u64::from(text.raw()));
             writer.bytes(next.as_bytes());
         }
         OpV0::Choice { prompt, choices } => {
             writer.array(3);
             writer.unsigned(10);
-            encode_optional_index(writer, *prompt);
+            encode_optional_operand(writer, *prompt);
             writer.array(choices.len() as u64);
             for choice in choices {
                 writer.array(4);
                 writer.bytes(choice.id.as_bytes());
-                writer.unsigned(u64::from(choice.label.0));
+                writer.unsigned(u64::from(choice.label.raw()));
                 match choice.visible_if {
                     Some(slot) => encode_slot(writer, slot),
                     None => writer.null(),
@@ -455,10 +479,23 @@ fn encode_op(writer: &mut CborWriter, op: &OpV0) {
     }
 }
 
-fn decode_op(reader: &mut CborReader<'_>, limits: &ProgramLoadLimits) -> Result<OpV0, DecodeError> {
+fn decode_op(
+    reader: &mut CborReader<'_>,
+    format: ProgramFormatVersion,
+    limits: &ProgramLoadLimits,
+) -> Result<OpV0, DecodeError> {
     let length = reader.array_len()?;
     let tag = reader.unsigned()?;
     let instruction = |bytes| InstructionId::from_bytes(bytes);
+    let operand = |reader: &mut CborReader<'_>| {
+        read_u32(reader).map(|index| {
+            if format == PROGRAM_FORMAT_V0 {
+                ContentOperand::Constant(ConstIndex(index))
+            } else {
+                ContentOperand::Content(ContentIndex(index))
+            }
+        })
+    };
     match (tag, length) {
         (0, 3) => Ok(OpV0::Const {
             constant: ConstIndex(read_u32(reader)?),
@@ -498,12 +535,12 @@ fn decode_op(reader: &mut CborReader<'_>, limits: &ProgramLoadLimits) -> Result<
             value: decode_return_mode(reader)?,
         }),
         (9, 4) => Ok(OpV0::Say {
-            speaker: reader.optional(|reader| read_u32(reader).map(ConstIndex))?,
-            text: ConstIndex(read_u32(reader)?),
+            speaker: reader.optional(operand)?,
+            text: operand(reader)?,
             next: instruction(reader.bytes_exact::<16>()?),
         }),
         (10, 3) => {
-            let prompt = reader.optional(|reader| read_u32(reader).map(ConstIndex))?;
+            let prompt = reader.optional(operand)?;
             let choices_len = bounded_array(
                 reader,
                 limits.program.max_choices_per_instruction,
@@ -515,7 +552,7 @@ fn decode_op(reader: &mut CborReader<'_>, limits: &ProgramLoadLimits) -> Result<
                 expect_array(reader, 4, "choice arm")?;
                 choices.push(ChoiceArmV0 {
                     id: ChoiceId::from_bytes(reader.bytes_exact::<16>()?),
-                    label: ConstIndex(read_u32(reader)?),
+                    label: operand(reader)?,
                     visible_if: reader.optional(decode_slot)?,
                     target: instruction(reader.bytes_exact::<16>()?),
                 });

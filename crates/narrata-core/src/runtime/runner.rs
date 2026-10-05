@@ -10,7 +10,9 @@ use crate::{
     },
     identity::{InputId, InputPayloadDigest, InstructionId, ReceiptDigest, StateDigest},
     limits::MacrostepLimits,
-    program::{BinaryOpV0, CheckedProgram, OpV0, ReturnModeV0, SlotRefV0, UnaryOpV0},
+    program::{
+        BinaryOpV0, CheckedProgram, ContentOperand, OpV0, ReturnModeV0, SlotRefV0, UnaryOpV0,
+    },
     statechart::{
         ChartRunV0, InvokedFlowV0, StatechartStepOutcome, StatechartTraceEventV0,
         StatechartTraceKindV0, StatechartView, begin_chart, begin_chart_effect_response,
@@ -20,10 +22,10 @@ use crate::{
 };
 
 use super::{
-    CheckedRuntimeInput, DraftResult, FrameStateV0, PendingChoiceItemV0, PendingEffectV0,
-    PendingInteractionV0, ReceiptResultKindV0, RuntimeInputV0, RuntimeStateV0, RuntimeStatusV0,
-    SliceBudget, TraceEventV0, TransitionReceiptV0, Turn, VmStateV0, derive_interaction_id,
-    input_payload_digest, interaction_view,
+    CheckedRuntimeInput, DraftResult, FrameStateV0, PendingChoiceItemV0, PendingContent,
+    PendingEffectV0, PendingInteractionV0, ReceiptResultKindV0, RuntimeInputV0, RuntimeStateV0,
+    RuntimeStatusV0, SliceBudget, TraceEventV0, TransitionReceiptV0, Turn, VmStateV0,
+    derive_interaction_id, input_payload_digest, pending_view,
     receipt::{ReceiptMetrics, encode_receipt_payload, receipt_v0},
 };
 
@@ -794,7 +796,7 @@ impl TransitionRunner {
             }
             OpV0::ReconcileScene { target, next } => {
                 self.require_safe_stacks()?;
-                self.working.state.scene = target;
+                self.working.state.scene = Some(target);
                 self.top_frame_mut()?.instruction = next;
             }
             OpV0::Raise { event, next } => {
@@ -1003,15 +1005,13 @@ impl TransitionRunner {
     fn say(
         &mut self,
         origin_instruction: InstructionId,
-        speaker: Option<crate::program::ConstIndex>,
-        text: crate::program::ConstIndex,
+        speaker: Option<ContentOperand>,
+        text: ContentOperand,
         resume_to: InstructionId,
     ) -> Result<(), RuntimeFault> {
         self.require_safe_stacks()?;
-        let speaker = speaker.map(|index| self.constant_text(index)).transpose()?;
-        let text = self.constant_text(text)?;
-        self.charge_text(speaker.as_deref())?;
-        self.charge_text(Some(&text))?;
+        let speaker = speaker.map(|operand| self.present(operand)).transpose()?;
+        let text = self.present(text)?;
         let occurrence = self.working.state.interaction_counter;
         let interaction_id = derive_interaction_id(
             self.working.state.execution_id,
@@ -1044,7 +1044,7 @@ impl TransitionRunner {
     fn choice(
         &mut self,
         origin_instruction: InstructionId,
-        prompt: Option<crate::program::ConstIndex>,
+        prompt: Option<ContentOperand>,
         choices: &[crate::program::ChoiceArmV0],
     ) -> Result<(), RuntimeFault> {
         self.require_safe_stacks()?;
@@ -1054,8 +1054,7 @@ impl TransitionRunner {
             .last()
             .map(|frame| frame.flow)
             .ok_or(RuntimeFault::InvalidState)?;
-        let prompt = prompt.map(|index| self.constant_text(index)).transpose()?;
-        self.charge_text(prompt.as_deref())?;
+        let prompt = prompt.map(|operand| self.present(operand)).transpose()?;
         let mut offered = Vec::new();
         for choice in choices {
             let visible = match choice.visible_if {
@@ -1066,8 +1065,7 @@ impl TransitionRunner {
                 None => true,
             };
             if visible {
-                let label = self.constant_text(choice.label)?;
-                self.charge_text(Some(&label))?;
+                let label = self.present(choice.label)?;
                 offered.push(PendingChoiceItemV0 {
                     id: choice.id,
                     label,
@@ -1191,10 +1189,26 @@ impl TransitionRunner {
         Ok(())
     }
 
-    fn constant_text(&self, index: crate::program::ConstIndex) -> Result<Arc<str>, RuntimeFault> {
-        match self.program.constant(index) {
-            Some(Value::String(text)) => Ok(text.clone()),
-            _ => Err(RuntimeFault::InvalidState),
+    /// Records a presentation operand and charges for it: format 0 copies the text and pays
+    /// for its bytes; format 1 records the content index for one unit, so counters in the
+    /// Receipt never depend on text (ADR 0018).
+    fn present(&mut self, operand: ContentOperand) -> Result<PendingContent, RuntimeFault> {
+        match operand {
+            ContentOperand::Constant(index) => match self.program.constant(index) {
+                Some(Value::String(text)) => {
+                    let text = text.clone();
+                    self.charge_units(1_u64.saturating_add(text.len() as u64))?;
+                    Ok(PendingContent::LegacyText(text))
+                }
+                _ => Err(RuntimeFault::InvalidState),
+            },
+            ContentOperand::Content(index) => {
+                self.program
+                    .content(index)
+                    .ok_or(RuntimeFault::InvalidState)?;
+                self.charge_units(1)?;
+                Ok(PendingContent::Content(index))
+            }
         }
     }
 
@@ -1213,10 +1227,6 @@ impl TransitionRunner {
 
     fn charge(&mut self, value: &Value) -> Result<(), RuntimeFault> {
         self.charge_units(value.logical_units())
-    }
-
-    fn charge_text(&mut self, value: Option<&str>) -> Result<(), RuntimeFault> {
-        self.charge_units(value.map_or(0, |text| 1_u64.saturating_add(text.len() as u64)))
     }
 
     fn charge_units(&mut self, units: u64) -> Result<(), RuntimeFault> {
@@ -1303,7 +1313,9 @@ impl TransitionRunner {
         let next_state_digest = crate::snapshot::state_digest(&self.working.state);
         let (result, result_kind) = match &self.working.state.status {
             RuntimeStatusV0::Awaiting { pending, .. } => {
-                let result = interaction_view(pending);
+                let Some(result) = pending_view(&self.program, pending) else {
+                    return SliceOutcome::Faulted(RuntimeFault::InvalidState);
+                };
                 let kind = match result {
                     DraftResult::AwaitSay(_) => ReceiptResultKindV0::Say,
                     DraftResult::AwaitChoice(_) => ReceiptResultKindV0::Choice,

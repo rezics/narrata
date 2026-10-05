@@ -3,8 +3,11 @@ use thiserror::Error;
 use crate::{
     codec::{ObjectKind, digest_bytes, encode_envelope},
     identity::{ExecutionId, StateDigest},
-    runtime::{PendingInteractionV0, RuntimeStateV0, RuntimeStatusV0, derive_interaction_id},
-    version::SNAPSHOT_SCHEMA_V0,
+    runtime::{
+        PendingContent, PendingInteractionV0, RuntimeStateV0, RuntimeStatusV0,
+        derive_interaction_id,
+    },
+    version::{SNAPSHOT_SCHEMA_V0, SNAPSHOT_SCHEMA_V1},
 };
 
 use super::encode_state_payload;
@@ -15,13 +18,16 @@ pub enum SnapshotExportError {
     NotSafePoint,
     #[error("a pending external Effect cannot be copied to a new Execution")]
     PendingEffectCannotChangeExecution,
+    #[error("Runtime State does not have the shape of its Snapshot schema")]
+    SchemaMismatch,
 }
 
 pub fn export_snapshot(state: &RuntimeStateV0) -> Result<Vec<u8>, SnapshotExportError> {
     ensure_safe(state)?;
+    ensure_schema_shape(state)?;
     Ok(encode_envelope(
         ObjectKind::Snapshot,
-        SNAPSHOT_SCHEMA_V0.get(),
+        state.snapshot_schema.get(),
         &encode_state_payload(state),
     ))
 }
@@ -29,9 +35,28 @@ pub fn export_snapshot(state: &RuntimeStateV0) -> Result<Vec<u8>, SnapshotExport
 pub fn state_digest(state: &RuntimeStateV0) -> StateDigest {
     StateDigest::from_bytes(digest_bytes(
         "runtime-state",
-        SNAPSHOT_SCHEMA_V0.get(),
+        state.snapshot_schema.get(),
         &encode_state_payload(state),
     ))
+}
+
+/// Schema 0 records text and always has a scene; schema 1 records content indices only.
+fn ensure_schema_shape(state: &RuntimeStateV0) -> Result<(), SnapshotExportError> {
+    let legacy = match state.snapshot_schema {
+        SNAPSHOT_SCHEMA_V0 => true,
+        SNAPSHOT_SCHEMA_V1 => false,
+        _ => return Err(SnapshotExportError::SchemaMismatch),
+    };
+    let contents_match = state.pending().is_none_or(|pending| {
+        pending
+            .contents()
+            .all(|content| matches!(content, PendingContent::LegacyText(_)) == legacy)
+    });
+    if contents_match && (!legacy || state.scene.is_some()) {
+        Ok(())
+    } else {
+        Err(SnapshotExportError::SchemaMismatch)
+    }
 }
 
 pub fn copy_as_new_execution(

@@ -15,8 +15,8 @@ use narrata_core::{
     codec::{ObjectKind, sha256},
     program::load_program,
     runtime::{
-        CheckedRuntimeInput, DraftResult, PendingInteractionV0, SliceBudget, SliceOutcome,
-        begin_transition_with_parent_commit,
+        CheckedRuntimeInput, DraftResult, PendingContent, PendingInteractionV0, SliceBudget,
+        SliceOutcome, begin_transition_with_parent_commit,
     },
     snapshot::restore_snapshot,
 };
@@ -66,7 +66,8 @@ fn frozen_stage5_corpus_loads_imports_and_continues<B: Backend>() {
     assert_eq!(manifest.expected_continuation.kind, "say");
     assert!(matches!(
         state.pending(),
-        Some(PendingInteractionV0::Say { text, .. }) if text.as_ref() == manifest.expected_continuation.text
+        Some(PendingInteractionV0::Say { text, .. })
+            if *text == PendingContent::LegacyText(manifest.expected_continuation.text.as_str().into())
     ));
     let receipt_object = CheckedObject::from_bytes(
         &decoded["receipt-v1.hex"],

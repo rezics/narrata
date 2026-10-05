@@ -384,12 +384,13 @@ fn scene_is_reconciled_from_one_committed_snapshot<B: Backend>() {
             2,
         )
         .unwrap();
-    assert!(!committed.reconcile_scene.target.layers().is_empty());
-    assert_eq!(committed.reconcile_scene.target, committed.state.scene);
+    let reconcile = committed.reconcile_scene.clone().unwrap();
+    assert!(!reconcile.target.layers().is_empty());
+    assert_eq!(Some(&reconcile.target), committed.state.scene.as_ref());
     let restored = coordinator
         .inspect_commit_simulation(committed.commit)
         .unwrap();
-    assert_eq!(restored.state.scene, committed.reconcile_scene.target);
+    assert_eq!(restored.state.scene, Some(reconcile.target));
 }
 
 fn compensation_preserves_the_original_fact_and_links_a_new_effect<B: Backend>() {

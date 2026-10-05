@@ -1,8 +1,9 @@
 syntax = "proto3";
 
-package narrata.protocol.v1;
+package narrata.protocol.v2;
 
 // Protocol bytes are transport DTOs. They never participate in Narrata object or Commit hashes.
+// Version 2 (ADR 0018) carries content references instead of reader text; hosts resolve them.
 message Request {
   uint32 protocol_version = 1;
   uint64 request_id = 2;
@@ -75,7 +76,12 @@ message EffectResponse {
 }
 message Event { bytes event_type_id = 1; }
 
-message SessionCreated { uint64 session = 1; bytes commit_id = 2; bytes snapshot = 3; }
+message SessionCreated {
+  uint64 session = 1;
+  bytes commit_id = 2;
+  bytes snapshot = 3;
+  bytes execution_id = 4;
+}
 message SliceYielded {
   uint64 session = 1;
   uint64 instruction_count = 2;
@@ -95,14 +101,37 @@ message CommittedRunResult {
 }
 message Result {
   enum Kind { SAY = 0; CHOICE = 1; EFFECT = 2; FINISHED = 3; STATECHART_STABLE = 4; }
+  reserved 3;
+  reserved "text";
   Kind kind = 1;
   bytes interaction_or_effect_id = 2;
-  string text = 3;
   repeated Choice choices = 4;
   bytes canonical_value = 5;
   repeated bytes active_states = 6;
+  // SAY: who speaks and the body to show. CHOICE: the prompt.
+  ContentRef speaker = 7;
+  Segment body = 8;
+  ContentRef prompt = 9;
+  // EFFECT: the capability the host performs.
+  string capability = 10;
+  // SAY and CHOICE: with the Execution ID and commit_id, the presentation key of every
+  // reference in this result.
+  uint64 occurrence = 11;
 }
-message Choice { bytes id = 1; string label = 2; }
+message Choice {
+  reserved 2;
+  reserved "label";
+  bytes id = 1;
+  ContentRef label = 3;
+}
+// A content provider and its opaque key (ADR 0013 §2).
+message ContentRef { string provider = 1; string key = 2; }
+// The blocks of one content unit from first (its start when absent) to last (its end when absent).
+message Segment {
+  ContentRef unit = 1;
+  optional string first = 2;
+  optional string last = 3;
+}
 message Bundle { enum Kind { CHECKPOINT = 0; TIMELINE_ARCHIVE = 1; } Kind kind = 1; bytes bytes = 2; }
 message Ack {}
 message Diagnostic { string code = 1; string class = 2; string message = 3; bool retryable = 4; }

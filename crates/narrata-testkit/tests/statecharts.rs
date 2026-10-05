@@ -576,7 +576,7 @@ fn edge_semantics_program() -> ProgramArtifactV0 {
             }],
         }],
         capabilities: Vec::new(),
-        external_content: Vec::new(),
+        content: Vec::new(),
         statechart: Some(StatechartV0 {
             root,
             events: (1..=3).map(EventTypeId::from_u128).collect(),

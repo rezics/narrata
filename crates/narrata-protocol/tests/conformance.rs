@@ -16,13 +16,13 @@ use narrata_protocol::{
 };
 use narrata_testkit::{
     backend::{ConformanceBackend, NativeBackend},
-    generator::branch_call_choice_v0,
+    generator::branch_call_choice_v1,
 };
 use prost::Message;
 
 fn call(engine: &mut ProtocolEngine, request_id: u64, body: request::Body) -> response::Body {
     let bytes = Request {
-        protocol_version: 1,
+        protocol_version: narrata_protocol::PROTOCOL_VERSION,
         request_id,
         body: Some(body),
     }
@@ -34,7 +34,7 @@ fn call(engine: &mut ProtocolEngine, request_id: u64, body: request::Body) -> re
 
 #[test]
 fn protobuf_pull_protocol_matches_native_state_hash_and_round_trips_checkpoint() {
-    let artifact = branch_call_choice_v0();
+    let artifact = branch_call_choice_v1();
     let artifact_bytes = encode_program_artifact(&artifact);
     let checked = narrata_core::load_program(&artifact_bytes, &Default::default()).unwrap();
     let execution = ExecutionId::from_u128(70);

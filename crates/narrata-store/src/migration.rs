@@ -346,7 +346,6 @@ pub fn apply_migration(
             &current_state,
             &current_program,
             target_program,
-            0,
             options,
             limits,
         )?;
@@ -355,7 +354,7 @@ pub fn apply_migration(
         let snapshot_object = CheckedObject::from_bytes(
             &snapshot_bytes,
             ObjectKind::Snapshot,
-            0,
+            next_state.snapshot_schema.get(),
             limits.decode.max_envelope_bytes,
         )
         .map_err(|error| MigrationStoreError::Snapshot(error.to_string()))?;
@@ -364,7 +363,7 @@ pub fn apply_migration(
         let program_object = CheckedObject::from_bytes(
             &program_bytes,
             ObjectKind::Program,
-            0,
+            target_program.format_version().get(),
             limits.decode.max_envelope_bytes,
         )
         .map_err(|error| MigrationStoreError::Snapshot(error.to_string()))?;
@@ -442,7 +441,6 @@ fn execute_path(
             &state,
             &program,
             target,
-            0,
             options,
             limits,
         )?;

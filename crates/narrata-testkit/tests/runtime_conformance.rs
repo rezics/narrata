@@ -7,15 +7,28 @@ use narrata_core::{
     limits::{MacrostepLimits, ProgramLoadLimits},
     program::{encode_program_artifact, load_program},
     runtime::{
-        CheckedRuntimeInput, DraftResult, PendingInteractionV0, RuntimeFault, SliceBudget,
-        TransitionStartError, new_execution,
+        CheckedRuntimeInput, ContentView, DraftResult, PendingInteractionV0, RuntimeFault,
+        SliceBudget, TransitionStartError, new_execution,
     },
     snapshot::{export_snapshot, restore_snapshot},
 };
 use narrata_testkit::{
     backend::{BackendError, ConformanceBackend, NativeBackend},
-    generator::{branch_call_choice_v0, hello_v0},
+    generator::{branch_call_choice_v0, branch_call_choice_v1, hello_v0, hello_v1, story_content},
 };
+
+/// Whether a view shows `text`: format 0 carries it, format 1 names a story entry holding it.
+fn presents(view: &ContentView, text: &str) -> bool {
+    let reference = match view {
+        ContentView::LegacyText(legacy) => return legacy.as_ref() == text,
+        ContentView::Ref(reference) => reference,
+        ContentView::Segment(segment) => &segment.unit,
+    };
+    story_content()
+        .entries
+        .get(reference.key.as_str())
+        .is_some_and(|entry| entry.text == text)
+}
 
 fn checked(
     artifact: &narrata_core::program::ProgramArtifactV0,
@@ -29,7 +42,13 @@ fn checked(
 
 #[test]
 fn hello_runs_start_say_advance_finish() {
-    let program = checked(&hello_v0());
+    for artifact in [hello_v0(), hello_v1()] {
+        hello_runs(&artifact);
+    }
+}
+
+fn hello_runs(artifact: &narrata_core::program::ProgramArtifactV0) {
+    let program = checked(artifact);
     let state = Arc::new(new_execution(&program, ExecutionId::from_u128(1)).unwrap());
     let first = NativeBackend
         .transition(
@@ -40,7 +59,7 @@ fn hello_runs_start_say_advance_finish() {
             SliceBudget::unlimited(),
         )
         .unwrap();
-    assert!(matches!(first.result(), DraftResult::AwaitSay(view) if view.text.as_ref() == "Hello"));
+    assert!(matches!(first.result(), DraftResult::AwaitSay(view) if presents(&view.text, "Hello")));
     let interaction = first.next_state().pending().unwrap().interaction_id();
     let second = NativeBackend
         .transition(
@@ -59,7 +78,13 @@ fn hello_runs_start_say_advance_finish() {
 
 #[test]
 fn branch_call_choice_covers_interactions_hidden_choice_and_call_return() {
-    let program = checked(&branch_call_choice_v0());
+    for artifact in [branch_call_choice_v0(), branch_call_choice_v1()] {
+        branch_call_choice_runs(&artifact);
+    }
+}
+
+fn branch_call_choice_runs(artifact: &narrata_core::program::ProgramArtifactV0) {
+    let program = checked(artifact);
     let state = Arc::new(new_execution(&program, ExecutionId::from_u128(2)).unwrap());
     let say = transition(
         program.clone(),
@@ -94,9 +119,12 @@ fn branch_call_choice_covers_interactions_hidden_choice_and_call_return() {
         ),
         1,
     );
-    assert!(
-        matches!(callee_say.result(), DraftResult::AwaitSay(view) if view.text.as_ref() == "Inside callee")
-    );
+    assert!(matches!(
+        callee_say.result(),
+        DraftResult::AwaitSay(view)
+            if presents(&view.text, "Inside callee")
+                && view.speaker.as_ref().is_some_and(|speaker| presents(speaker, "Narrator"))
+    ));
     let callee_interaction = callee_say.next_state().pending().unwrap().interaction_id();
     let finished = transition(
         program,
@@ -109,7 +137,13 @@ fn branch_call_choice_covers_interactions_hidden_choice_and_call_return() {
 
 #[test]
 fn every_interaction_snapshot_restores_and_continues_identically() {
-    let program = checked(&branch_call_choice_v0());
+    for artifact in [branch_call_choice_v0(), branch_call_choice_v1()] {
+        snapshot_restores_and_continues(&artifact);
+    }
+}
+
+fn snapshot_restores_and_continues(artifact: &narrata_core::program::ProgramArtifactV0) {
+    let program = checked(artifact);
     let initial = Arc::new(new_execution(&program, ExecutionId::from_u128(3)).unwrap());
     let say = transition(
         program.clone(),
@@ -145,20 +179,22 @@ fn every_interaction_snapshot_restores_and_continues_identically() {
 
 #[test]
 fn slice_size_does_not_change_state_receipt_or_trace_counts() {
-    let program = checked(&branch_call_choice_v0());
-    let state = Arc::new(new_execution(&program, ExecutionId::from_u128(4)).unwrap());
-    let input = CheckedRuntimeInput::start(InputId::from_u128(30));
-    let drafts = [1, 2, 7, 64]
-        .into_iter()
-        .map(|slice| transition(program.clone(), state.clone(), input.clone(), slice))
-        .collect::<Vec<_>>();
-    for draft in drafts.iter().skip(1) {
-        assert_eq!(draft.next_state_digest(), drafts[0].next_state_digest());
-        assert_eq!(draft.receipt_digest(), drafts[0].receipt_digest());
-        assert_eq!(
-            draft.receipt().instruction_count,
-            drafts[0].receipt().instruction_count
-        );
+    for artifact in [branch_call_choice_v0(), branch_call_choice_v1()] {
+        let program = checked(&artifact);
+        let state = Arc::new(new_execution(&program, ExecutionId::from_u128(4)).unwrap());
+        let input = CheckedRuntimeInput::start(InputId::from_u128(30));
+        let drafts = [1, 2, 7, 64]
+            .into_iter()
+            .map(|slice| transition(program.clone(), state.clone(), input.clone(), slice))
+            .collect::<Vec<_>>();
+        for draft in drafts.iter().skip(1) {
+            assert_eq!(draft.next_state_digest(), drafts[0].next_state_digest());
+            assert_eq!(draft.receipt_digest(), drafts[0].receipt_digest());
+            assert_eq!(
+                draft.receipt().instruction_count,
+                drafts[0].receipt().instruction_count
+            );
+        }
     }
 }
 

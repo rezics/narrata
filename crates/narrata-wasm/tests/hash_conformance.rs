@@ -8,13 +8,13 @@ use narrata_protocol::{
         runtime_input,
     },
 };
-use narrata_testkit::generator::branch_call_choice_v0;
+use narrata_testkit::generator::branch_call_choice_v1;
 use narrata_wasm::call_protocol_for_conformance;
 use prost::Message;
 
 fn request(id: u64, body: request::Body) -> Vec<u8> {
     Request {
-        protocol_version: 1,
+        protocol_version: narrata_protocol::PROTOCOL_VERSION,
         request_id: id,
         body: Some(body),
     }
@@ -34,7 +34,7 @@ fn call(engine: &mut ProtocolEngine, bytes: &[u8]) -> response::Body {
 
 #[test]
 fn wasm_export_path_produces_the_same_canonical_hashes_as_native_protocol() {
-    let artifact = encode_program_artifact(&branch_call_choice_v0());
+    let artifact = encode_program_artifact(&branch_call_choice_v1());
     let mut native = ProtocolEngine::default();
     let mut wasm_path = ProtocolEngine::default();
     let load = request(1, request::Body::ProgramLoad(ProgramLoad { artifact }));

@@ -20,12 +20,12 @@ use narrata_storage_sqlite::SqliteBackend;
 use narrata_store::{
     BranchId, CoordinatorError, MemoryStore, RefKey, RefName, SaveStore, SessionCoordinator, Store,
 };
-use narrata_testkit::generator::{branch_call_choice_v0, recorded_query_v0};
+use narrata_testkit::generator::{branch_call_choice_v1, recorded_query_v1};
 use prost::Message;
 
 fn call<B: StorageBackend>(engine: &mut ProtocolEngine<B>, body: request::Body) -> response::Body {
     let bytes = dto::Request {
-        protocol_version: 1,
+        protocol_version: narrata_protocol::PROTOCOL_VERSION,
         request_id: 7,
         body: Some(body),
     }
@@ -129,7 +129,7 @@ fn sqlite_session_reopens_and_continues_with_memory_identical_commits() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("session.db");
     let execution = ExecutionId::from_u128(90);
-    let artifact = branch_call_choice_v0();
+    let artifact = branch_call_choice_v1();
     let mut persistent = sqlite(&path);
     let mut memory = ProtocolEngine::default();
     let id = load(&mut persistent, &artifact);
@@ -178,7 +178,7 @@ fn sqlite_slices_publish_only_on_completion_and_conflicts_leave_refs_unchanged()
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("session.db");
     let mut engine = sqlite(&path);
-    let artifact = load(&mut engine, &branch_call_choice_v0());
+    let artifact = load(&mut engine, &branch_call_choice_v1());
     let created = create(&mut engine, artifact, ExecutionId::from_u128(91));
     let genesis = active(&path);
     let mut body = call(
@@ -235,7 +235,7 @@ fn sqlite_replay_uses_coordinator_input_index_and_rejects_changed_payload() {
     let path = directory.path().join("session.db");
     let execution = ExecutionId::from_u128(92);
     let mut engine = sqlite(&path);
-    let artifact = branch_call_choice_v0();
+    let artifact = branch_call_choice_v1();
     let id = load(&mut engine, &artifact);
     let created = create(&mut engine, id, execution);
     let first = dispatch(&mut engine, created.session, start());
@@ -280,7 +280,7 @@ fn sqlite_replay_uses_coordinator_input_index_and_rejects_changed_payload() {
 #[test]
 fn checkpoint_and_timeline_imports_use_injected_sqlite_backend() {
     let mut memory = ProtocolEngine::default();
-    let artifact = branch_call_choice_v0();
+    let artifact = branch_call_choice_v1();
     let execution = ExecutionId::from_u128(93);
     let id = load(&mut memory, &artifact);
     let created = create(&mut memory, id, execution);
@@ -351,7 +351,7 @@ fn malformed_bundles_are_rejected_before_opening_backend_and_backend_errors_are_
         Default::default(),
         |_| -> Result<SqliteBackend, StorageError> { panic!("bad input must not open storage") },
     );
-    let id = load(&mut engine, &branch_call_choice_v0());
+    let id = load(&mut engine, &branch_call_choice_v1());
     for body in [
         request::Body::CheckpointImport(dto::CheckpointImport {
             artifact_id: id.as_bytes().to_vec(),
@@ -373,7 +373,7 @@ fn malformed_bundles_are_rejected_before_opening_backend_and_backend_errors_are_
         Default::default(),
         |_| -> Result<SqliteBackend, StorageError> { Err(StorageError::Busy) },
     );
-    let id = load(&mut engine, &branch_call_choice_v0());
+    let id = load(&mut engine, &branch_call_choice_v1());
     assert!(
         matches!(call(&mut engine, request::Body::SessionCreate(dto::SessionCreate { artifact_id: id.as_bytes().to_vec(), execution_id: vec![0; 16] })), response::Body::Diagnostic(dto::Diagnostic { ref code, retryable: true, .. }) if code == "NAR-P0008")
     );
@@ -387,7 +387,7 @@ fn oversized_genesis_snapshot_is_rejected_before_opening_backend() {
         ProtocolEngine::with_backend_factory(limits, |_| -> Result<SqliteBackend, StorageError> {
             panic!("oversized Genesis must not open storage")
         });
-    let id = load(&mut engine, &branch_call_choice_v0());
+    let id = load(&mut engine, &branch_call_choice_v1());
     assert!(
         matches!(call(&mut engine, request::Body::SessionCreate(dto::SessionCreate {
         artifact_id: id.as_bytes().to_vec(), execution_id: vec![0; 16],
@@ -397,7 +397,7 @@ fn oversized_genesis_snapshot_is_rejected_before_opening_backend() {
 
 #[test]
 fn pull_protocol_effect_response_remains_checked_without_host_ledger_callbacks() {
-    let artifact = recorded_query_v0().unwrap();
+    let artifact = recorded_query_v1().unwrap();
     let mut engine = ProtocolEngine::default();
     let id = load(&mut engine, &artifact);
     let created = create(&mut engine, id, ExecutionId::from_u128(94));
@@ -439,7 +439,7 @@ fn pull_protocol_effect_response_remains_checked_without_host_ledger_callbacks()
 #[test]
 fn coordinator_rejects_stale_and_foreign_completed_drafts_without_writes() {
     let program = load_program(
-        &encode_program_artifact(&branch_call_choice_v0()),
+        &encode_program_artifact(&branch_call_choice_v1()),
         &Default::default(),
     )
     .unwrap();

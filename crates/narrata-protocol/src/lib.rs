@@ -9,4 +9,6 @@
 pub mod dto;
 mod engine;
 
-pub use engine::{PROTOCOL_ABI_VERSION, ProtocolBoundaryError, ProtocolEngine, ProtocolLimits};
+pub use engine::{
+    PROTOCOL_ABI_VERSION, PROTOCOL_VERSION, ProtocolBoundaryError, ProtocolEngine, ProtocolLimits,
+};

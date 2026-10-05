@@ -6,7 +6,7 @@ use narrata_core::{
         CONTROL_FLOW_INVALID, DUPLICATE_ID, KIND_MISMATCH, MISSING_REFERENCE, STACK_INVALID,
     },
     limits::ProgramLoadLimits,
-    program::{ChoiceArmV0, ConstIndex, OpV0, ReturnModeV0, validate_program},
+    program::{ChoiceArmV0, ConstIndex, ContentOperand, OpV0, ReturnModeV0, validate_program},
 };
 use narrata_testkit::generator::{branch_call_choice_v0, hello_v0};
 
@@ -30,7 +30,7 @@ fn malformed_programs_fail_before_runtime_with_stable_diagnostics() {
     let mut dangling = hello_v0();
     dangling.flows[0].instructions[0].op = OpV0::Say {
         speaker: None,
-        text: ConstIndex(0),
+        text: ContentOperand::Constant(ConstIndex(0)),
         next: InstructionId::from_u128(999),
     };
     cases.push((dangling, MISSING_REFERENCE));
@@ -125,7 +125,7 @@ fn choice_ids_are_program_global_not_per_instruction() {
                 prompt: None,
                 choices: vec![ChoiceArmV0 {
                     id: ChoiceId::from_u128(1),
-                    label: ConstIndex(3),
+                    label: ContentOperand::Constant(ConstIndex(3)),
                     visible_if: None,
                     target: InstructionId::from_u128(20),
                 }],

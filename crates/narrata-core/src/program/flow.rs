@@ -29,6 +29,3 @@ pub struct FlowV0 {
     pub entry: InstructionId,
     pub instructions: Vec<InstructionRecordV0>,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExternalContentDeclV0;

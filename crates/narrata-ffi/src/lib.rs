@@ -14,7 +14,7 @@ use std::{
 };
 
 use narrata_protocol::{
-    PROTOCOL_ABI_VERSION, ProtocolEngine,
+    PROTOCOL_ABI_VERSION, PROTOCOL_VERSION, ProtocolEngine,
     dto::{Diagnostic, Response, response},
 };
 use prost::Message;
@@ -192,7 +192,7 @@ pub extern "C" fn nar_buffer_free(token: u64) -> NarStatus {
 
 fn panic_diagnostic() -> Vec<u8> {
     Response {
-        protocol_version: 1,
+        protocol_version: PROTOCOL_VERSION,
         request_id: 0,
         body: Some(response::Body::Diagnostic(Diagnostic {
             code: "NAR-F0001".to_owned(),

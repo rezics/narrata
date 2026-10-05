@@ -7,8 +7,9 @@ use crate::{
     identity::{ExecutionId, LocalId},
     limits::MacrostepLimits,
     program::CheckedProgram,
+    scene::SceneState,
     value::Value,
-    version::SEMANTICS_V0,
+    version::{SEMANTICS_V0, SNAPSHOT_SCHEMA_V0},
 };
 
 use super::{
@@ -46,14 +47,18 @@ pub fn new_execution(
         .map(|decl| (decl.id, decl.default.clone()))
         .collect::<BTreeMap<LocalId, Value>>();
     let has_statechart = program.statechart().is_some();
+    let snapshot_schema = program.snapshot_schema();
+    let scene =
+        (snapshot_schema == SNAPSHOT_SCHEMA_V0 || program.uses_scene()).then(SceneState::default);
     Ok(RuntimeStateV0 {
+        snapshot_schema,
         semantics_version: SEMANTICS_V0,
         execution_id,
         program_artifact_id: program.artifact_id(),
         turn: Turn(0),
         interaction_counter: 0,
         globals,
-        scene: Default::default(),
+        scene,
         statechart: has_statechart.then(Default::default),
         status: if has_statechart {
             RuntimeStatusV0::StatechartStable
