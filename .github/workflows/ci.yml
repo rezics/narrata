@@ -37,8 +37,8 @@ jobs:
           cache: npm
           cache-dependency-path: examples/gamebook-web/package-lock.json
       - run: cargo fmt --all --check
-      - run: cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools --all-targets --all-features -- -D warnings
-      - run: cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools
+      - run: cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local --all-targets --all-features -- -D warnings
+      - run: cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local
       - run: npm ci
         working-directory: examples/gamebook-web
       - run: npm audit --audit-level=high
@@ -49,7 +49,11 @@ jobs:
         working-directory: examples/gamebook-web
       - run: npm run test:e2e
         working-directory: examples/gamebook-web
-      - run: git diff --exit-code -- packages/narrata/nodes/schemas examples/gamebook-web/src/generated products/gamebook-demo
+      - name: Generated files match the committed ones, including new files
+        shell: bash
+        run: |
+          drift="$(git status --porcelain --untracked-files=all -- packages/narrata/nodes/schemas examples/gamebook-web/src/generated products/gamebook-demo)"
+          if [ -n "$drift" ]; then echo "$drift"; exit 1; fi
   gate-g3:
     strategy:
       matrix:
