@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# Ephemeral execution observation for authoring and server-side replay, never the reader.
+trace = []
+
 [dependencies]
 narrata-history = { path = "../../../kernel/crates/narrata-history", version = "=0.1.0-alpha.1" }
 narrata-storage = { path = "../../../kernel/crates/narrata-storage", version = "=0.1.0-alpha.1" }

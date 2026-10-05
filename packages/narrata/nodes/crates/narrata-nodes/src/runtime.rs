@@ -2,6 +2,11 @@
 //! state until the next interaction or the end of the story; any failure discards the copy.
 //! The runtime only emits references; it never reads content.
 
+#[cfg(feature = "trace")]
+pub(crate) mod trace;
+#[cfg(feature = "trace")]
+use trace::{TraceAction, TraceEvent, TraceLocation};
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -35,6 +40,8 @@ pub(crate) struct Step {
     /// Whether the passage the step stops in was entered during this step, rather than
     /// continued after a local choice.
     pub entered: bool,
+    #[cfg(feature = "trace")]
+    pub trace: Vec<TraceEvent>,
 }
 
 struct Work {
@@ -43,9 +50,16 @@ struct Work {
     items: Vec<Item>,
     steps: u32,
     entered: bool,
+    #[cfg(feature = "trace")]
+    trace: Vec<TraceEvent>,
 }
 
 impl Work {
+    #[cfg(feature = "trace")]
+    fn record(&mut self, location: TraceLocation, action: TraceAction) {
+        self.trace.push(TraceEvent { location, action });
+    }
+
     fn top(&self) -> Result<&Frame> {
         self.state
             .frames
@@ -88,6 +102,18 @@ impl Work {
         content: Presented,
         args: &BTreeMap<String, ViewScalar>,
     ) {
+        #[cfg(feature = "trace")]
+        if let Presented::Segment(segment) = &content
+            && let Some(frame) = self.state.frames.last()
+        {
+            self.record(
+                TraceLocation::from(frame),
+                TraceAction::Segment {
+                    role,
+                    segment: segment.clone(),
+                },
+            );
+        }
         self.items.push(Item {
             role,
             node,
@@ -325,6 +351,8 @@ impl Machine<'_> {
             items: Vec::new(),
             steps: 0,
             entered: false,
+            #[cfg(feature = "trace")]
+            trace: Vec::new(),
         };
         self.run(&mut work)?;
         check_size(&work.state)?;
@@ -333,6 +361,8 @@ impl Machine<'_> {
             pins: work.pins,
             presentation: work.items,
             entered: work.entered,
+            #[cfg(feature = "trace")]
+            trace: work.trace,
         })
     }
 
@@ -350,6 +380,8 @@ impl Machine<'_> {
                     state,
                     presentation: Vec::new(),
                     entered: false,
+                    #[cfg(feature = "trace")]
+                    trace: Vec::new(),
                 })
             }
         }
@@ -371,6 +403,8 @@ impl Machine<'_> {
             items: Vec::new(),
             steps: 0,
             entered: false,
+            #[cfg(feature = "trace")]
+            trace: Vec::new(),
         };
         work.tick()?;
         let (graph_ref, node, at) = {
@@ -408,6 +442,15 @@ impl Machine<'_> {
             }
         }
         for option in &chosen {
+            #[cfg(feature = "trace")]
+            work.record(
+                TraceLocation::from(work.top()?),
+                TraceAction::Selected {
+                    choice_point: point.id,
+                    option: option.id,
+                    outcome: option.outcome.clone(),
+                },
+            );
             work.assign(&option.effects)?;
         }
         work.top_mut()?.at = None;
@@ -447,6 +490,8 @@ impl Machine<'_> {
             pins: work.pins,
             presentation: work.items,
             entered: work.entered,
+            #[cfg(feature = "trace")]
+            trace: work.trace,
         })
     }
 
@@ -470,6 +515,14 @@ impl Machine<'_> {
                 .overlay
                 .plan(&graph, &node)
                 .ok_or_else(|| Error::new("state", node.to_string(), "unknown checked node"))?;
+            #[cfg(feature = "trace")]
+            let location = TraceLocation {
+                graph: graph_ref.clone(),
+                node,
+                instance,
+            };
+            #[cfg(feature = "trace")]
+            work.record(location.clone(), TraceAction::Visit);
             match &*plan {
                 Plan::Passage(passage) => self.enter(work, node, passage)?,
                 Plan::Branch {
@@ -482,6 +535,8 @@ impl Machine<'_> {
                     } else {
                         when_false
                     };
+                    #[cfg(feature = "trace")]
+                    work.record(location.clone(), TraceAction::Branch { target: *next });
                     work.top_mut()?.node = *next;
                 }
                 Plan::Mutate { assignments, next } => {
@@ -512,6 +567,17 @@ impl Machine<'_> {
                     work.state.next_instance = instance.checked_add(1).ok_or_else(|| {
                         Error::new("limit", "instances", "instance counter overflow")
                     })?;
+                    #[cfg(feature = "trace")]
+                    work.record(
+                        location.clone(),
+                        TraceAction::Call {
+                            target: TraceLocation {
+                                graph: callee_ref.clone(),
+                                node: callee.header.entry,
+                                instance,
+                            },
+                        },
+                    );
                     work.state.frames.push(Frame {
                         graph: callee_ref,
                         node: callee.header.entry,
@@ -548,6 +614,32 @@ impl Machine<'_> {
                                 instance,
                                 outcome: outcome.clone(),
                             });
+                        }
+                    }
+                    #[cfg(feature = "trace")]
+                    {
+                        work.record(
+                            location.clone(),
+                            TraceAction::Return {
+                                outcome: outcome.clone(),
+                                continuation: work.state.frames.last().map(TraceLocation::from),
+                            },
+                        );
+                        if work.state.finished.is_some() {
+                            let body = self
+                                .program
+                                .manifest()
+                                .product
+                                .endings
+                                .get(outcome)
+                                .and_then(|ending| ending.body.clone());
+                            work.record(
+                                location,
+                                TraceAction::Finished {
+                                    outcome: outcome.clone(),
+                                    body,
+                                },
+                            );
                         }
                     }
                 }
