@@ -7,13 +7,17 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "test:server": "vitest run --config vitest.server.config.ts",
     "build:counter": "node scripts/build-counter.mjs",
     "test:browser": "npm run build:counter && playwright test"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@playwright/test": "1.63.0",
     "@types/node": "^24.0.0",
+    "@types/pg": "8.23.1",
     "fake-indexeddb": "6.2.5",
+    "pg": "8.23.1",
     "typescript": "~5.9.3",
     "vite": "8.2.2",
     "vitest": "5.0.3"

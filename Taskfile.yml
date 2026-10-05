@@ -28,6 +28,9 @@ tasks:
       - npm test
       - npx playwright install chromium
       - npm run test:browser
+  check:server-storage:
+    desc: PostgreSQL reference host types, PGlite conformance and optional real PostgreSQL tests
+    cmds: [pwsh -NoProfile -File scripts/check-server-storage.ps1]
   web:build:
     desc: Build the standalone @rezics/narrata ESM, declarations and Wasm package
     dir: packages/narrata/web

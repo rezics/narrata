@@ -63,6 +63,35 @@ jobs:
         run: |
           drift="$(git status --porcelain --untracked-files=all -- packages/narrata/nodes/schemas examples/gamebook-web/src/generated products/gamebook-demo)"
           if [ -n "$drift" ]; then echo "$drift"; exit 1; fi
+  server-storage:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: narrata
+          POSTGRES_PASSWORD: narrata-test-only
+          POSTGRES_DB: narrata_storage_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U narrata -d narrata_storage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NARRATA_POSTGRES_URL: postgres://narrata:narrata-test-only@localhost:5432/narrata_storage_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/narrata/kernel/js/package-lock.json
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.52.0
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: task check:server-storage
   gate-g3:
     strategy:
       fail-fast: false
