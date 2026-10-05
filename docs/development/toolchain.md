@@ -17,7 +17,7 @@
 | wasm-bindgen CLI | 与 `Cargo.lock` 中的 `wasm-bindgen` 相同 | 为 Web 生成 Wasm 的 JS 绑定；构建脚本按需装进 `.temp/wasm-tools` | `Cargo.lock` |
 | Bun | 1.4.0 | `goalctl`、文档检查及其测试 | 本页 |
 | Windows Terminal | 本机安装 | `task goal:manager` 为每个 manager 开一个标签页 | [manager 章程](../goals/manager.md#启动-manager) |
-| Task（go-task） | 3.52.0 | 统一命令入口 | `Taskfile.yml` |
+| Task（go-task） | 3.52.0 | 统一命令入口；CI 的 `gamebook-r1` 用 `arduino/setup-task` 安装同一版本 | `Taskfile.yml`、`.github/workflows/ci.yml` |
 | cargo-deny、wasmtime | CI 安装 | 依赖审计、Wasm 一致性 | `.github/workflows/ci.yml` |
 | Claude Code CLI、Codex CLI、grok | 本机安装（2026-10-05：2.1.283、0.160.0、1.0.46）；Codex 默认模型 `gpt-6.1-sol` | Goal worker 引擎，各自需要已登录 | [Goal 程序](../goals/README.md) |
 

@@ -37,7 +37,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: examples/gamebook-web/package-lock.json
+          cache-dependency-path: |
+            examples/gamebook-web/package-lock.json
+            packages/narrata/web/package-lock.json
+      # The reader's build runs `task web:build` to build the @rezics/narrata package it links.
+      - uses: arduino/setup-task@v2
+        with:
+          version: 3.52.0
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo fmt --all --check
       - run: cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local --all-targets --all-features -- -D warnings
       - run: cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local
