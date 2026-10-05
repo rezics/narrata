@@ -404,6 +404,11 @@ impl Session {
         let mut commits = Vec::new();
         for (position, text) in export.objects.iter().enumerate() {
             let path = format!("objects[{position}]");
+            // A decoding error names the object it was found in.
+            let within = |error: Error| Error {
+                path: format!("{path}.{}", error.path),
+                ..error
+            };
             let bytes = hex::decode(text)
                 .map_err(|_| Error::new("decode", &path, "objects are hexadecimal envelopes"))?;
             match bytes
@@ -411,7 +416,7 @@ impl Session {
                 .map(|kind| u16::from_be_bytes([kind[0], kind[1]]))
             {
                 Some(wire::KIND_STATE) => {
-                    let (state, id) = decode_state(&program, &bytes)?;
+                    let (state, id) = decode_state(&program, &bytes).map_err(within)?;
                     if states.insert(id, (state, bytes.len())).is_some() {
                         return Err(Error::new("duplicate", &path, "duplicate object"));
                     }
@@ -422,7 +427,7 @@ impl Session {
                         return Err(Error::new("duplicate", &path, "duplicate object"));
                     }
                 }
-                Some(wire::KIND_COMMIT) => commits.push(Commit::decode(&bytes)?),
+                Some(wire::KIND_COMMIT) => commits.push(Commit::decode(&bytes).map_err(within)?),
                 _ => return Err(Error::new("decode", &path, "unexpected object kind")),
             }
         }

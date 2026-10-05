@@ -505,7 +505,10 @@ fn restore_rejects_tampered_object_bytes() {
     bytes[last] ^= 1;
     export.objects[0] = hex::encode(bytes);
     let text = serde_json::to_string(&export).unwrap();
-    assert!(Session::restore(session.program().clone(), &text).is_err());
+    let error = Session::restore(session.program().clone(), &text)
+        .err()
+        .unwrap();
+    assert!(error.path.starts_with("objects[0]."), "{error}");
 }
 
 #[test]
