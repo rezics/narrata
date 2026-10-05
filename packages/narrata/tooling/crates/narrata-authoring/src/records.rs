@@ -282,6 +282,17 @@ impl DraftRecord {
         }
         match self {
             Self::Project { payload, .. } => {
+                for (key, value) in &payload.product.arguments {
+                    if let Err(e) = narrata_nodes::check_scalar(
+                        value,
+                        &format!(
+                            "/payload/product/arguments/{}",
+                            crate::validate::escape(key)
+                        ),
+                    ) {
+                        out.error(e, Some(self));
+                    }
+                }
                 for e in narrata_nodes::validate_manifest_source(payload) {
                     out.error(
                         Error::new(

@@ -28,6 +28,9 @@ pub(crate) struct Checks {
 }
 
 impl Checks {
+    pub fn is_first(&self) -> bool {
+        self.first
+    }
     pub fn first() -> Self {
         Self {
             errors: Vec::new(),
@@ -266,6 +269,11 @@ pub(crate) fn collect_manifest(manifest: &Manifest, checks: &mut Checks) -> Resu
             }
         }
     }
+    if entry.is_none() {
+        for (key, value) in &product.arguments {
+            checks.check(check_scalar(value, &format!("product.arguments.{key}")))?;
+        }
+    }
     if product.shared.len() > MAX_SHARED {
         checks.error(Error::new(
             "limit",
@@ -497,11 +505,7 @@ pub(crate) fn collect_graph(
                 when_false,
             } => {
                 let at = checks.path(&path, "condition");
-                checks.check(
-                    declarations
-                        .check(condition, &at)
-                        .and_then(|actual| expect(actual, ScalarType::Bool, &at)),
-                )?;
+                collect_expected(&declarations, condition, ScalarType::Bool, &at, checks)?;
                 checks.check(target(when_true))?;
                 checks.check(target(when_false))?;
             }
@@ -510,10 +514,11 @@ pub(crate) fn collect_graph(
                     checks.error(Error::new("limit", &path, "too many assignments"))?;
                 }
                 for (index, assignment) in assignments.iter().enumerate() {
-                    checks.check(declarations.check_assignments(
-                        std::slice::from_ref(assignment),
+                    declarations.collect_assignment(
+                        assignment,
                         &checks.path(&path, &format!("assignments[{index}]")),
-                    ))?;
+                        checks,
+                    )?;
                 }
                 checks.check(target(next))?;
             }
@@ -548,19 +553,22 @@ pub(crate) fn collect_graph(
                         ))?;
                     }
                     for (argument, value) in arguments {
+                        let at = checks.path(&path, &format!("arguments.{argument}"));
                         if let Some(kind) = callee.parameters.get(argument) {
-                            checks.check(
-                                declarations
-                                    .check(
-                                        value,
-                                        &checks.path(&path, &format!("arguments.{argument}")),
-                                    )
-                                    .and_then(|actual| expect(actual, *kind, &path)),
-                            )?;
+                            collect_expected(&declarations, value, *kind, &at, checks)?;
+                        } else {
+                            declarations.collect(value, &at, checks)?;
                         }
                     }
                 } else {
                     checks.skip(&path, "call contract checks require a valid callee")?;
+                    for (argument, value) in arguments {
+                        declarations.collect(
+                            value,
+                            &checks.path(&path, &format!("arguments.{argument}")),
+                            checks,
+                        )?;
+                    }
                 }
                 for node in on_return.values() {
                     checks.check(target(node))?;
@@ -603,7 +611,11 @@ fn collect_passage(
     }
     for (argument, value) in &passage.args {
         checks.check(name(argument, path))?;
-        checks.check(declarations.check(value, &checks.path(path, &format!("args.{argument}"))))?;
+        declarations.collect(
+            value,
+            &checks.path(path, &format!("args.{argument}")),
+            checks,
+        )?;
     }
     if passage.choice_points.len() > MAX_CHOICE_POINTS {
         checks.error(Error::new(
@@ -717,20 +729,17 @@ fn collect_choice_point(
         .filter_map(|(field, condition)| condition.as_ref().map(|condition| (field, condition)))
         {
             let at = checks.path(&path, field);
-            checks.check(
-                declarations
-                    .check(condition, &at)
-                    .and_then(|actual| expect(actual, ScalarType::Bool, &at)),
-            )?;
+            collect_expected(declarations, condition, ScalarType::Bool, &at, checks)?;
         }
         if option.effects.len() > MAX_ASSIGNMENTS {
             checks.error(Error::new("limit", &path, "too many effects"))?;
         }
         for (index, effect) in option.effects.iter().enumerate() {
-            checks.check(declarations.check_assignments(
-                std::slice::from_ref(effect),
+            declarations.collect_assignment(
+                effect,
                 &checks.path(&path, &format!("effects[{index}]")),
-            ))?;
+                checks,
+            )?;
         }
         match &option.outcome {
             Outcome::Branch { target: node } => {
@@ -890,6 +899,19 @@ fn option_label(count: usize, present: bool, path: &str) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+fn collect_expected(
+    declarations: &Declarations<'_>,
+    expression: &crate::Expr,
+    expected: ScalarType,
+    path: &str,
+    checks: &mut Checks,
+) -> Result<()> {
+    if let Some(actual) = declarations.collect(expression, path, checks)? {
+        checks.check(expect(actual, expected, path))?;
+    }
+    Ok(())
 }
 
 fn collect_graph_locals(

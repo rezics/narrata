@@ -182,3 +182,85 @@ fn independent_chunk_size_failures_are_all_reported_before_compiling() {
         "limit"
     );
 }
+
+#[test]
+fn operands_assignment_targets_and_values_are_checked_independently() {
+    let mut source = source();
+    let data = &mut source
+        .packages
+        .get_mut("main")
+        .unwrap()
+        .graphs
+        .get_mut("start")
+        .unwrap()
+        .nodes
+        .get_mut("gate")
+        .unwrap()
+        .data;
+    data["choice_points"][0]["options"][0]["visible_if"] = json!({"kind":"binary","op":"and","left":support::read("shared","left_missing"),"right":support::read("shared","right_missing")});
+    data["choice_points"][0]["options"][0]["effects"] = json!([{"target":{"scope":"local","name":"target_missing"},"value":support::read("shared","value_missing")}]);
+    let first = compile(&source, &NodeRegistry::gamebook()).unwrap_err();
+    assert!(first.message.contains("left_missing"));
+    let report = validate_source(&source, &NodeRegistry::gamebook(), 100_000, 1_000);
+    assert!(report.complete);
+    for name in [
+        "left_missing",
+        "right_missing",
+        "target_missing",
+        "value_missing",
+    ] {
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.message.contains(name)),
+            "{report:?}"
+        );
+    }
+    for tail in [
+        "visible_if.left",
+        "visible_if.right",
+        "effects[0].target",
+        "effects[0].value",
+    ] {
+        assert!(
+            report.errors.iter().any(|error| error.path.ends_with(tail)),
+            "{report:?}"
+        );
+    }
+    assert!(
+        report
+            .skipped
+            .iter()
+            .any(|error| error.path.ends_with("visible_if"))
+    );
+}
+
+#[test]
+fn missing_entry_signatures_do_not_hide_independent_scalar_constraints() {
+    let mut source = source();
+    source.manifest.product.entry.graph = "missing".into();
+    source.manifest.product.arguments.insert(
+        "wide".into(),
+        Scalar::Text("x".repeat(narrata_nodes::MAX_TEXT_BYTES + 1)),
+    );
+    let report = validate_source(&source, &NodeRegistry::gamebook(), 100_000, 1_000);
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.code == "reference" && error.path == "product.entry")
+    );
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.code == "limit" && error.path == "product.arguments.wide")
+    );
+    assert!(
+        report
+            .skipped
+            .iter()
+            .any(|error| error.path == "product.entry")
+    );
+}

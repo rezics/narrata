@@ -37,7 +37,7 @@ pub use compile::{
     validate_manifest_source, validate_source,
 };
 pub use error::{Diagnostic, Error, Result};
-pub use expr::{Assignment, BinaryOp, Expr, Scope, Variable};
+pub use expr::{Assignment, BinaryOp, Expr, Scope, Variable, check_scalar};
 pub use ids::{
     ArtifactId, AuthoredId, ChoicePointId, CommitId, ExecutionId, NodeId, ObjectId, OptionId,
 };

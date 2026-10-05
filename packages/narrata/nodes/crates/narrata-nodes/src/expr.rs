@@ -104,51 +104,148 @@ impl Declarations<'_> {
                 Ok(value.kind())
             }
             Expr::Read { scope, name } => self.variable(*scope, name, path),
-            Expr::Not { value } => {
-                expect(
-                    self.check_at(value, depth + 1, path)?,
-                    ScalarType::Bool,
-                    path,
-                )?;
-                Ok(ScalarType::Bool)
-            }
+            Expr::Not { value } => not_type(self.check_at(value, depth + 1, path)?, path),
             Expr::Binary { op, left, right } => {
                 let left = self.check_at(left, depth + 1, path)?;
                 let right = self.check_at(right, depth + 1, path)?;
-                expect(right, left, path)?;
-                // Only equality is defined for every type, including `ref`.
-                match op {
-                    BinaryOp::Eq | BinaryOp::Ne => Ok(ScalarType::Bool),
-                    BinaryOp::And | BinaryOp::Or => {
-                        expect(left, ScalarType::Bool, path)?;
-                        Ok(ScalarType::Bool)
-                    }
-                    BinaryOp::Add | BinaryOp::Sub => {
-                        expect(left, ScalarType::Int, path)?;
-                        Ok(ScalarType::Int)
-                    }
-                    BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                        expect(left, ScalarType::Int, path)?;
-                        Ok(ScalarType::Bool)
-                    }
-                }
+                binary_type(*op, left, right, path)
             }
         }
     }
 
     pub fn check_assignments(&self, values: &[Assignment], path: &str) -> Result<()> {
         for assignment in values {
-            if assignment.target.scope == Scope::Parameter {
-                return Err(Error::new(
-                    "readonly",
-                    path,
-                    "parameters are immutable bindings",
-                ));
-            }
+            writable(assignment.target.scope, path)?;
             let expected = self.variable(assignment.target.scope, &assignment.target.name, path)?;
             expect(self.check(&assignment.value, path)?, expected, path)?;
         }
         Ok(())
+    }
+
+    /// Operand types are prerequisites for an operator's rule, but the operands themselves
+    /// are independent. Collection visits both and explicitly skips a blocked parent rule.
+    pub fn collect(
+        &self,
+        expr: &Expr,
+        path: &str,
+        checks: &mut crate::check::Checks,
+    ) -> Result<Option<ScalarType>> {
+        if checks.is_first() {
+            return checks.check(self.check(expr, path));
+        }
+        self.collect_at(expr, 0, path, checks)
+    }
+
+    fn collect_at(
+        &self,
+        expr: &Expr,
+        depth: usize,
+        path: &str,
+        checks: &mut crate::check::Checks,
+    ) -> Result<Option<ScalarType>> {
+        checks.tick(path)?;
+        if depth > MAX_EXPRESSION_DEPTH {
+            checks.error(Error::new("limit", path, "expression nesting exceeds 48"))?;
+            return Ok(None);
+        }
+        match expr {
+            Expr::Literal { value } => {
+                checks.check(check_scalar(value, path).map(|()| value.kind()))
+            }
+            Expr::Read { scope, name } => checks.check(self.variable(*scope, name, path)),
+            Expr::Not { value } => {
+                if let Some(kind) =
+                    self.collect_at(value, depth + 1, &format!("{path}.value"), checks)?
+                {
+                    checks.check(not_type(kind, path))
+                } else {
+                    checks.skip(path, "operator type checks require a valid operand")?;
+                    Ok(None)
+                }
+            }
+            Expr::Binary { op, left, right } => {
+                let left = self.collect_at(left, depth + 1, &format!("{path}.left"), checks)?;
+                let right = self.collect_at(right, depth + 1, &format!("{path}.right"), checks)?;
+                if let (Some(left), Some(right)) = (left, right) {
+                    checks.check(binary_type(*op, left, right, path))
+                } else {
+                    checks.skip(path, "operator type checks require valid operands")?;
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    pub fn collect_assignment(
+        &self,
+        assignment: &Assignment,
+        path: &str,
+        checks: &mut crate::check::Checks,
+    ) -> Result<()> {
+        if checks.is_first() {
+            checks.check(self.check_assignments(std::slice::from_ref(assignment), path))?;
+            return Ok(());
+        }
+        let target_path = format!("{path}.target");
+        let value_path = format!("{path}.value");
+        checks.check(writable(assignment.target.scope, &target_path))?;
+        let expected = checks.check(self.variable(
+            assignment.target.scope,
+            &assignment.target.name,
+            &target_path,
+        ))?;
+        let actual = self.collect(&assignment.value, &value_path, checks)?;
+        if let (Some(actual), Some(expected)) = (actual, expected) {
+            checks.check(expect(actual, expected, &value_path))?;
+        } else {
+            checks.skip(
+                path,
+                "assignment type checks require a valid target and expression",
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn writable(scope: Scope, path: &str) -> Result<()> {
+    if scope == Scope::Parameter {
+        Err(Error::new(
+            "readonly",
+            path,
+            "parameters are immutable bindings",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn not_type(actual: ScalarType, path: &str) -> Result<ScalarType> {
+    expect(actual, ScalarType::Bool, path)?;
+    Ok(ScalarType::Bool)
+}
+
+fn binary_type(
+    op: BinaryOp,
+    left: ScalarType,
+    right: ScalarType,
+    path: &str,
+) -> Result<ScalarType> {
+    expect(right, left, path)?;
+    // Only equality is defined for every type, including `ref`.
+    match op {
+        BinaryOp::Eq | BinaryOp::Ne => Ok(ScalarType::Bool),
+        BinaryOp::And | BinaryOp::Or => {
+            expect(left, ScalarType::Bool, path)?;
+            Ok(ScalarType::Bool)
+        }
+        BinaryOp::Add | BinaryOp::Sub => {
+            expect(left, ScalarType::Int, path)?;
+            Ok(ScalarType::Int)
+        }
+        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+            expect(left, ScalarType::Int, path)?;
+            Ok(ScalarType::Bool)
+        }
     }
 }
 
@@ -164,7 +261,7 @@ pub(crate) fn expect(actual: ScalarType, expected: ScalarType, path: &str) -> Re
     }
 }
 
-pub(crate) fn check_scalar(value: &Scalar, path: &str) -> Result<()> {
+pub fn check_scalar(value: &Scalar, path: &str) -> Result<()> {
     match value {
         Scalar::Text(text) if text.len() > MAX_TEXT_BYTES => {
             Err(Error::new("limit", path, "text value exceeds 64 KiB"))
