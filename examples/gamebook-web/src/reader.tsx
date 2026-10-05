@@ -56,5 +56,5 @@ export function referenceReader(initial: ViewReply, onView: (reply: ViewReply) =
   } };
   const controller = createReader(book, resolver, { context: { languages: [...navigator.languages] },
     persistence: initial.saved_at ? "durable" : "memory", savedAt: initial.saved_at });
-  return { controller, accept };
+  return { controller, accept, resolver };
 }

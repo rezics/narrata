@@ -9,5 +9,6 @@ export default defineConfig({
   server: { fs: { allow: [
     fileURLToPath(new URL(".", import.meta.url)),
     fileURLToPath(new URL("../../packages/narrata/web", import.meta.url)),
+    fileURLToPath(new URL("../../products/gamebook-demo", import.meta.url)),
   ] } },
 });

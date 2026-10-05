@@ -17,7 +17,7 @@ button, input { font: inherit; }
 button { cursor: pointer; color: inherit; }
 button:disabled { cursor: default; }
 button, a, summary { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, a:focus-visible, summary:focus-visible, .map-node:focus-visible { outline: 2px solid #b56c40; outline-offset: 4px; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid #b56c40; outline-offset: 4px; }
 button { transition: background-color 130ms ease, border-color 130ms ease; }
 .topbar { min-height: 77px; display: flex; align-items: center; gap: 70px; padding: 0 30px; border-bottom: 1px solid var(--rule); }
 .wordmark { font: 38px/1 Georgia, "Times New Roman", serif; color: var(--ink); text-decoration: none; letter-spacing: -.8px; }
@@ -127,16 +127,7 @@ button { transition: background-color 130ms ease, border-color 130ms ease; }
 .graph-view { padding: 30px 20px; flex: 1; min-width: 0; }
 .graph-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .graph-toolbar h1 { font: 24px/1.5 var(--serif); margin: 0 0 7px; }
-.graph-toolbar p, .graph-legend { font-size: 11px; line-height: 1.8; color: var(--muted); }
-.graph-scroll { overflow: auto; max-height: 640px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); background-color: #f7f7f0; background-image: radial-gradient(#c4cfc0 .6px, transparent .6px); background-size: 16px 16px; }
-.graph-scroll svg { display: block; }
-.graph-package { fill: var(--ink); font: 16px var(--serif); }
-.map-node { cursor: pointer; }
-.map-node rect { fill: var(--paper); stroke: #a7b6a5; }
-.map-node text { fill: var(--ink); font: 14px var(--serif); pointer-events: none; }
-.map-node .map-id { fill: #8b9789; font: 10px ui-monospace, monospace; }
-.map-node:hover rect { stroke: var(--accent); fill: #eef3e8; }
-.map-node.active rect { stroke: var(--rust); stroke-width: 2; fill: #f6eee3; }
+.graph-toolbar p { font-size: 11px; line-height: 1.8; color: var(--muted); }
 @media (min-width: 1450px) { .workspace { grid-template-columns: 300px minmax(430px, 1fr) 300px; } .reading { padding: 40px 66px 48px; } .prose { font-size: 22px; line-height: 1.9; } .reading h1 { font-size: 50px; } .choices { margin-top: 38px; } }
 @media (max-width: 1120px) { .workspace { grid-template-columns: 205px minmax(380px, 1fr) 230px; } .side-panel { padding: 24px 18px; } .reading { padding: 36px 34px; } .topbar { gap: 38px; } .topbar nav { gap: 18px; } .reading-footer { padding: 20px 25px; gap: 10px; } .save-status { max-width: 130px; } }
 @media (max-width: 920px) {
@@ -171,3 +162,7 @@ button { transition: background-color 130ms ease, border-color 130ms ease; }
   .message { padding: 12px 20px; font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.graph-levels { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.author-graph { width: 100%; overflow: hidden; }
+.graph-list ul { list-style: none; padding: 0; display: flex; gap: .5rem; flex-wrap: wrap; }
+.graph-list button { max-width: 100%; overflow-wrap: anywhere; text-align: left; }

@@ -20,8 +20,8 @@ npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", ta
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./storage", "./react", "./testing"]);
-assert.equal(manifest.dependencies, undefined, "Runtime assets and storage host are self-contained");
+assert.deepEqual(Object.keys(manifest.exports), [".", "./storage", "./react", "./testing", "./graph", "./graph/react"]);
+assert.deepEqual(manifest.dependencies, { graphology: "0.26.0", sigma: "3.0.3" }, "Only the lazy graph entry uses runtime dependencies");
 assert.deepEqual(manifest.peerDependenciesMeta, { react: { optional: true } });
 assert.equal(existsSync(join(directory, "node_modules/react")), false, "Framework-free hosts must not install React");
 assert.equal(createHash("sha256").update(readFileSync(join(installed, "dist/wasm/narrata_nodes_wasm_bg.wasm"))).digest("hex"),
@@ -33,6 +33,7 @@ for (const [id, bytes] of parts.objects) writeFileSync(join(publicDirectory, "ob
 writeFileSync(join(directory, "objects.json"), JSON.stringify(Object.fromEntries([...parts.objects].map(([id, bytes]) => [id, [...bytes]]))));
 writeFileSync(join(directory, "manifest.cbor"), parts.manifest);
 cpSync(resolve(here, "test/types.ts"), join(directory, "types.ts"));
+cpSync(resolve(here, "../../../fixtures/compat/graph-v1"), join(directory, "graph"), { recursive: true });
 writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true }, include: ["types.ts"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 writeFileSync(join(directory, "node.mjs"), `
@@ -40,6 +41,10 @@ import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
 import { openBook, initialize, resolveContent } from "@rezics/narrata";
 import { MockRezicsContent, mountainLetterData, mountainLetterKeys } from "@rezics/narrata/testing";
+import { decodeIndex, decodeTile } from "@rezics/narrata/graph";
+const graphManifest = JSON.parse(await readFile(new URL("./graph/manifest.json", import.meta.url), "utf8"));
+const index = await decodeIndex(new Uint8Array(await readFile(new URL("./graph/" + graphManifest.index_object_id + ".cbor", import.meta.url))), graphManifest.index_object_id);
+for (const [row, tile] of index.tiles.entries()) await decodeTile(new Uint8Array(await readFile(new URL("./graph/" + tile.objectId + ".cbor", import.meta.url))), index, row);
 const mock = new MockRezicsContent(mountainLetterData(), 1);
 const station = mountainLetterKeys["main.station"];
 const label = mountainLetterKeys["main.journey:station.camp.label"];
@@ -75,7 +80,8 @@ execFileSync("bun", [join(directory, "node.mjs"), "default"], { cwd: directory, 
 
 npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "react@19.2.8", "react-dom@19.2.8", "@types/react@^19.0.0", "@types/react-dom@^19.0.0");
 cpSync(resolve(here, "test/reader-types.tsx"), join(directory, "reader-types.tsx"));
-writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, jsx: "react-jsx" }, include: ["types.ts", "reader-types.tsx"] }));
+cpSync(resolve(here, "test/graph-types.tsx"), join(directory, "graph-types.tsx"));
+writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, jsx: "react-jsx" }, include: ["types.ts", "reader-types.tsx", "graph-types.tsx"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 
 writeFileSync(join(directory, "index.html"), '<!doctype html><html><head><title>Narrata install test</title></head><body><p id="status">loading</p><div id="reader"></div><script type="module" src="/main.tsx"></script></body></html>');

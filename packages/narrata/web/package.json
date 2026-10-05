@@ -4,12 +4,35 @@
   "type": "module",
   "description": "Narrata's Gamebook Wasm runtime and IndexedDB save host.",
   "license": "AGPL-3.0-only",
-  "files": ["dist", "size-budget.json"],
+  "files": [
+    "dist",
+    "size-budget.json"
+  ],
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./storage": { "types": "./dist/storage.d.ts", "import": "./dist/storage.js" },
-    "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
-    "./testing": { "types": "./dist/testing/index.d.ts", "import": "./dist/testing/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "import": "./dist/storage.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    },
+    "./graph": {
+      "types": "./dist/graph/index.d.ts",
+      "import": "./dist/graph/index.js"
+    },
+    "./graph/react": {
+      "types": "./dist/graph/react.d.ts",
+      "import": "./dist/graph/react.js"
+    }
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -33,6 +56,16 @@
     "vite": "8.2.2",
     "vitest": "5.0.3"
   },
-  "peerDependencies": { "react": "^18.0.0 || ^19.0.0" },
-  "peerDependenciesMeta": { "react": { "optional": true } }
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "graphology": "0.26.0",
+    "sigma": "3.0.3"
+  }
 }

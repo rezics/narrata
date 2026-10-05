@@ -1,6 +1,6 @@
 # 图、分析与摘要
 
-状态：发布时计算、R2 适配、compose CLI 与受检分发格式已实现；宿主接入待实现。依据：[决定 7、12](../product/decisions.md) 与
+状态：发布时计算、R2 适配、compose CLI、受检分发格式与 Web 作者视图已实现；读者地图待实现。依据：[决定 7、12](../product/decisions.md) 与
 [图渲染调研](../research/2026-10-05-choice-granularity-and-scale/graph_rendering.md)。
 
 叙事图归 Narrata，与宿主的章节结构无关。图视图是用户需求，但它是程序的一个投影，
@@ -29,9 +29,14 @@ CBOR 瓦片；[摘要类型与 JSON Schema](../../packages/narrata/tooling/crate
 
 ## 作者视图
 
-- WebGL 渲染器（sigma.js + graphology，懒加载）；同时绘制不超过约 5 万节点、15 万边。
-- 通过"进入单元"切换层级；局部编辑用小的富节点编辑器（不超过约 500 节点）。
-- 全作品星图可选，用 GPU 渲染器（cosmos.gl）加预计算坐标。
+[Web 图子路径](../../packages/narrata/web/src/graph/index.ts) 提供受检读取、框架无关挂载与
+可选 React 组件；[接入说明](../../packages/narrata/web/README.md#author-graph) 记录宿主用法。
+[控制器测试](../../packages/narrata/web/test/graph-controller.test.ts) 与
+[浏览器测试](../../examples/gamebook-web/tests/graph.spec.ts) 固定三层切换、标题解析、绘制与缓存预算。
+
+作者视图揭示完整结构，宿主须把它提供给可以查看未走路线的用户；不能当作读者地图。
+预计算坐标服务于结构探索，不代表内容顺序或语义真实性。第一阶段只读；局部富节点编辑器
+与全作品星图仍是后续能力。
 
 ## 读者地图
 

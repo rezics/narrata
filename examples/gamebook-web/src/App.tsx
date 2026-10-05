@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { reader } from "./client";
-import { GraphMap, Inspector, Outline } from "./components";
+import { Inspector, Outline } from "./components";
 import { Reader, ReaderNavigation } from "@rezics/narrata/react";
 import type { NodeAddress } from "@rezics/narrata";
 import { contentKey, errorMessage, limits, type Command, type ViewReply } from "./protocol";
@@ -9,6 +9,7 @@ import { classes, messages, referenceReader, slots } from "./reader";
 
 const subscribeNone = () => () => undefined;
 const noSnapshot = () => null;
+const GraphMap = lazy(() => import("./graph-map"));
 
 function download(data: string | Uint8Array, filename: string, type: string) {
   const url = URL.createObjectURL(new Blob([data as BlobPart], { type: type === "application/json" ? `${type};charset=utf-8` : type }));
@@ -124,7 +125,7 @@ export function App() {
     {book && view && current && title && binding ? <div className="workspace">
       <Outline graphs={graphs} texts={texts} current={current} selected={selected} open={mobilePanel === "outline"} onSelect={inspectNode} onGraph={() => { setMap(true); setMobilePanel(null); }} />
       <main className="main-column">
-        {map ? <GraphMap graphs={graphs} texts={texts} current={current} onSelect={inspectNode} onRead={() => { setMap(false); setMobilePanel(null); }} />
+        {map ? <Suspense fallback={<p role="status">正在打开结构图……</p>}><GraphMap artifactId={view.artifact_id} graphs={graphs} resolver={binding.resolver} onSelect={inspectNode} onRead={() => { setMap(false); setMobilePanel(null); }} /></Suspense>
           : <Reader controller={binding.controller} slots={slots} messages={messages} classes={classes} headingId="passage-title" showPath={false} showState={false} showNavigation={false} disabled={externalBusy} />}
         <ReaderNavigation controller={binding.controller} messages={messages} classes={classes} disabled={externalBusy} />
         <details className="project-export"><summary>作品文件</summary><button className="text-button" disabled={busy} onClick={() => void execute({ kind: "export_pack" })}>导出构件</button> · <button className="text-button" disabled={busy} onClick={() => void execute({ kind: "export_content" })}>导出内容包</button><p>作品由构件（结构）与内容包（文字）组成，导入时一并选择。存档需要对应的构件；换用另一份内容包不影响存档。重新开始会回到起点并保留已有路线。</p></details>

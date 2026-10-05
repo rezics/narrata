@@ -5,9 +5,10 @@ in `BookView` are resolved by the host; the runtime maintains structure, state a
 
 Build and pack from the repository with `task web:pack`, then install the printed `.tgz` path
 with npm. The tarball includes JavaScript, TypeScript declarations and a separate Wasm asset;
-the framework-free entries need no runtime npm dependencies or repository paths. The optional
+the runtime and storage entries need no runtime npm imports or repository paths. The graph
+entry installs Sigma and graphology, loaded only when mounting an author view. The optional
 `@rezics/narrata/react` entry uses the host's React 18 or 19 installation; React is an optional
-peer and is not shipped inside the package.
+peer and is not shipped inside the package; `@rezics/narrata/graph/react` follows the same convention.
 
 ```ts
 import { openBook } from "@rezics/narrata";
@@ -134,10 +135,58 @@ and `useReader`. Set `disabled` while a host-owned import or export is pending. 
 server requires the same prepared controller snapshot during
 hydration. Disposing the controller remains the host's responsibility.
 
+## Author graph
+
+Open this full-structure view only for an audience allowed to see unrevealed routes. It uses
+published ADR 0016 objects and precomputed coordinates. Hosts supply object fetching and their
+existing content resolver; geometry contains IDs and references, never body text.
+
+```ts
+// Run inside the host's “open author graph” action to keep it off the reading first screen.
+const { mountAuthorGraph } = await import("@rezics/narrata/graph");
+const mounted = mountAuthorGraph(container, {
+  indexId: publication.index_object_id,
+  labels: publication.labels.map(row => ({
+    cluster: row.cluster.slice("cluster:".length), objectId: row.object_id,
+  })),
+  fetchObject: id => bytes(`/story.graph/${id}.cbor`),
+  resolver,
+  context: { languages: ["en"], realization: "selected-edition" },
+});
+await mounted.ready;
+// Host controls can use mounted.controller.back(), showWork(), enterCluster(index),
+// enterPartition(clusterIndex, partitionIndex), subscribe(), and getSnapshot().
+// During cleanup:
+mounted.dispose();
+```
+
+`AuthorGraph` from `@rezics/narrata/graph/react` accepts the same options, a container style/class,
+and `onController` / `onError` callbacks. Give it a nonzero height and keep the options object
+stable. Clicking clusters and partition representatives enters their next level; `onSelect`
+receives a node at the deepest level. Use the controller snapshot for keyboard-accessible host
+navigation and lists alongside the canvas. `createGraphController` also works without a renderer.
+
+Defaults cap a screen at 50,000 unique nodes and 150,000 unique relations. `maxNodes` / `maxEdges`
+override these limits. An over-budget transition keeps the previous screen and sets `limited`;
+an over-budget overview has no drawable screen. `maxCachedObjects` (64) and `maxCacheBytes`
+(32 MiB) bound an LRU cache of fetched bytes. Disposing releases the cache and WebGL resources.
+Visible node titles resolve in batches of `maxResolveItems` (256) in the supplied context;
+unavailable titles and nodes without titles show their IDs. Cluster IDs have no inferred titles.
+Coordinates outside JavaScript's exact integer range report an error instead of rounding.
+
+`decodeIndex(bytes, objectId)`, `decodeTile(bytes, checkedIndex, tileIndex)` and
+`decodeLabels(bytes, objectId, clusterId)` are asynchronous checked readers. Object IDs are
+64 lowercase hex digits, cluster IDs are 32 digits, both without prefixes. The readers check
+envelopes, payload checksums, object identity, canonical CBOR and the format's structural budgets;
+`GraphDecodeError` gives the failed check. An accepted index does not prove referenced objects
+exist or match the original program's semantics. Hosts choose the publication for the correct
+artifact; the reference reader checks this before displaying the demo's graph.
+
 `task check:web` verifies declarations, controller behavior, slot contracts, the fixed
 [size budget](size-budget.json), and external tarball installation. The production Vite install
 test uses the React entry, checks first-screen manifest/entry-chunk requests before speculative
-prefetch, makes a keyboard choice, and reopens its durable save. JavaScript is measured as three
-exclusive groups: framework-free runtime (including storage and controller), React binding, and
-testing fixtures, plus the aggregate. React itself belongs to the host's bundle budget. Limits
+prefetch, makes a keyboard choice, and reopens its durable save. The tarball checks also decode
+frozen graph objects without React installed. JavaScript budgets separate the runtime, React
+binding, testing fixtures, and the graph build including Sigma/graphology. React itself belongs
+to the host's bundle budget. The existing first-screen limits are retained. Limits
 and measured baselines record the remaining headroom in `size-budget.json`.

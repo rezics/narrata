@@ -365,6 +365,17 @@ test("graph inspection is read-only and mobile controls remain usable", async ({
   const before = await exportSave(page);
   await page.getByRole("button", { name: "结构图", exact: true }).click();
   await expect(page.getByRole("heading", { name: "故事结构图", exact: true })).toBeVisible();
+  await expect(page.getByTestId("graph-level")).toHaveText("作品");
+  const units = await page.locator(".graph-list button").count();
+  for (let row = 0; row < units; row++) {
+    await page.locator(".graph-list button").nth(row).click();
+    await expect(page.getByTestId("graph-level")).toHaveText("作者簇");
+    await expect(page.getByTestId("graph-status")).not.toHaveText("正在载入图……");
+    const station = page.getByRole("button", { name: "进入 旧驿站", exact: true });
+    if (await station.count()) { await station.click(); break; }
+    await page.getByRole("button", { name: "作品概览", exact: true }).click();
+    await expect(page.getByTestId("graph-level")).toHaveText("作品");
+  }
   await page.getByRole("button", { name: "检查 旧驿站", exact: true }).press("Enter");
   await expect(page.getByRole("heading", { name: "节点连接", exact: true })).toBeVisible();
   await expect(page.locator(".node-details")).toContainText("main.journey.station");
