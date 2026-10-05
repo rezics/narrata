@@ -1,47 +1,17 @@
-//! The domain object graph: which objects an object refers to.
+//! The Stage 1–5 object graph: which objects an object refers to, as the history layer's
+//! [`Reference`]s.
 //!
-//! Write validation, GC marking, bundle closures and the integrity scan all decode references
-//! here. A Commit names its Program by artifact, not by object, so callers resolve
-//! [`Reference::Program`] in their own context: the engine through its Program index, a bundle
-//! through the objects it carries.
+//! A Commit names its Program by artifact, not by object; the engine resolves that named edge
+//! through the Program index, a bundle through the objects it carries. The checkpoint manifest
+//! (kind 7) belongs to the history layer, which decodes its references itself.
 
-use narrata_core::{ObjectId, ProgramArtifactId, codec::ObjectKind};
+use narrata_core::codec::ObjectKind;
+use narrata_history::{HistoryError, Object, Reference};
 
 use crate::{
-    CheckedObject, CheckpointBundleManifestV1, CommitCauseV1, CommitV1, CompoundSaveManifestV1,
-    HostTimelineManifestV1, StoreError, TimelineArchiveManifestV1, TimelineCatalogEventV1,
+    CommitCauseV1, CommitV1, CompoundSaveManifestV1, HostTimelineManifestV1,
+    TimelineArchiveManifestV1, TimelineCatalogEventV1, object::history_id,
 };
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) enum Reference {
-    Object {
-        id: ObjectId,
-        /// The kind the referring object requires, when its schema names one.
-        kind: Option<ObjectKind>,
-        /// Manifest descriptors keep their objects alive but are not part of a bundle's
-        /// closure, which the manifest itself describes.
-        descriptor: bool,
-    },
-    Program(ProgramArtifactId),
-}
-
-impl Reference {
-    const fn object(id: ObjectId, kind: ObjectKind) -> Self {
-        Self::Object {
-            id,
-            kind: Some(kind),
-            descriptor: false,
-        }
-    }
-
-    const fn untyped(id: ObjectId) -> Self {
-        Self::Object {
-            id,
-            kind: None,
-            descriptor: false,
-        }
-    }
-}
 
 /// Kinds whose objects never refer to other objects.
 pub(crate) const fn is_leaf(kind: ObjectKind) -> bool {
@@ -55,99 +25,87 @@ pub(crate) const fn is_leaf(kind: ObjectKind) -> bool {
     )
 }
 
-pub(crate) fn references(object: &CheckedObject) -> Result<Vec<Reference>, StoreError> {
+fn object(bytes: &[u8; 32], kind: ObjectKind) -> Reference {
+    Reference::object(history_id(bytes), kind.code())
+}
+
+fn descriptors(descriptors: &[crate::ObjectDescriptor]) -> impl Iterator<Item = Reference> + '_ {
+    descriptors.iter().map(|descriptor| {
+        Reference::descriptor(history_id(descriptor.id.as_bytes()), descriptor.kind.code())
+    })
+}
+
+pub(crate) fn references(stored: &Object) -> Result<Vec<Reference>, HistoryError> {
     let corrupt =
-        |error: &dyn std::fmt::Display| StoreError::Corrupt(object.id(), error.to_string());
-    let id = |bytes: &[u8; 32]| ObjectId::from_bytes(*bytes);
+        |error: &dyn std::fmt::Display| HistoryError::Corrupt(stored.id(), error.to_string());
+    let payload = stored.payload();
     let mut values = Vec::new();
-    match object.kind() {
-        ObjectKind::Commit => {
-            let commit = CommitV1::decode(object.payload()).map_err(|error| corrupt(&error))?;
+    match ObjectKind::from_code(stored.kind()) {
+        Some(ObjectKind::Commit) => {
+            let commit = CommitV1::decode(payload).map_err(|error| corrupt(&error))?;
             if let Some(parent) = commit.parent {
-                values.push(Reference::object(id(parent.as_bytes()), ObjectKind::Commit));
+                values.push(object(parent.as_bytes(), ObjectKind::Commit));
             }
-            values.push(Reference::object(
-                id(commit.snapshot.as_bytes()),
-                ObjectKind::Snapshot,
-            ));
+            values.push(object(commit.snapshot.as_bytes(), ObjectKind::Snapshot));
             if let CommitCauseV1::RuntimeTransition(receipt) = commit.cause {
-                values.push(Reference::object(
-                    id(receipt.as_bytes()),
-                    ObjectKind::Receipt,
-                ));
+                values.push(object(receipt.as_bytes(), ObjectKind::Receipt));
             }
-            values.push(Reference::Program(commit.program));
+            values.push(Reference::Named {
+                kind: ObjectKind::Program.code(),
+                name: *commit.program.as_bytes(),
+            });
         }
-        ObjectKind::TimelineCatalogEvent => {
-            let event = TimelineCatalogEventV1::decode(object.payload())
-                .map_err(|error| corrupt(&error))?;
+        Some(ObjectKind::TimelineCatalogEvent) => {
+            let event = TimelineCatalogEventV1::decode(payload).map_err(|error| corrupt(&error))?;
             if let Some(previous) = event.previous {
-                values.push(Reference::object(
-                    id(previous.as_bytes()),
+                values.push(object(
+                    previous.as_bytes(),
                     ObjectKind::TimelineCatalogEvent,
                 ));
             }
             for commit in event.referenced_commits() {
-                values.push(Reference::object(id(commit.as_bytes()), ObjectKind::Commit));
+                values.push(object(commit.as_bytes(), ObjectKind::Commit));
             }
         }
-        ObjectKind::CheckpointBundleManifest => {
-            let manifest = CheckpointBundleManifestV1::decode(object.payload())
-                .map_err(|error| corrupt(&error))?;
-            values.push(Reference::object(
-                id(manifest.root.as_bytes()),
-                ObjectKind::Commit,
-            ));
-            values.extend(manifest.objects.iter().map(|descriptor| Reference::Object {
-                id: descriptor.id,
-                kind: Some(descriptor.kind),
-                descriptor: true,
-            }));
-            values.extend(manifest.optional_host_manifest.map(Reference::untyped));
-        }
-        ObjectKind::TimelineArchiveManifest => {
-            let manifest = TimelineArchiveManifestV1::decode(object.payload())
-                .map_err(|error| corrupt(&error))?;
-            values.push(Reference::object(
-                id(manifest.catalog_head.as_bytes()),
+        Some(ObjectKind::TimelineArchiveManifest) => {
+            let manifest =
+                TimelineArchiveManifestV1::decode(payload).map_err(|error| corrupt(&error))?;
+            values.push(object(
+                manifest.catalog_head.as_bytes(),
                 ObjectKind::TimelineCatalogEvent,
             ));
-            values.push(Reference::object(
-                id(manifest.coverage.baseline().as_bytes()),
+            values.push(object(
+                manifest.coverage.baseline().as_bytes(),
                 ObjectKind::Commit,
             ));
-            values.extend(manifest.objects.iter().map(|descriptor| Reference::Object {
-                id: descriptor.id,
-                kind: Some(descriptor.kind),
-                descriptor: true,
-            }));
-            values.extend(manifest.host_timeline.map(Reference::untyped));
+            values.extend(descriptors(&manifest.objects));
+            values.extend(
+                manifest
+                    .host_timeline
+                    .map(|id| Reference::untyped(history_id(id.as_bytes()))),
+            );
         }
-        ObjectKind::CompoundSaveManifest => {
-            let manifest = CompoundSaveManifestV1::decode(object.payload())
-                .map_err(|error| corrupt(&error))?;
-            values.push(Reference::object(
-                id(manifest.narrative.as_bytes()),
-                ObjectKind::Commit,
-            ));
+        Some(ObjectKind::CompoundSaveManifest) => {
+            let manifest =
+                CompoundSaveManifestV1::decode(payload).map_err(|error| corrupt(&error))?;
+            values.push(object(manifest.narrative.as_bytes(), ObjectKind::Commit));
         }
-        ObjectKind::HostTimelineManifest => {
-            let manifest = HostTimelineManifestV1::decode(object.payload())
-                .map_err(|error| corrupt(&error))?;
+        Some(ObjectKind::HostTimelineManifest) => {
+            let manifest =
+                HostTimelineManifestV1::decode(payload).map_err(|error| corrupt(&error))?;
             for entry in &manifest.entries {
-                values.push(Reference::object(
-                    id(entry.narrative.as_bytes()),
-                    ObjectKind::Commit,
-                ));
+                values.push(object(entry.narrative.as_bytes(), ObjectKind::Commit));
             }
         }
-        ObjectKind::Program
-        | ObjectKind::Snapshot
-        | ObjectKind::Receipt
-        | ObjectKind::Value
-        | ObjectKind::EffectResponse => {}
+        Some(
+            ObjectKind::Program
+            | ObjectKind::Snapshot
+            | ObjectKind::Receipt
+            | ObjectKind::Value
+            | ObjectKind::EffectResponse
+            | ObjectKind::CheckpointBundleManifest,
+        )
+        | None => {}
     }
-    values.sort_unstable();
-    values.dedup();
     Ok(values)
 }

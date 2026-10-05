@@ -36,7 +36,7 @@ pub use commit::{COMMIT_SCHEMA, Commit, DomainKinds};
 pub use domain::Domain;
 pub use engine::{
     Attempt, GcKindReport, GcReport, History, IntegrityIssue, Op, Ops, Reader, RefMutation,
-    RetentionPolicy, Tag, Transaction, View, Written, graph_bump, retry, sweep_check,
+    RetentionPolicy, Tag, Transaction, View, Written, expect, graph_bump, retry, sweep_check,
 };
 pub use error::{HistoryError, Nondeterminism, RefConflict};
 pub use ids::{ArtifactId, BranchId, ObjectId, object_id};

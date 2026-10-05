@@ -28,7 +28,7 @@ use crate::{
     LedgerStatus, NameError, RecordedEffectResponseV1, RefKey, RefMutation, RefName, RefRevision,
     RefScope, RefValue, SaveStore, StoreError, TimelineArchiveBundle, TimelineArchiveRefKey,
     TimelineCatalogEventKind, TimelineCatalogEventV1, TimelineCoverage, TimelineOperationId,
-    TimelineRecordingMode, TransitionReceiptV1, scan_all,
+    TimelineRecordingMode, TransitionReceiptV1, scan_all, timeline_branch,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -242,7 +242,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
         };
         let commit_object = commit.to_object();
         let commit_id = CommitId::from_bytes(*commit_object.id().as_bytes());
-        let branch_key = RefKey::branch(execution, branch)?;
+        let branch_key = timeline_branch(execution, branch);
         let session_key = RefKey::active(session_name)?;
         let mut transaction = CommitTransaction {
             objects: vec![program_object, snapshot_object, commit_object],
@@ -361,7 +361,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
     ) -> Result<Self, CoordinatorError> {
         let capabilities = negotiate_capabilities(&program.artifact().capabilities, host)
             .map_err(|errors| CoordinatorError::CapabilityNegotiation(format!("{errors:?}")))?;
-        let branch_key = RefKey::branch(execution, selected_branch)?;
+        let branch_key = timeline_branch(execution, selected_branch);
         let session_key = RefKey::active(session_name)?;
         let branch_value = store
             .read_ref(&branch_key)?
@@ -800,7 +800,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
         if forking {
             ensure_ancestor(&self.store, self.timeline.cursor, current_branch.commit)?;
             next_branch = deterministic_branch(self.timeline.cursor, payload.as_bytes());
-            next_branch_key = RefKey::branch(self.execution, next_branch)?;
+            next_branch_key = timeline_branch(self.execution, next_branch);
             branch_expected = None;
         } else if current_branch.revision != self.branch_revision {
             return Err(StoreError::from(crate::RefConflict {
@@ -978,7 +978,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
         operation: TimelineOperationId,
         observed_at: u64,
     ) -> Result<RefValue, CoordinatorError> {
-        let key = RefKey::branch(self.execution, branch)?;
+        let key = timeline_branch(self.execution, branch);
         let mut transaction = CommitTransaction {
             refs: vec![RefMutation {
                 key: key.clone(),
@@ -1360,7 +1360,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
                 "cannot delete the selected branch".to_owned(),
             ));
         }
-        let key = RefKey::branch(self.execution, branch)?;
+        let key = timeline_branch(self.execution, branch);
         let actual = self
             .store
             .read_ref(&key)?

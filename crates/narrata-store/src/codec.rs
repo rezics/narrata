@@ -58,6 +58,11 @@ impl<'a> Reader<'a> {
         Self(CborReader::new(bytes))
     }
 
+    /// The kernel reader underneath, for decoders the history layer shares.
+    pub(crate) fn kernel(&mut self) -> &mut CborReader<'a> {
+        &mut self.0
+    }
+
     pub(crate) fn finish(self) -> Result<(), WireError> {
         self.0.finish().map_err(Into::into)
     }

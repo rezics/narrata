@@ -1,9 +1,17 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+//! Checkpoint bundles and timeline archives of Stage 1–5 saves.
+//!
+//! The container, the closure walk and the checks against descriptors are the history layer's
+//! (ADR 0015); this module adds the timeline archive, whose manifest names a catalog, branches,
+//! saves and bookmarks, and converts between Stage 1–5 identities and history objects.
+
+use std::collections::{BTreeMap, BTreeSet};
 
 use narrata_core::{
     CommitId, ExecutionId, ObjectId, ProgramArtifactId, TimelineArchiveManifestId,
-    codec::ObjectKind, limits::ProgramLoadLimits, program::load_program,
+    codec::ObjectKind,
 };
+pub use narrata_history::BundleLimits;
+use narrata_history::{CHECKPOINT_MAGIC, ContainerError, Object, ObjectSource};
 use thiserror::Error;
 
 use crate::{
@@ -12,31 +20,13 @@ use crate::{
     CommitTransaction, CommitV1, ManifestError, ObjectDescriptor, RefKey, RefMutation, RefName,
     RefRevision, RefScope, SaveStore, StoreError, TimelineArchiveManifestV1, TimelineArchiveRefKey,
     TimelineCatalogEventKind, TimelineCatalogEventV1, TimelineCoverage, TimelineSession,
-    TransitionReceiptV1,
-    graph::{Reference, references},
-    manifest::{CHECKPOINT_MANIFEST_SCHEMA_V1, TIMELINE_ARCHIVE_MANIFEST_SCHEMA_V1},
-    scan_all,
+    engine::{Legacy, PROGRAM},
+    manifest::TIMELINE_ARCHIVE_MANIFEST_SCHEMA_V1,
+    object::{history_id, id},
+    scan_all, timeline_branch,
 };
 
-const CHECKPOINT_MAGIC: &[u8; 8] = b"NARCPB1\0";
 const TIMELINE_MAGIC: &[u8; 8] = b"NARTLB1\0";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BundleLimits {
-    pub max_total_bytes: u64,
-    pub max_object_bytes: u64,
-    pub max_objects: u64,
-}
-
-impl Default for BundleLimits {
-    fn default() -> Self {
-        Self {
-            max_total_bytes: 512 * 1024 * 1024,
-            max_object_bytes: 128 * 1024 * 1024,
-            max_objects: 100_000,
-        }
-    }
-}
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum BundleError {
@@ -68,6 +58,35 @@ pub enum BundleError {
     Object(String),
 }
 
+impl From<ContainerError> for BundleError {
+    fn from(value: ContainerError) -> Self {
+        match value {
+            ContainerError::Manifest(error) => Self::Manifest(error.into()),
+            ContainerError::Truncated => Self::Truncated,
+            ContainerError::WrongKind => Self::WrongKind,
+            ContainerError::Limit(limit) => Self::Limit(limit),
+            ContainerError::DuplicateObject => Self::DuplicateObject,
+            ContainerError::DescriptorMismatch => Self::DescriptorMismatch,
+            ContainerError::Object(error) => Self::Object(error.to_string()),
+        }
+    }
+}
+
+impl From<narrata_history::BundleError<StoreError>> for BundleError {
+    fn from(value: narrata_history::BundleError<StoreError>) -> Self {
+        match value {
+            narrata_history::BundleError::Container(error) => error.into(),
+            narrata_history::BundleError::Store(error) => Self::Store(error),
+            narrata_history::BundleError::MissingObject(object) => Self::MissingObject(id(object)),
+            narrata_history::BundleError::ClosureMismatch => Self::ClosureMismatch,
+            // Commits name their Program, the only named kind of a Stage 1–5 store.
+            narrata_history::BundleError::Unresolved { .. } => {
+                Self::Timeline("Program Artifact is missing")
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CheckpointBundle {
     pub manifest: CheckpointBundleManifestV1,
@@ -91,32 +110,91 @@ pub struct TimelineImportMapping {
     pub session_name: Option<RefName>,
 }
 
+/// A [`SaveStore`] as the source of a bundle's objects; Programs resolve through its index.
+struct Saves<'a, S>(&'a S);
+
+impl<S: SaveStore> ObjectSource for Saves<'_, S> {
+    type Error = StoreError;
+
+    fn objects(
+        &self,
+        ids: &[narrata_history::ObjectId],
+    ) -> Result<Vec<Option<Object>>, StoreError> {
+        let ids = ids.iter().copied().map(id).collect::<Vec<_>>();
+        Ok(self
+            .0
+            .get_objects(&ids)?
+            .into_iter()
+            .map(|object| object.map(CheckedObject::into_object))
+            .collect())
+    }
+
+    fn resolve(
+        &self,
+        kind: u16,
+        name: &[u8; 32],
+    ) -> Result<Option<narrata_history::ObjectId>, StoreError> {
+        if kind != PROGRAM {
+            return Ok(None);
+        }
+        Ok(self
+            .0
+            .find_program(ProgramArtifactId::from_bytes(*name))?
+            .map(|program| history_id(program.as_bytes())))
+    }
+}
+
+fn known(kind: u16) -> bool {
+    ObjectKind::from_code(kind).is_some()
+}
+
+fn history_objects(objects: &[CheckedObject]) -> Vec<Object> {
+    objects
+        .iter()
+        .map(|object| object.object().clone())
+        .collect()
+}
+
+fn checked(objects: Vec<Object>) -> Result<Vec<CheckedObject>, BundleError> {
+    Ok(objects
+        .into_iter()
+        .map(CheckedObject::from_object)
+        .collect::<Result<_, _>>()?)
+}
+
+fn checked_map(
+    objects: BTreeMap<narrata_history::ObjectId, Object>,
+) -> Result<BTreeMap<ObjectId, CheckedObject>, BundleError> {
+    objects
+        .into_iter()
+        .map(|(key, object)| Ok((id(key), CheckedObject::from_object(object)?)))
+        .collect()
+}
+
+fn history_ids(ids: impl IntoIterator<Item = ObjectId>) -> Vec<narrata_history::ObjectId> {
+    ids.into_iter()
+        .map(|object| history_id(object.as_bytes()))
+        .collect()
+}
+
 impl CheckpointBundle {
     pub fn export(
         store: &impl SaveStore,
         root: CommitId,
         receiver_has: &BTreeSet<ObjectId>,
     ) -> Result<Self, BundleError> {
-        let objects = stored_closure(store, &[object_id(root.as_bytes())])?;
-        let closure = objects.keys().copied().collect::<BTreeSet<_>>();
-        let descriptors = descriptors(&objects, &closure)?;
-        let transmitted = closure
-            .iter()
-            .filter(|id| !receiver_has.contains(id))
-            .map(|id| {
-                objects
-                    .get(id)
-                    .cloned()
-                    .ok_or(BundleError::MissingObject(*id))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let receiver_has = history_ids(receiver_has.iter().copied())
+            .into_iter()
+            .collect();
+        let bundle = narrata_history::CheckpointBundle::export(
+            &Saves(store),
+            &Legacy::default(),
+            history_id(root.as_bytes()),
+            &receiver_has,
+        )?;
         Ok(Self {
-            manifest: CheckpointBundleManifestV1 {
-                root,
-                objects: descriptors,
-                optional_host_manifest: None,
-            },
-            objects: transmitted,
+            manifest: CheckpointBundleManifestV1::from_manifest(bundle.manifest)?,
+            objects: checked(bundle.objects)?,
         })
     }
 
@@ -126,16 +204,11 @@ impl CheckpointBundle {
     }
 
     pub fn from_bytes(bytes: &[u8], limits: BundleLimits) -> Result<Self, BundleError> {
-        let (manifest_object, objects) = decode_bundle(
-            bytes,
-            CHECKPOINT_MAGIC,
-            ObjectKind::CheckpointBundleManifest,
-            CHECKPOINT_MANIFEST_SCHEMA_V1,
-            limits,
-        )?;
-        let manifest = CheckpointBundleManifestV1::decode(manifest_object.payload())?;
-        validate_transmitted(&manifest.objects, &objects)?;
-        Ok(Self { manifest, objects })
+        let bundle = narrata_history::CheckpointBundle::from_bytes(bytes, limits, known)?;
+        Ok(Self {
+            manifest: CheckpointBundleManifestV1::from_manifest(bundle.manifest)?,
+            objects: checked(bundle.objects)?,
+        })
     }
 
     pub fn import(
@@ -145,17 +218,11 @@ impl CheckpointBundle {
         expected: Option<RefRevision>,
         observed_at: u64,
     ) -> Result<crate::RefValue, BundleError> {
-        let available = gather_available(store, &self.manifest.objects, &self.objects)?;
-        let closure = closure(&available, &[object_id(self.manifest.root.as_bytes())])?;
-        let declared = self
-            .manifest
-            .objects
-            .iter()
-            .map(|descriptor| descriptor.id)
-            .collect::<BTreeSet<_>>();
-        if closure != declared {
-            return Err(BundleError::ClosureMismatch);
+        narrata_history::CheckpointBundle {
+            manifest: self.manifest.manifest(),
+            objects: history_objects(&self.objects),
         }
+        .check_closure(&Saves(&*store), &Legacy::default())?;
         let manifest_object = self.manifest.to_object()?;
         let outcome = store.commit(CommitTransaction {
             objects: self
@@ -350,14 +417,13 @@ impl TimelineArchiveBundle {
         let mut refs = Vec::new();
         for value in &self.manifest.branch_heads {
             refs.push(RefMutation {
-                key: RefKey::branch(
+                key: timeline_branch(
                     self.manifest.execution,
                     *mapping
                         .branch_ids
                         .get(&value.branch)
                         .ok_or(BundleError::Mapping)?,
-                )
-                .map_err(|_| BundleError::Mapping)?,
+                ),
                 expected: None,
                 next: Some(value.head),
             });
@@ -570,24 +636,11 @@ fn encode_bundle(
     manifest: &CheckedObject,
     objects: &[CheckedObject],
 ) -> Result<Vec<u8>, BundleError> {
-    let mut sorted = objects.to_vec();
-    sorted.sort_by_key(CheckedObject::id);
-    if sorted.windows(2).any(|pair| pair[0].id() == pair[1].id()) {
-        return Err(BundleError::DuplicateObject);
-    }
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(magic);
-    push_u64(&mut bytes, manifest.bytes().len() as u64);
-    bytes.extend_from_slice(manifest.bytes());
-    push_u64(&mut bytes, sorted.len() as u64);
-    for object in sorted {
-        bytes.extend_from_slice(object.id().as_bytes());
-        bytes.extend_from_slice(&object.kind().code().to_be_bytes());
-        bytes.extend_from_slice(&object.schema().to_be_bytes());
-        push_u64(&mut bytes, object.bytes().len() as u64);
-        bytes.extend_from_slice(object.bytes());
-    }
-    Ok(bytes)
+    Ok(narrata_history::encode_container(
+        magic,
+        manifest.object(),
+        &history_objects(objects),
+    )?)
 }
 
 fn decode_bundle(
@@ -597,81 +650,29 @@ fn decode_bundle(
     manifest_schema: u16,
     limits: BundleLimits,
 ) -> Result<(CheckedObject, Vec<CheckedObject>), BundleError> {
-    if bytes.len() as u64 > limits.max_total_bytes {
-        return Err(BundleError::Limit("total bytes"));
-    }
-    let mut cursor = BinaryCursor::new(bytes);
-    if cursor.take(8)? != magic {
-        return Err(BundleError::WrongKind);
-    }
-    let manifest_len = cursor.u64()?;
-    if manifest_len > limits.max_object_bytes {
-        return Err(BundleError::Limit("manifest bytes"));
-    }
-    let manifest_bytes = cursor.take(to_usize(manifest_len)?)?;
-    let manifest = CheckedObject::from_bytes(
-        manifest_bytes,
-        manifest_kind,
+    let (manifest, objects) = narrata_history::decode_container(
+        bytes,
+        magic,
+        manifest_kind.code(),
         manifest_schema,
-        limits.max_object_bytes,
-    )
-    .map_err(|error| BundleError::Object(error.to_string()))?;
-    let count = cursor.u64()?;
-    if count > limits.max_objects {
-        return Err(BundleError::Limit("object count"));
-    }
-    let mut objects = Vec::with_capacity(to_usize(count)?);
-    let mut previous = None;
-    for _ in 0..count {
-        let declared_id = ObjectId::from_bytes(cursor.array::<32>()?);
-        let kind = ObjectKind::from_code(cursor.u16()?).ok_or(BundleError::DescriptorMismatch)?;
-        let schema = cursor.u16()?;
-        let length = cursor.u64()?;
-        if length > limits.max_object_bytes {
-            return Err(BundleError::Limit("object bytes"));
-        }
-        let object = CheckedObject::from_bytes(
-            cursor.take(to_usize(length)?)?,
-            kind,
-            schema,
-            limits.max_object_bytes,
-        )
-        .map_err(|error| BundleError::Object(error.to_string()))?;
-        if object.id() != declared_id {
-            return Err(BundleError::DescriptorMismatch);
-        }
-        if previous.is_some_and(|id| id >= object.id()) {
-            return Err(BundleError::DuplicateObject);
-        }
-        previous = Some(object.id());
-        objects.push(object);
-    }
-    if !cursor.finished() {
-        return Err(BundleError::DescriptorMismatch);
-    }
-    Ok((manifest, objects))
+        limits,
+        known,
+    )?;
+    Ok((CheckedObject::from_object(manifest)?, checked(objects)?))
 }
 
 fn validate_transmitted(
     descriptors: &[ObjectDescriptor],
     objects: &[CheckedObject],
 ) -> Result<(), BundleError> {
-    let declared = descriptors
+    let descriptors = descriptors
         .iter()
-        .map(|descriptor| (descriptor.id, descriptor))
-        .collect::<BTreeMap<_, _>>();
-    for object in objects {
-        let descriptor = declared
-            .get(&object.id())
-            .ok_or(BundleError::DescriptorMismatch)?;
-        if descriptor.kind != object.kind()
-            || descriptor.schema != object.schema()
-            || descriptor.bytes != object.bytes().len() as u64
-        {
-            return Err(BundleError::DescriptorMismatch);
-        }
-    }
-    Ok(())
+        .map(ObjectDescriptor::descriptor)
+        .collect::<Vec<_>>();
+    Ok(narrata_history::check_transmitted(
+        &descriptors,
+        &history_objects(objects),
+    )?)
 }
 
 fn gather_available(
@@ -679,39 +680,15 @@ fn gather_available(
     descriptors: &[ObjectDescriptor],
     transmitted: &[CheckedObject],
 ) -> Result<BTreeMap<ObjectId, CheckedObject>, BundleError> {
-    let incoming = transmitted
+    let descriptors = descriptors
         .iter()
-        .cloned()
-        .map(|object| (object.id(), object))
-        .collect::<BTreeMap<_, _>>();
-    let stored_ids = descriptors
-        .iter()
-        .map(|descriptor| descriptor.id)
-        .filter(|id| !incoming.contains_key(id))
+        .map(ObjectDescriptor::descriptor)
         .collect::<Vec<_>>();
-    let mut stored = stored_ids
-        .iter()
-        .copied()
-        .zip(store.get_objects(&stored_ids)?)
-        .collect::<BTreeMap<_, _>>();
-    let mut available = BTreeMap::new();
-    for descriptor in descriptors {
-        let object = match incoming.get(&descriptor.id).cloned() {
-            Some(object) => object,
-            None => stored
-                .remove(&descriptor.id)
-                .flatten()
-                .ok_or(BundleError::MissingObject(descriptor.id))?,
-        };
-        if object.kind() != descriptor.kind
-            || object.schema() != descriptor.schema
-            || object.bytes().len() as u64 != descriptor.bytes
-        {
-            return Err(BundleError::DescriptorMismatch);
-        }
-        available.insert(descriptor.id, object);
-    }
-    Ok(available)
+    checked_map(narrata_history::gather(
+        &Saves(store),
+        &descriptors,
+        &history_objects(transmitted),
+    )?)
 }
 
 /// The closure of `roots` read from the store, one reference level per read.
@@ -719,95 +696,27 @@ fn stored_closure(
     store: &impl SaveStore,
     roots: &[ObjectId],
 ) -> Result<BTreeMap<ObjectId, CheckedObject>, BundleError> {
-    let mut objects = BTreeMap::new();
-    let mut programs = BTreeMap::new();
-    let mut frontier = roots.to_vec();
-    while !frontier.is_empty() {
-        let wanted = frontier
-            .drain(..)
-            .filter(|id| !objects.contains_key(id))
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        if objects.len() + wanted.len() > 1_000_000 {
-            return Err(BundleError::Limit("closure objects"));
-        }
-        for (id, object) in wanted.iter().zip(store.get_objects(&wanted)?) {
-            let object = object.ok_or(BundleError::MissingObject(*id))?;
-            // The Program index is a hint: the object it names must hold the artifact.
-            if let Some(artifact) = programs.get(id)
-                && load_program(object.bytes(), &ProgramLoadLimits::default())
-                    .map_or(true, |program| program.artifact_id() != *artifact)
-            {
-                return Err(BundleError::Timeline("Program Artifact is missing"));
-            }
-            for reference in closure_references(&object)? {
-                frontier.push(match reference {
-                    Reference::Object { id, .. } => id,
-                    Reference::Program(artifact) => {
-                        let program = store
-                            .find_program(artifact)?
-                            .ok_or(BundleError::Timeline("Program Artifact is missing"))?;
-                        programs.insert(program, artifact);
-                        program
-                    }
-                });
-            }
-            objects.insert(*id, object);
-        }
-    }
-    Ok(objects)
-}
-
-/// References that belong to a bundle closure. Manifest descriptors describe a closure and are
-/// not part of one.
-fn closure_references(object: &CheckedObject) -> Result<Vec<Reference>, BundleError> {
-    Ok(references(object)?
-        .into_iter()
-        .filter(|reference| {
-            !matches!(
-                reference,
-                Reference::Object {
-                    descriptor: true,
-                    ..
-                }
-            )
-        })
-        .collect())
+    checked_map(narrata_history::stored_closure(
+        &Saves(store),
+        &Legacy::default(),
+        &history_ids(roots.iter().copied()),
+    )?)
 }
 
 fn closure(
     objects: &BTreeMap<ObjectId, CheckedObject>,
     roots: &[ObjectId],
 ) -> Result<BTreeSet<ObjectId>, BundleError> {
-    let mut programs = BTreeMap::<ProgramArtifactId, ObjectId>::new();
-    for (id, object) in objects {
-        if object.kind() == ObjectKind::Program
-            && let Ok(program) = load_program(object.bytes(), &ProgramLoadLimits::default())
-        {
-            programs.entry(program.artifact_id()).or_insert(*id);
-        }
-    }
-    let mut marked = BTreeSet::new();
-    let mut queue = VecDeque::from(roots.to_vec());
-    while let Some(id) = queue.pop_front() {
-        if !marked.insert(id) {
-            continue;
-        }
-        if marked.len() > 1_000_000 {
-            return Err(BundleError::Limit("closure objects"));
-        }
-        let object = objects.get(&id).ok_or(BundleError::MissingObject(id))?;
-        for reference in closure_references(object)? {
-            queue.push_back(match reference {
-                Reference::Object { id, .. } => id,
-                Reference::Program(artifact) => *programs
-                    .get(&artifact)
-                    .ok_or(BundleError::Timeline("Program Artifact is missing"))?,
-            });
-        }
-    }
-    Ok(marked)
+    let objects = objects
+        .iter()
+        .map(|(key, object)| (history_id(key.as_bytes()), object.object().clone()))
+        .collect();
+    let closure = narrata_history::closure::<StoreError, _>(
+        &Legacy::default(),
+        &objects,
+        &history_ids(roots.iter().copied()),
+    )?;
+    Ok(closure.into_iter().map(id).collect())
 }
 
 fn descriptors(
@@ -827,54 +736,3 @@ fn descriptors(
 fn object_id(bytes: &[u8; 32]) -> ObjectId {
     ObjectId::from_bytes(*bytes)
 }
-
-fn push_u64(bytes: &mut Vec<u8>, value: u64) {
-    bytes.extend_from_slice(&value.to_be_bytes());
-}
-
-fn to_usize(value: u64) -> Result<usize, BundleError> {
-    usize::try_from(value).map_err(|_| BundleError::Limit("platform length"))
-}
-
-struct BinaryCursor<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> BinaryCursor<'a> {
-    const fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
-    }
-
-    fn take(&mut self, length: usize) -> Result<&'a [u8], BundleError> {
-        let end = self
-            .offset
-            .checked_add(length)
-            .ok_or(BundleError::Truncated)?;
-        let value = self
-            .bytes
-            .get(self.offset..end)
-            .ok_or(BundleError::Truncated)?;
-        self.offset = end;
-        Ok(value)
-    }
-
-    fn array<const N: usize>(&mut self) -> Result<[u8; N], BundleError> {
-        self.take(N)?.try_into().map_err(|_| BundleError::Truncated)
-    }
-
-    fn u16(&mut self) -> Result<u16, BundleError> {
-        Ok(u16::from_be_bytes(self.array()?))
-    }
-
-    fn u64(&mut self) -> Result<u64, BundleError> {
-        Ok(u64::from_be_bytes(self.array()?))
-    }
-
-    fn finished(&self) -> bool {
-        self.offset == self.bytes.len()
-    }
-}
-
-#[allow(dead_code)]
-fn _receipt_is_checked(_: &TransitionReceiptV1) {}

@@ -13,12 +13,13 @@ use std::fmt;
 
 pub use gc::{GcKindReport, GcReport, IntegrityIssue, RetentionPolicy};
 use narrata_storage::{
-    Batch, Expect, KeyEntry, KeyPage, KeySpace, KeyValue, Limits, ObjectDigest, Revision,
-    StorageBackend, StorageError,
+    Batch, Expect, KeyEntry, KeyPage, KeySpace, KeyValue, Limits, MemoryBackend, ObjectDigest,
+    Revision, StorageBackend, StorageError,
 };
 pub use view::View;
 pub use write::{
-    Attempt, Op, Ops, RefMutation, Tag, Transaction, Written, graph_bump, retry, sweep_check,
+    Attempt, Op, Ops, RefMutation, Tag, Transaction, Written, expect, graph_bump, retry,
+    sweep_check,
 };
 
 use crate::{
@@ -42,6 +43,21 @@ impl<B: fmt::Debug, R> fmt::Debug for History<B, R> {
             .debug_struct("History")
             .field("backend", &self.backend)
             .finish_non_exhaustive()
+    }
+}
+
+impl<R: Registry> History<MemoryBackend, R> {
+    /// A store in a new memory backend. Writing the layout marker there cannot fail; if it ever
+    /// did, the store would still work and only lack its marker.
+    pub fn in_memory(registry: R) -> Self {
+        let mut backend = MemoryBackend::new();
+        let _ = backend.apply(&Batch::new().put(
+            layout::META,
+            layout::LAYOUT_KEY,
+            layout::encode_layout(),
+            Expect::Absent,
+        ));
+        Self::assemble(backend, registry)
     }
 }
 

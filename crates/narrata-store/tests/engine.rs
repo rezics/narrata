@@ -19,7 +19,7 @@ use narrata_storage::{
 use narrata_store::{
     BranchId, CheckpointBundle, CommitTransaction, InitialRecordingMode, RefKey, RefMutation,
     RefName, RetentionPolicy, SaveStore, SessionCoordinator, Store, StoreError, layout,
-    load_commit,
+    load_commit, timeline_branch,
 };
 use support::{Backend, image, looping_program, refs};
 
@@ -218,7 +218,7 @@ fn unknown_outcomes_are_reconciled<B: Backend>() {
 
 fn import(bundle: &CheckpointBundle, store: &mut impl SaveStore) -> Result<(), String> {
     for target in [
-        RefKey::branch(ExecutionId::from_u128(1), BranchId::from_u128(1)).unwrap(),
+        timeline_branch(ExecutionId::from_u128(1), BranchId::from_u128(1)),
         RefKey::active(RefName::new("history").unwrap()).unwrap(),
     ] {
         bundle

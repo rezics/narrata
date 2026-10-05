@@ -186,6 +186,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-history"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "hex",
+ "narrata-kernel",
+ "narrata-storage",
+ "thiserror",
+]
+
+[[package]]
 name = "narrata-kernel"
 version = "0.1.0-alpha.1"
 dependencies = [
@@ -218,6 +228,8 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "hex",
  "narrata-core",
+ "narrata-history",
+ "narrata-kernel",
  "narrata-storage",
  "sha2",
  "thiserror",

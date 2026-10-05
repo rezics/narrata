@@ -10,6 +10,8 @@ repository.workspace = true
 [dependencies]
 hex.workspace = true
 narrata-core = { path = "../narrata-core", version = "=0.1.0-alpha.1" }
+narrata-history = { path = "../../packages/narrata/kernel/crates/narrata-history", version = "=0.1.0-alpha.1" }
+narrata-kernel = { path = "../../packages/narrata/kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1" }
 narrata-storage = { path = "../../packages/narrata/kernel/crates/narrata-storage", version = "=0.1.0-alpha.1" }
 sha2.workspace = true
 thiserror.workspace = true

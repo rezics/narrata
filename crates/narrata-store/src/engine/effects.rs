@@ -1,17 +1,17 @@
 //! The Effect ledger: each operation is one batch conditioned on the ledger entry's revision.
 
 use narrata_core::{EffectId, ExecutionId, ObjectId, RewindPolicy, codec::ObjectKind};
+use narrata_history::{Op, Tag, graph_bump, retry, sweep_check};
 use narrata_storage::{Expect, Revision, StorageBackend};
 
-use super::{
-    RETRIES, Store,
-    write::{Attempt, Op, Ops, Tag, graph_bump, sweep_check},
-};
+use super::{Store, registry::RootKey};
 use crate::{
     EffectClaim, EffectClaimResult, EffectLedgerEntry, EffectOutcome, EffectOutcomeRecord,
     EffectStoreError, LeaseId, LedgerFence, LedgerStatus, RecordedEffectResponseV1, StoreError,
-    layout,
+    layout, object::history_id,
 };
+
+type Ops = narrata_history::Ops<RootKey>;
 
 fn same_claim_contract(entry: &EffectLedgerEntry, claim: &EffectClaim) -> bool {
     entry.request_digest == claim.request_digest
@@ -24,18 +24,6 @@ fn same_claim_contract(entry: &EffectLedgerEntry, claim: &EffectClaim) -> bool {
 
 fn entry_expect(revision: Option<Revision>) -> Expect {
     revision.map_or(Expect::Absent, Expect::Revision)
-}
-
-/// Runs `attempt` until it neither succeeds nor fails but asks to read again.
-fn retry<T>(mut attempt: impl FnMut() -> Result<T, Attempt>) -> Result<T, StoreError> {
-    for _ in 0..RETRIES {
-        match attempt() {
-            Ok(value) => return Ok(value),
-            Err(Attempt::Retry) => {}
-            Err(Attempt::Fail(error)) => return Err(error),
-        }
-    }
-    Err(StoreError::Busy)
 }
 
 impl<B: StorageBackend> Store<B> {
@@ -73,10 +61,13 @@ impl<B: StorageBackend> Store<B> {
         if claim.expires_at <= claim.now {
             return Err(EffectStoreError::InvalidLease.into());
         }
-        let origin = ObjectId::from_bytes(*claim.origin_commit.as_bytes());
+        let origin = history_id(claim.origin_commit.as_bytes());
         retry(|| {
             let sweep = self.sweep()?;
-            self.require_stored(origin, ObjectKind::Commit)?;
+            self.history
+                .reader()
+                .require(origin, Some(ObjectKind::Commit.code()))
+                .map_err(StoreError::from)?;
             let existing = self.read_entry(claim.execution, claim.effect)?;
             if let Some((entry, _)) = &existing {
                 if !same_claim_contract(entry, &claim) {
@@ -115,7 +106,7 @@ impl<B: StorageBackend> Store<B> {
             ops.key(sweep_check(sweep));
             Self::put_entry(&mut ops, &entry, existing.map(|(_, revision)| revision));
             ops.key(graph_bump());
-            self.apply_ops(ops)?;
+            self.history.apply(ops)?;
             Ok(EffectClaimResult::Claimed(entry))
         })
     }
@@ -145,7 +136,7 @@ impl<B: StorageBackend> Store<B> {
             entry.status = LedgerStatus::Claimed { lease, expires_at };
             let mut ops = Ops::new();
             Self::put_entry(&mut ops, &entry, Some(revision));
-            self.apply_ops(ops)?;
+            self.history.apply(ops)?;
             Ok(entry)
         })
     }
@@ -219,7 +210,7 @@ impl<B: StorageBackend> Store<B> {
             let entry = EffectLedgerEntry { status, ..existing };
             Self::put_entry(&mut ops, &entry, Some(revision));
             ops.key(graph_bump());
-            self.apply_ops(ops)?;
+            self.history.apply(ops)?;
             Ok(entry)
         })
     }
@@ -270,7 +261,7 @@ impl<B: StorageBackend> Store<B> {
                 ));
             }
             Self::put_entry(&mut ops, &entry, Some(revision));
-            self.apply_ops(ops)?;
+            self.history.apply(ops)?;
             Ok(entry)
         })
     }
@@ -292,10 +283,11 @@ fn stage_response(
     }
     let object = response.to_object();
     let id = object.id();
+    let object = object.into_object();
     ops.key(Op::put(
         layout::TOUCH,
-        layout::touch_key(id),
-        layout::encode_touch(observed_at),
+        narrata_history::layout::touch_key(object.id()),
+        narrata_history::layout::encode_touch(observed_at),
         Expect::Any,
         Tag::Index,
     ));

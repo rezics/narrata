@@ -32,6 +32,12 @@ impl RefName {
         Ok(Self(value))
     }
 
+    /// The lowercase hex digits of an identity, which always form a valid name.
+    pub fn hex<const N: usize>(bytes: &[u8; N]) -> Self {
+        const { assert!(N > 0 && N <= 64, "a hex name has 1..=128 digits") };
+        Self(hex::encode(bytes))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -157,8 +163,7 @@ impl RefKey {
 }
 
 fn branch_name(branch: BranchId) -> RefName {
-    // Thirty-two lowercase hex digits always form a valid name.
-    RefName(hex::encode(branch.as_bytes()))
+    RefName::hex(branch.as_bytes())
 }
 
 /// Which Refs a scan visits.

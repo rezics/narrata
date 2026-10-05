@@ -25,7 +25,7 @@ use narrata_store::{
     InputRecord, MemoryStore, RefKey, RefMutation, RefName, RefRevision, STORED_RECEIPT_SCHEMA_V1,
     SaveStore, TimelineArchiveBundle, TimelineCatalogEventKind, TimelineCatalogEventV1,
     TimelineCoverage, TimelineImportMapping, TimelineOperationId, TimelineSession,
-    TransitionReceiptV1, load_commit,
+    TransitionReceiptV1, load_commit, timeline_branch,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -254,8 +254,7 @@ impl ProtocolEngine {
         .to_object();
         let commit = CommitId::from_bytes(*commit_object.id().as_bytes());
         let branch = BranchId::from_bytes(*execution.as_bytes());
-        let branch_key = RefKey::branch(execution, branch)
-            .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
+        let branch_key = timeline_branch(execution, branch);
         let active_key = protocol_active_key()?;
         let coverage = TimelineCoverage::FromBaseline { baseline: commit };
         let catalog_event = recording_started(execution, branch, commit)?;
@@ -342,8 +341,7 @@ impl ProtocolEngine {
             .bytes()
             .to_vec();
         let branch = BranchId::from_bytes(*execution.as_bytes());
-        let branch_key = RefKey::branch(execution, branch)
-            .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
+        let branch_key = timeline_branch(execution, branch);
         let coverage = TimelineCoverage::FromBaseline { baseline: root };
         let catalog_event = recording_started(execution, branch, root)?;
         let catalog_event_id =
@@ -595,8 +593,7 @@ impl ProtocolEngine {
             .ok_or_else(|| ProtocolDiagnostic::missing("Snapshot object is missing"))?
             .bytes()
             .to_vec();
-        let branch_key = RefKey::branch(execution, active.selected_branch)
-            .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
+        let branch_key = timeline_branch(execution, active.selected_branch);
         let branch_revision = required_ref_revision(&store, &branch_key)?;
         let active_revision = required_ref_revision(&store, &active_key)?;
         let catalog = store

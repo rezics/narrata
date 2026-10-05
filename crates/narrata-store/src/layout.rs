@@ -1,42 +1,45 @@
-//! Key-space layout v1 of the save engine (ADR 0014).
+//! Key-space layout v1 of the save engine (ADR 0014): the spaces of the Stage 1–5 registrant.
 //!
-//! Keys are raw fixed-width identities and `RefName` bytes; values are canonical CBOR maps.
-//! Every decoder here is strict: it rejects trailing bytes, unknown shapes and any encoding that
-//! does not re-encode to the same bytes, because the backend is outside the trust boundary.
+//! The history layer owns `meta`, `touch`, `refs`, `pins` and `children` and their codecs
+//! (ADR 0015); this module adds the catalog, archive, Compound Save, input, Effect ledger,
+//! fence, catalog operation, Program and per-turn commit spaces. Keys are raw fixed-width
+//! identities and `RefName` bytes; values are canonical CBOR maps decoded strictly, because the
+//! backend is outside the trust boundary.
 
 use narrata_core::{
     CapabilityId, CapabilityVersion, CommitId, CompoundSaveManifestId, DeliveryPolicy,
     DiagnosticId, EffectId, EffectRequestDigest, ExecutionId, InputId, InputPayloadDigest,
     ObjectId, ProgramArtifactId, RewindPolicy, TimelineArchiveManifestId, TimelineCatalogEventId,
+    codec::{CborReader, CborWriter as Writer, DecodeError},
+};
+pub use narrata_history::layout::{
+    CHILDREN, GRAPH_KEY, LAYOUT_KEY, LAYOUT_VERSION, META, PINS, REFS, SWEEP_KEY, TOUCH,
+};
+use narrata_history::{
+    HistoryError,
+    layout::{
+        decode, decode_single_id, decode_single_unsigned, expect_map, fixed, key, name, named,
+        names, single_bytes, single_unsigned, split,
+    },
 };
 use narrata_storage::KeySpace;
 
 use crate::{
-    CatalogRefKey, CompoundSaveRefKey, EffectLedgerEntry, LeaseId, LedgerFence, LedgerStatus, Pin,
-    RefKey, RefName, RefNamespace, StoreError, TimelineArchiveRefKey, TimelineCoverage,
-    TimelineOperationId, WireError,
-    codec::{Reader, Writer, expect_map, key},
+    CatalogRefKey, CompoundSaveRefKey, EffectLedgerEntry, LeaseId, LedgerFence, LedgerStatus,
+    RefName, TimelineArchiveRefKey, TimelineCoverage, TimelineOperationId,
 };
 
-/// Version recorded under `meta/layout`.
-pub const LAYOUT_VERSION: u64 = 1;
-
-pub const META: KeySpace = KeySpace::new(0);
-pub const TOUCH: KeySpace = KeySpace::new(1);
-pub const REFS: KeySpace = KeySpace::new(2);
 pub const CATALOG_HEADS: KeySpace = KeySpace::new(3);
 pub const ARCHIVES: KeySpace = KeySpace::new(4);
 pub const COMPOUND_SAVES: KeySpace = KeySpace::new(5);
 pub const INPUTS: KeySpace = KeySpace::new(6);
-pub const PINS: KeySpace = KeySpace::new(7);
 pub const EFFECTS: KeySpace = KeySpace::new(8);
 pub const LEDGER_FENCES: KeySpace = KeySpace::new(9);
 pub const CATALOG_OPERATIONS: KeySpace = KeySpace::new(10);
 pub const PROGRAMS: KeySpace = KeySpace::new(11);
-pub const CHILDREN: KeySpace = KeySpace::new(12);
 pub const COMMITS: KeySpace = KeySpace::new(13);
 
-/// Every space of the layout with its name, in space order.
+/// Every space a Stage 1–5 store writes, with its name, in space order.
 pub const SPACES: [(KeySpace, &str); 14] = [
     (META, "meta"),
     (TOUCH, "touch"),
@@ -54,208 +57,21 @@ pub const SPACES: [(KeySpace, &str); 14] = [
     (COMMITS, "commits"),
 ];
 
-pub(crate) const LAYOUT_KEY: &[u8] = b"layout";
-/// Bumped by every batch that adds objects or roots; GC deletion batches check it.
-pub(crate) const GRAPH_KEY: &[u8] = b"graph";
-/// Bumped by every GC deletion batch; writers check it.
-pub(crate) const SWEEP_KEY: &[u8] = b"sweep";
-
-const SEPARATOR: u8 = 0;
-
-fn corrupt(what: &str, error: impl std::fmt::Display) -> StoreError {
-    StoreError::CorruptStore(format!("{what}: {error}"))
-}
-
-fn decode<T>(
-    what: &'static str,
-    bytes: &[u8],
-    read: impl FnOnce(&mut Reader<'_>) -> Result<T, WireError>,
-    encode: impl FnOnce(&T) -> Vec<u8>,
-) -> Result<T, StoreError> {
-    let mut reader = Reader::new(bytes);
-    let value = read(&mut reader)
-        .and_then(|value| reader.finish().map(|()| value))
-        .map_err(|error| corrupt(what, error))?;
-    if encode(&value) == bytes {
-        Ok(value)
-    } else {
-        Err(corrupt(what, WireError::NonCanonical))
-    }
-}
-
-fn fixed<const N: usize>(what: &'static str, bytes: &[u8]) -> Result<[u8; N], StoreError> {
-    bytes
-        .try_into()
-        .map_err(|_| corrupt(what, "wrong key length"))
-}
-
-fn split<'a>(
-    what: &'static str,
-    bytes: &'a [u8],
-    at: usize,
-) -> Result<(&'a [u8], &'a [u8]), StoreError> {
-    if bytes.len() < at {
-        return Err(corrupt(what, "key is truncated"));
-    }
-    Ok(bytes.split_at(at))
-}
-
-fn name(what: &'static str, bytes: &[u8]) -> Result<RefName, StoreError> {
-    std::str::from_utf8(bytes)
-        .ok()
-        .and_then(|value| RefName::new(value).ok())
-        .ok_or_else(|| corrupt(what, "invalid name"))
-}
-
-fn names(what: &'static str, bytes: &[u8]) -> Result<(RefName, RefName), StoreError> {
-    let position = bytes
-        .iter()
-        .position(|byte| *byte == SEPARATOR)
-        .ok_or_else(|| corrupt(what, "missing separator"))?;
-    Ok((
-        name(what, &bytes[..position])?,
-        name(what, &bytes[position + 1..])?,
-    ))
-}
-
-fn named(first: &[u8], second: &[u8]) -> Vec<u8> {
-    let mut key = Vec::with_capacity(first.len() + second.len() + 1);
-    key.extend_from_slice(first);
-    key.push(SEPARATOR);
-    key.extend_from_slice(second);
-    key
-}
+/// The spaces this registrant adds to the history layer's.
+pub(crate) const OWN_SPACES: [KeySpace; 9] = [
+    CATALOG_HEADS,
+    ARCHIVES,
+    COMPOUND_SAVES,
+    INPUTS,
+    EFFECTS,
+    LEDGER_FENCES,
+    CATALOG_OPERATIONS,
+    PROGRAMS,
+    COMMITS,
+];
 
 fn concat(parts: &[&[u8]]) -> Vec<u8> {
     parts.concat()
-}
-
-fn empty_map() -> Vec<u8> {
-    let mut writer = Writer::new();
-    writer.map(0);
-    writer.into_bytes()
-}
-
-fn single_bytes(value: &[u8]) -> Vec<u8> {
-    let mut writer = Writer::new();
-    writer.map(1);
-    writer.unsigned(0);
-    writer.bytes(value);
-    writer.into_bytes()
-}
-
-fn decode_single_id(what: &'static str, bytes: &[u8]) -> Result<[u8; 32], StoreError> {
-    decode(
-        what,
-        bytes,
-        |reader| {
-            expect_map(reader, 1)?;
-            key(reader, 0)?;
-            reader.bytes_exact::<32>()
-        },
-        |value| single_bytes(value),
-    )
-}
-
-fn single_unsigned(value: u64) -> Vec<u8> {
-    let mut writer = Writer::new();
-    writer.map(1);
-    writer.unsigned(0);
-    writer.unsigned(value);
-    writer.into_bytes()
-}
-
-fn decode_single_unsigned(what: &'static str, bytes: &[u8]) -> Result<u64, StoreError> {
-    decode(
-        what,
-        bytes,
-        |reader| {
-            expect_map(reader, 1)?;
-            key(reader, 0)?;
-            reader.unsigned()
-        },
-        |value| single_unsigned(*value),
-    )
-}
-
-// meta
-
-pub(crate) fn encode_layout() -> Vec<u8> {
-    single_unsigned(LAYOUT_VERSION)
-}
-
-pub(crate) fn decode_layout(bytes: &[u8]) -> Result<u64, StoreError> {
-    decode_single_unsigned("layout version", bytes)
-}
-
-pub(crate) fn encode_marker() -> Vec<u8> {
-    empty_map()
-}
-
-pub(crate) fn decode_marker(what: &'static str, bytes: &[u8]) -> Result<(), StoreError> {
-    decode(
-        what,
-        bytes,
-        |reader| expect_map(reader, 0),
-        |()| empty_map(),
-    )
-}
-
-// touch
-
-pub(crate) fn touch_key(object: ObjectId) -> Vec<u8> {
-    object.as_bytes().to_vec()
-}
-
-pub(crate) fn decode_touch_key(bytes: &[u8]) -> Result<ObjectId, StoreError> {
-    fixed::<32>("touch key", bytes).map(ObjectId::from_bytes)
-}
-
-pub(crate) fn encode_touch(observed_at: u64) -> Vec<u8> {
-    single_unsigned(observed_at)
-}
-
-pub(crate) fn decode_touch(bytes: &[u8]) -> Result<u64, StoreError> {
-    decode_single_unsigned("touch value", bytes)
-}
-
-// refs
-
-pub(crate) fn ref_key(key: &RefKey) -> Vec<u8> {
-    let mut bytes = vec![key.namespace() as u8];
-    bytes.extend(named(
-        key.owner().as_str().as_bytes(),
-        key.name().as_str().as_bytes(),
-    ));
-    bytes
-}
-
-pub(crate) fn ref_prefix(namespace: Option<RefNamespace>, owner: Option<&RefName>) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    if let Some(namespace) = namespace {
-        bytes.push(namespace as u8);
-        if let Some(owner) = owner {
-            bytes.extend_from_slice(owner.as_str().as_bytes());
-            bytes.push(SEPARATOR);
-        }
-    }
-    bytes
-}
-
-pub(crate) fn decode_ref_key(bytes: &[u8]) -> Result<RefKey, StoreError> {
-    let (namespace, rest) = split("Ref key", bytes, 1)?;
-    let namespace =
-        RefNamespace::from_code(namespace[0]).ok_or_else(|| corrupt("Ref key", "namespace"))?;
-    let (owner, name) = names("Ref key", rest)?;
-    Ok(RefKey::new(namespace, owner, name))
-}
-
-pub(crate) fn encode_commit_target(commit: CommitId) -> Vec<u8> {
-    single_bytes(commit.as_bytes())
-}
-
-pub(crate) fn decode_commit_target(bytes: &[u8]) -> Result<CommitId, StoreError> {
-    decode_single_id("Ref value", bytes).map(CommitId::from_bytes)
 }
 
 // catalog heads
@@ -264,7 +80,7 @@ pub(crate) fn catalog_key(key: &CatalogRefKey) -> Vec<u8> {
     key.timeline().as_bytes().to_vec()
 }
 
-pub(crate) fn decode_catalog_key(bytes: &[u8]) -> Result<CatalogRefKey, StoreError> {
+pub(crate) fn decode_catalog_key(bytes: &[u8]) -> Result<CatalogRefKey, HistoryError> {
     fixed::<16>("Catalog Head key", bytes)
         .map(|bytes| CatalogRefKey::new(ExecutionId::from_bytes(bytes)))
 }
@@ -296,7 +112,7 @@ pub(crate) fn encode_catalog_head(
 
 pub(crate) fn decode_catalog_head(
     bytes: &[u8],
-) -> Result<(TimelineCatalogEventId, TimelineCoverage), StoreError> {
+) -> Result<(TimelineCatalogEventId, TimelineCoverage), HistoryError> {
     decode(
         "Catalog Head value",
         bytes,
@@ -305,7 +121,7 @@ pub(crate) fn decode_catalog_head(
             key(reader, 0)?;
             let event = TimelineCatalogEventId::from_bytes(reader.bytes_exact::<32>()?);
             key(reader, 1)?;
-            let length = reader.array()?;
+            let length = reader.array_len()?;
             let coverage = match (length, reader.unsigned()?) {
                 (2, 0) => TimelineCoverage::FromBaseline {
                     baseline: CommitId::from_bytes(reader.bytes_exact::<32>()?),
@@ -314,7 +130,7 @@ pub(crate) fn decode_catalog_head(
                     baseline: CommitId::from_bytes(reader.bytes_exact::<32>()?),
                     source: TimelineArchiveManifestId::from_bytes(reader.bytes_exact::<32>()?),
                 },
-                _ => return Err(WireError::Schema("Catalog coverage")),
+                _ => return Err(DecodeError::Schema("Catalog coverage")),
             };
             Ok((event, coverage))
         },
@@ -328,7 +144,7 @@ pub(crate) fn archive_key(key: &TimelineArchiveRefKey) -> Vec<u8> {
     concat(&[key.timeline().as_bytes(), key.name().as_str().as_bytes()])
 }
 
-pub(crate) fn decode_archive_key(bytes: &[u8]) -> Result<TimelineArchiveRefKey, StoreError> {
+pub(crate) fn decode_archive_key(bytes: &[u8]) -> Result<TimelineArchiveRefKey, HistoryError> {
     let (timeline, rest) = split("Archive key", bytes, 16)?;
     Ok(TimelineArchiveRefKey::new(
         ExecutionId::from_bytes(fixed("Archive key", timeline)?),
@@ -340,7 +156,7 @@ pub(crate) fn encode_archive(manifest: TimelineArchiveManifestId) -> Vec<u8> {
     single_bytes(manifest.as_bytes())
 }
 
-pub(crate) fn decode_archive(bytes: &[u8]) -> Result<TimelineArchiveManifestId, StoreError> {
+pub(crate) fn decode_archive(bytes: &[u8]) -> Result<TimelineArchiveManifestId, HistoryError> {
     decode_single_id("Archive value", bytes).map(TimelineArchiveManifestId::from_bytes)
 }
 
@@ -357,7 +173,7 @@ pub(crate) fn compound_save_prefix(owner: Option<&RefName>) -> Vec<u8> {
     owner.map_or_else(Vec::new, |owner| named(owner.as_str().as_bytes(), &[]))
 }
 
-pub(crate) fn decode_compound_save_key(bytes: &[u8]) -> Result<CompoundSaveRefKey, StoreError> {
+pub(crate) fn decode_compound_save_key(bytes: &[u8]) -> Result<CompoundSaveRefKey, HistoryError> {
     let (owner, slot) = names("Compound Save key", bytes)?;
     Ok(CompoundSaveRefKey::new(owner, slot))
 }
@@ -366,7 +182,7 @@ pub(crate) fn encode_compound_save(manifest: CompoundSaveManifestId) -> Vec<u8> 
     single_bytes(manifest.as_bytes())
 }
 
-pub(crate) fn decode_compound_save(bytes: &[u8]) -> Result<CompoundSaveManifestId, StoreError> {
+pub(crate) fn decode_compound_save(bytes: &[u8]) -> Result<CompoundSaveManifestId, HistoryError> {
     decode_single_id("Compound Save value", bytes).map(CompoundSaveManifestId::from_bytes)
 }
 
@@ -394,7 +210,7 @@ pub(crate) fn encode_input(
 
 pub(crate) fn decode_input(
     bytes: &[u8],
-) -> Result<(CommitId, InputPayloadDigest, CommitId), StoreError> {
+) -> Result<(CommitId, InputPayloadDigest, CommitId), HistoryError> {
     decode(
         "Input value",
         bytes,
@@ -412,70 +228,13 @@ pub(crate) fn decode_input(
     )
 }
 
-// pins
-
-/// Pin owners are free text, so they may not contain the key separator.
-pub(crate) fn pin_key(owner: &str, object: ObjectId) -> Result<Vec<u8>, StoreError> {
-    if owner.as_bytes().contains(&SEPARATOR) {
-        return Err(StoreError::InvalidGraph("Pin owner contains NUL"));
-    }
-    Ok(named(owner.as_bytes(), object.as_bytes()))
-}
-
-pub(crate) fn decode_pin_key(bytes: &[u8]) -> Result<(String, ObjectId), StoreError> {
-    let owner_length = bytes
-        .len()
-        .checked_sub(33)
-        .ok_or_else(|| corrupt("Pin key", "key is truncated"))?;
-    let (owner, rest) = bytes.split_at(owner_length);
-    let (separator, object) = rest.split_at(1);
-    if separator != [SEPARATOR] || owner.contains(&SEPARATOR) {
-        return Err(corrupt("Pin key", "misplaced separator"));
-    }
-    let owner = std::str::from_utf8(owner).map_err(|error| corrupt("Pin key", error))?;
-    Ok((
-        owner.to_owned(),
-        ObjectId::from_bytes(fixed("Pin key", object)?),
-    ))
-}
-
-pub(crate) fn encode_pin(expires_at: Option<u64>) -> Vec<u8> {
-    let mut writer = Writer::new();
-    writer.map(1);
-    writer.unsigned(0);
-    match expires_at {
-        Some(value) => writer.unsigned(value),
-        None => writer.null(),
-    }
-    writer.into_bytes()
-}
-
-pub(crate) fn decode_pin(key_bytes: &[u8], bytes: &[u8]) -> Result<Pin, StoreError> {
-    let (owner, object) = decode_pin_key(key_bytes)?;
-    let expires_at = decode(
-        "Pin value",
-        bytes,
-        |reader| {
-            expect_map(reader, 1)?;
-            key(reader, 0)?;
-            reader.optional(Reader::unsigned)
-        },
-        |value| encode_pin(*value),
-    )?;
-    Ok(Pin {
-        owner,
-        object,
-        expires_at,
-    })
-}
-
 // effects
 
 pub(crate) fn effect_key(execution: ExecutionId, effect: EffectId) -> Vec<u8> {
     concat(&[execution.as_bytes(), effect.as_bytes()])
 }
 
-pub(crate) fn decode_effect_key(bytes: &[u8]) -> Result<(ExecutionId, EffectId), StoreError> {
+pub(crate) fn decode_effect_key(bytes: &[u8]) -> Result<(ExecutionId, EffectId), HistoryError> {
     let (execution, effect) = split("Effect key", bytes, 16)?;
     Ok((
         ExecutionId::from_bytes(fixed("Effect key", execution)?),
@@ -583,13 +342,13 @@ pub(crate) fn encode_effect(entry: &EffectLedgerEntry) -> Vec<u8> {
     writer.into_bytes()
 }
 
-fn capability(reader: &mut Reader<'_>) -> Result<CapabilityId, WireError> {
-    CapabilityId::new(reader.text(64)?).map_err(|_| WireError::Schema("Effect capability"))
+fn capability(reader: &mut CborReader<'_>) -> Result<CapabilityId, DecodeError> {
+    CapabilityId::new(reader.text(64)?).map_err(|_| DecodeError::Schema("Effect capability"))
 }
 
-fn terminal_fence(reader: &mut Reader<'_>) -> Result<LedgerFence, WireError> {
+fn terminal_fence(reader: &mut CborReader<'_>) -> Result<LedgerFence, DecodeError> {
     match reader.unsigned()? {
-        0 => Err(WireError::Schema("terminal ledger fence is zero")),
+        0 => Err(DecodeError::Schema("terminal ledger fence is zero")),
         value => Ok(LedgerFence::from_u64(value)),
     }
 }
@@ -597,7 +356,7 @@ fn terminal_fence(reader: &mut Reader<'_>) -> Result<LedgerFence, WireError> {
 pub(crate) fn decode_effect(
     key_bytes: &[u8],
     bytes: &[u8],
-) -> Result<EffectLedgerEntry, StoreError> {
+) -> Result<EffectLedgerEntry, HistoryError> {
     let (execution, effect) = decode_effect_key(key_bytes)?;
     decode(
         "Effect value",
@@ -610,16 +369,16 @@ pub(crate) fn decode_effect(
             let capability_id = capability(reader)?;
             key(reader, 2)?;
             let version =
-                u16::try_from(reader.unsigned()?).map_err(|_| WireError::IntegerOverflow)?;
+                u16::try_from(reader.unsigned()?).map_err(|_| DecodeError::IntegerOverflow)?;
             let capability_version = CapabilityVersion::new(version)
-                .ok_or(WireError::Schema("Effect capability version"))?;
+                .ok_or(DecodeError::Schema("Effect capability version"))?;
             key(reader, 3)?;
             let origin_commit = CommitId::from_bytes(reader.bytes_exact::<32>()?);
             key(reader, 4)?;
             let delivery = delivery_from_code(reader.unsigned()?)
-                .ok_or(WireError::Schema("Effect delivery policy"))?;
+                .ok_or(DecodeError::Schema("Effect delivery policy"))?;
             key(reader, 5)?;
-            let length = reader.array()?;
+            let length = reader.array_len()?;
             let rewind = match (length, reader.unsigned()?) {
                 (1, 0) => RewindPolicy::Reapply,
                 (1, 1) => RewindPolicy::ReuseRecordedResponse,
@@ -627,10 +386,10 @@ pub(crate) fn decode_effect(
                 (2, 3) => RewindPolicy::Compensatable {
                     capability: capability(reader)?,
                 },
-                _ => return Err(WireError::Schema("Effect rewind policy")),
+                _ => return Err(DecodeError::Schema("Effect rewind policy")),
             };
             key(reader, 6)?;
-            let length = reader.array()?;
+            let length = reader.array_len()?;
             let status = match (length, reader.unsigned()?) {
                 (3, 0) => LedgerStatus::Claimed {
                     lease: LeaseId::from_bytes(reader.bytes_exact::<16>()?),
@@ -657,7 +416,7 @@ pub(crate) fn decode_effect(
                     by_effect: EffectId::from_bytes(reader.bytes_exact::<32>()?),
                     compensation_fence: terminal_fence(reader)?,
                 },
-                _ => return Err(WireError::Schema("Effect status")),
+                _ => return Err(DecodeError::Schema("Effect status")),
             };
             Ok(EffectLedgerEntry {
                 execution,
@@ -685,7 +444,7 @@ pub(crate) fn encode_fence(fence: LedgerFence) -> Vec<u8> {
     single_unsigned(fence.get())
 }
 
-pub(crate) fn decode_fence(bytes: &[u8]) -> Result<LedgerFence, StoreError> {
+pub(crate) fn decode_fence(bytes: &[u8]) -> Result<LedgerFence, HistoryError> {
     decode_single_unsigned("ledger fence value", bytes).map(LedgerFence::from_u64)
 }
 
@@ -716,7 +475,7 @@ pub(crate) fn encode_catalog_operation(
 
 pub(crate) fn decode_catalog_operation(
     bytes: &[u8],
-) -> Result<(Option<TimelineCatalogEventId>, TimelineCatalogEventId), StoreError> {
+) -> Result<(Option<TimelineCatalogEventId>, TimelineCatalogEventId), HistoryError> {
     decode(
         "Catalog operation value",
         bytes,
@@ -740,26 +499,12 @@ pub(crate) fn program_key(artifact: ProgramArtifactId) -> Vec<u8> {
     artifact.as_bytes().to_vec()
 }
 
-pub(crate) fn encode_program(object: ObjectId) -> Vec<u8> {
+pub(crate) fn encode_program(object: narrata_history::ObjectId) -> Vec<u8> {
     single_bytes(object.as_bytes())
 }
 
-pub(crate) fn decode_program(bytes: &[u8]) -> Result<ObjectId, StoreError> {
-    decode_single_id("Program index value", bytes).map(ObjectId::from_bytes)
-}
-
-// children
-
-pub(crate) fn child_key(parent: CommitId, child: CommitId) -> Vec<u8> {
-    concat(&[parent.as_bytes(), child.as_bytes()])
-}
-
-pub(crate) fn decode_child_key(bytes: &[u8]) -> Result<(CommitId, CommitId), StoreError> {
-    let (parent, child) = split("child key", bytes, 32)?;
-    Ok((
-        CommitId::from_bytes(fixed("child key", parent)?),
-        CommitId::from_bytes(fixed("child key", child)?),
-    ))
+pub(crate) fn decode_program(bytes: &[u8]) -> Result<narrata_history::ObjectId, HistoryError> {
+    decode_single_id("Program index value", bytes).map(narrata_history::ObjectId::from_bytes)
 }
 
 // commits
@@ -768,7 +513,9 @@ pub(crate) fn commit_key(execution: ExecutionId, turn: u64, commit: CommitId) ->
     concat(&[execution.as_bytes(), &turn.to_be_bytes(), commit.as_bytes()])
 }
 
-pub(crate) fn decode_commit_key(bytes: &[u8]) -> Result<(ExecutionId, u64, CommitId), StoreError> {
+pub(crate) fn decode_commit_key(
+    bytes: &[u8],
+) -> Result<(ExecutionId, u64, CommitId), HistoryError> {
     let (execution, rest) = split("commit key", bytes, 16)?;
     let (turn, commit) = split("commit key", rest, 8)?;
     Ok((
@@ -783,30 +530,30 @@ pub(crate) fn decode_commit_key(bytes: &[u8]) -> Result<(ExecutionId, u64, Commi
 mod tests {
     use super::*;
 
-    fn rejects(result: Result<impl std::fmt::Debug, StoreError>) {
+    fn rejects(result: Result<impl std::fmt::Debug, HistoryError>) {
         assert!(
-            matches!(result, Err(StoreError::CorruptStore(_))),
+            matches!(result, Err(HistoryError::CorruptStore(_))),
             "{result:?}"
         );
     }
 
     #[test]
     fn values_round_trip_and_reject_noncanonical_or_trailing_bytes() {
-        let commit = CommitId::from_bytes([7; 32]);
-        let encoded = encode_commit_target(commit);
-        assert_eq!(decode_commit_target(&encoded).ok(), Some(commit));
+        let manifest = TimelineArchiveManifestId::from_bytes([7; 32]);
+        let encoded = encode_archive(manifest);
+        assert_eq!(decode_archive(&encoded).ok(), Some(manifest));
         let mut trailing = encoded.clone();
         trailing.push(0);
-        rejects(decode_commit_target(&trailing));
+        rejects(decode_archive(&trailing));
         // Key 0 written as a one-byte-argument integer is valid CBOR but not canonical.
         let mut noncanonical = vec![0xa1, 0x18, 0x00];
         noncanonical.extend_from_slice(&encoded[2..]);
-        rejects(decode_commit_target(&noncanonical));
-        rejects(decode_touch(&encode_commit_target(commit)));
-        assert_eq!(decode_touch(&encode_touch(42)).ok(), Some(42));
-        assert_eq!(decode_layout(&encode_layout()).ok(), Some(LAYOUT_VERSION));
-        assert!(decode_marker("graph", &encode_marker()).is_ok());
-        rejects(decode_marker("graph", &encode_touch(0)));
+        rejects(decode_archive(&noncanonical));
+        rejects(decode_fence(&encoded));
+        assert_eq!(
+            decode_fence(&encode_fence(LedgerFence::from_u64(42))).ok(),
+            Some(LedgerFence::from_u64(42))
+        );
     }
 
     #[test]
@@ -898,10 +645,6 @@ mod tests {
     #[test]
     fn keys_round_trip_and_keep_tuple_order() {
         let name = |value: &str| RefName::new(value).unwrap();
-        let short = RefKey::save(name("a"), name("z"));
-        let long = RefKey::save(name("ab"), name("a"));
-        assert!(ref_key(&short) < ref_key(&long));
-        assert_eq!(decode_ref_key(&ref_key(&long)).ok(), Some(long));
         let archive = TimelineArchiveRefKey::new(ExecutionId::from_u128(1), name("x"));
         assert_eq!(
             decode_archive_key(&archive_key(&archive)).ok(),
@@ -912,14 +655,6 @@ mod tests {
             decode_compound_save_key(&compound_save_key(&compound)).ok(),
             Some(compound)
         );
-        let object = ObjectId::from_bytes([3; 32]);
-        let pin = pin_key("owner", object).unwrap();
-        assert_eq!(
-            decode_pin_key(&pin).ok(),
-            Some(("owner".to_owned(), object))
-        );
-        assert!(pin_key("a\0b", object).is_err());
-        assert!(pin_key("a", object).unwrap() < pin_key("ab", object).unwrap());
         let commit = CommitId::from_bytes([5; 32]);
         assert_eq!(
             decode_commit_key(&commit_key(ExecutionId::from_u128(2), 7, commit)).ok(),
@@ -929,8 +664,6 @@ mod tests {
             commit_key(ExecutionId::from_u128(2), 255, commit)
                 < commit_key(ExecutionId::from_u128(2), 256, commit)
         );
-        rejects(decode_ref_key(&[9, b'a', 0, b'b']));
-        rejects(decode_ref_key(&[0, b'a', b'b']));
-        rejects(decode_child_key(&[0; 63]));
+        rejects(decode_commit_key(&[0; 55]));
     }
 }

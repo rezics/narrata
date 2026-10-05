@@ -621,6 +621,8 @@ dependencies = [
  "criterion",
  "hex",
  "narrata-core",
+ "narrata-history",
+ "narrata-kernel",
  "narrata-storage",
  "narrata-storage-sqlite",
  "narrata-testkit",

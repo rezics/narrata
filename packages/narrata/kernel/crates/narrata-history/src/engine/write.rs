@@ -131,7 +131,8 @@ pub fn graph_bump<T>() -> Op<T> {
     )
 }
 
-pub(crate) fn expect(expected: Option<RefRevision>) -> Expect {
+/// The precondition for a root key the caller saw at `expected`, or saw absent.
+pub fn expect(expected: Option<RefRevision>) -> Expect {
     expected
         .and_then(RefRevision::revision)
         .map_or(Expect::Absent, Expect::Revision)
@@ -178,6 +179,39 @@ pub struct RefMutation {
     pub key: RefKey,
     pub expected: Option<RefRevision>,
     pub next: Option<ObjectId>,
+}
+
+impl RefMutation {
+    /// The key operation that applies this mutation; a target must be a commit-role object.
+    /// [`History::write`] plans its transaction's Refs with it, and registrants that order their
+    /// own keys around Refs call it from the planning closure.
+    pub fn plan<B: StorageBackend, R: Registry>(
+        &self,
+        view: &mut View<'_, B, R>,
+    ) -> Result<Op<R::Tag>, HistoryError> {
+        let key = layout::ref_key(&self.key);
+        let tag = Tag::Ref {
+            key: self.key.clone(),
+            expected: self.expected,
+            proposed: self.next,
+        };
+        Ok(match self.next {
+            Some(commit) => {
+                let target = view.require(commit, None)?;
+                if !view.kind(target.kind()).is_some_and(|info| info.commit) {
+                    return Err(HistoryError::ObjectKind(commit));
+                }
+                Op::put(
+                    layout::REFS,
+                    key,
+                    layout::encode_ref_target(commit),
+                    expect(self.expected),
+                    tag,
+                )
+            }
+            None => Op::delete(layout::REFS, key, expect(self.expected), tag),
+        })
+    }
 }
 
 /// Objects, Refs and Pins one write adds or changes. Registrants add their own keys through
@@ -424,33 +458,12 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
         let mut keys = Vec::new();
         let mut named = BTreeSet::new();
         for mutation in &transaction.refs {
-            let key = layout::ref_key(&mutation.key);
-            if !named.insert(key.clone()) {
+            if !named.insert(layout::ref_key(&mutation.key)) {
                 return Err(
                     HistoryError::InvalidGraph("Ref named twice in one transaction").into(),
                 );
             }
-            let tag = Tag::Ref {
-                key: mutation.key.clone(),
-                expected: mutation.expected,
-                proposed: mutation.next,
-            };
-            keys.push(match mutation.next {
-                Some(commit) => {
-                    let target = view.require(commit, None)?;
-                    if !self.kind(target.kind()).is_some_and(|info| info.commit) {
-                        return Err(HistoryError::ObjectKind(commit).into());
-                    }
-                    Op::put(
-                        layout::REFS,
-                        key,
-                        layout::encode_ref_target(commit),
-                        expect(mutation.expected),
-                        tag,
-                    )
-                }
-                None => Op::delete(layout::REFS, key, expect(mutation.expected), tag),
-            });
+            keys.push(mutation.plan(&mut view)?);
         }
         keys.extend(extra(&mut view)?);
 

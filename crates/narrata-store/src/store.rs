@@ -4,38 +4,18 @@ use narrata_core::{
     CommitId, CompoundSaveManifestId, EffectId, ExecutionId, InputId, InputPayloadDigest, ObjectId,
     ProgramArtifactId, TimelineArchiveManifestId, TimelineCatalogEventId,
 };
-use narrata_storage::{Revision, StorageError};
+use narrata_history::HistoryError;
+pub use narrata_history::{
+    GcKindReport, GcReport, Page, RefRevision, RefScope, RetentionPolicy, scan_all,
+};
+use narrata_storage::StorageError;
 use thiserror::Error;
 
 use crate::{
     CatalogRefKey, CheckedObject, CompoundSaveRefKey, EffectClaim, EffectClaimResult,
     EffectLedgerEntry, EffectOutcomeRecord, EffectStoreError, LeaseId, LedgerFence, RefKey,
-    RefName, RefNamespace, TimelineArchiveRefKey, TimelineCoverage,
+    RefName, TimelineArchiveRefKey, TimelineCoverage, object::id,
 };
-
-/// The backend revision at which a Ref, Catalog Head, archive or Compound Save was last written.
-///
-/// Revisions are store-wide and never reused (ADR 0014); only their equality is meaningful.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct RefRevision(u64);
-
-impl RefRevision {
-    pub const fn from_u64(value: u64) -> Option<Self> {
-        if value == 0 { None } else { Some(Self(value)) }
-    }
-
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-
-    pub(crate) const fn from_revision(revision: Revision) -> Self {
-        Self(revision.get())
-    }
-
-    pub(crate) fn revision(self) -> Option<Revision> {
-        Revision::new(self.0)
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RefValue {
@@ -122,6 +102,9 @@ pub enum StoreError {
     Corrupt(ObjectId, String),
     #[error("object kind or schema mismatch for {0}")]
     ObjectKind(ObjectId),
+    /// An object of a kind this store does not register; GC refuses to run past one (ADR 0015).
+    #[error("object {object} has unregistered kind {kind:#06x}")]
+    UnregisteredKind { object: ObjectId, kind: u16 },
     #[error("object graph is invalid: {0}")]
     InvalidGraph(&'static str),
     #[error(transparent)]
@@ -194,6 +177,48 @@ impl From<StorageError> for StoreError {
     }
 }
 
+impl From<HistoryError> for StoreError {
+    fn from(value: HistoryError) -> Self {
+        match value {
+            HistoryError::MissingObject(object) => Self::MissingObject(id(object)),
+            HistoryError::Corrupt(object, diagnostic) => Self::Corrupt(id(object), diagnostic),
+            HistoryError::ObjectKind(object) => Self::ObjectKind(id(object)),
+            HistoryError::UnregisteredKind { object, kind } => Self::UnregisteredKind {
+                object: id(object),
+                kind,
+            },
+            // Commits name their Program, the only named kind of this store.
+            HistoryError::Unresolved { .. } => Self::InvalidGraph("Program Artifact is missing"),
+            HistoryError::InvalidGraph(reason) => Self::InvalidGraph(reason),
+            HistoryError::RefConflict(conflict) => RefConflict {
+                key: conflict.key.storage_key(),
+                expected: conflict.expected,
+                actual: conflict.actual.map(|actual| RefValue {
+                    revision: actual.revision,
+                    commit: CommitId::from_bytes(*actual.commit.as_bytes()),
+                }),
+                proposed: conflict
+                    .proposed
+                    .map(|commit| CommitId::from_bytes(*commit.as_bytes())),
+            }
+            .into(),
+            // Sessions of registered domains; this store registers none.
+            HistoryError::ArtifactMismatch { .. }
+            | HistoryError::MissingRef(_)
+            | HistoryError::Nondeterministic(_)
+            | HistoryError::HeadMoved { .. } => {
+                Self::InvalidGraph("generic commit operation on a Stage 1–5 store")
+            }
+            HistoryError::Limit(limit) => Self::Limit(limit),
+            HistoryError::Busy => Self::Busy,
+            HistoryError::Full => Self::Full,
+            HistoryError::Io(message) => Self::Io(message),
+            HistoryError::CorruptStore(message) => Self::CorruptStore(message),
+            HistoryError::Storage(error) => Self::Storage(error),
+        }
+    }
+}
+
 impl From<EffectStoreError> for StoreError {
     fn from(value: EffectStoreError) -> Self {
         Self::Effect(Box::new(value))
@@ -258,74 +283,10 @@ pub struct CommitOutcome {
     pub compound_saves: BTreeMap<CompoundSaveRefKey, Option<CompoundSaveRefValue>>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RetentionPolicy {
-    pub now: u64,
-    pub grace_seconds: u64,
-    pub dry_run: bool,
-}
-
-impl Default for RetentionPolicy {
-    fn default() -> Self {
-        Self {
-            now: u64::MAX,
-            grace_seconds: 0,
-            dry_run: false,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct GcKindReport {
-    pub objects: u64,
-    pub bytes: u64,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct GcReport {
-    pub roots: u64,
-    pub reachable: u64,
-    pub removed: BTreeMap<u16, GcKindReport>,
-    pub dry_run: bool,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IntegrityIssue {
     pub object: ObjectId,
     pub diagnostic: String,
-}
-
-/// One page of a scan, in key order. `more` is set when the scan stopped at its limit.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Page<T> {
-    pub items: Vec<T>,
-    pub more: bool,
-}
-
-/// Which Refs a scan visits.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RefScope {
-    All,
-    Namespace(RefNamespace),
-    Owner(RefNamespace, RefName),
-}
-
-/// Reads every page of a scan. `page` receives the key to resume after.
-pub fn scan_all<T, K>(
-    mut page: impl FnMut(Option<&K>) -> Result<Page<T>, StoreError>,
-    resume: impl Fn(&T) -> K,
-) -> Result<Vec<T>, StoreError> {
-    let mut items = Vec::new();
-    let mut after = None;
-    loop {
-        let next = page(after.as_ref())?;
-        let more = next.more;
-        after = next.items.last().map(&resume);
-        items.extend(next.items);
-        if !more || after.is_none() {
-            return Ok(items);
-        }
-    }
 }
 
 /// Persistent saves: immutable checked objects, revisioned roots and the Effect ledger.
