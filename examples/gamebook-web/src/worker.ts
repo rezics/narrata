@@ -1,9 +1,8 @@
-import { z } from "zod";
 import { initialize, LocalContent, openBook, type Book } from "@rezics/narrata";
 import defaultPackUrl from "./generated/story/story.narpack?url";
 import defaultContent from "./generated/story/zh-Hans.json?raw";
-import type { BookView, VariableView } from "@rezics/narrata";
-import { contentKey, errorMessage, requestSchema, type Args, type Content, type Reply, type Request, type Resolved } from "./protocol";
+import type { BookView } from "@rezics/narrata";
+import { contentKey, errorMessage, requestSchema, resolutionSchema, type Args, type Content, type Reply, type Request, type Resolved } from "./protocol";
 import { persist, readStored, confirmedAt, type R1Record, type ActiveRecord, type KernelRecord } from "./storage";
 import { IndexedDbStore, StoreSuperseded } from "@rezics/narrata/storage";
 
@@ -43,30 +42,12 @@ async function defaultWork(): Promise<Work> {
 }
 function current(): Work { if (!work) throw new Error("故事尚未载入"); return work; }
 
-const resolutionSchema = z.array(z.discriminatedUnion("status", [
-  z.object({ status: z.literal("ok"), revision: z.string(), payload: z.union([
-    z.object({ text: z.string() }).strict(),
-    z.object({ blocks: z.array(z.object({ id: z.string(), text: z.string() }).strict()) }).strict(),
-  ]) }).strict(),
-  z.object({ status: z.literal("unavailable") }).strict(),
-  z.object({ status: z.literal("incompatible"), reason: z.string() }).strict(),
-]));
 const BATCH = 4096;
 
-/** Every content reference the page shows, with the arguments it is formatted with. */
+/** Extra references used only by this example's author-facing graph and inspector. */
 function collect(book: BookView): { content: Content; args: Args }[] {
   const items = new Map<string, { content: Content; args: Args }>();
   const add = (content: Content | null | undefined, args: Args = {}) => { if (content) items.set(contentKey(content, args), { content, args }); };
-  const variable = (value: VariableView) => { add(value.label); if (value.value.type === "ref") add(value.value.value); };
-  const view = book.view;
-  add(view.product.title);
-  for (const item of book.page) add(item.content, item.args);
-  const interaction = view.interaction;
-  if (interaction.kind === "choose") for (const option of interaction.options) { add(option.label, interaction.args); add(option.reason, interaction.args); }
-  else { add(interaction.title); add(interaction.body); }
-  view.shared.forEach(variable);
-  for (const frame of view.frames) { frame.parameters.forEach(variable); frame.locals.forEach(variable); }
-  for (const commit of view.history) add(commit.title);
   for (const graph of book.graphs) { add(graph.title); for (const node of graph.nodes) { add(node.title); for (const edge of node.edges) add(edge.label); } }
   return [...items.values()];
 }
@@ -82,7 +63,7 @@ function resolve(content: LocalContent, book: BookView): Record<string, Resolved
       const result = results[index];
       texts[contentKey(item.content, item.args)] = result?.status === "ok"
         ? { ok: true, blocks: "text" in result.payload ? [result.payload.text] : result.payload.blocks.map(block => block.text) }
-        : { ok: false, reason: result?.status === "incompatible" ? result.reason : "unavailable" };
+        : { ok: false, reason: result?.status === "incompatible" ? "incompatible" : "unavailable" };
     });
   }
   return texts;
@@ -137,7 +118,7 @@ async function boot(id: number): Promise<Reply> {
   return view(id);
 }
 
-async function change(id: number, action: (book: Book) => Promise<unknown>): Promise<Reply> {
+async function change(id: number, action: (book: Book) => Promise<unknown>, recover = false): Promise<Reply> {
   const value = current();
   try {
     await action(value.book);
@@ -146,8 +127,9 @@ async function change(id: number, action: (book: Book) => Promise<unknown>): Pro
     // choice into a reported failure; the in-page clock still records this confirmation.
     if (savedAt) await confirmedAt(value.execution, savedAt).catch(() => undefined);
   } catch (error) {
-    if (value.store) await value.book.reload();
-    if (error instanceof StoreSuperseded || errorMessage(error).includes("stale_input")) throw new Error("另一页面已更新这份旅程。当前操作未保存，请刷新后继续。");
+    // Imports are host-owned actions; choices/checkouts recover through ReaderController.
+    if (recover && value.store) await value.book.reload();
+    if (errorMessage(error).includes("stale_input")) throw new StoreSuperseded();
     throw error;
   }
   return view(id);
@@ -165,13 +147,16 @@ async function handle(request: Request): Promise<Reply> {
   if (request.kind === "boot") return boot(request.id);
   await initialized;
   switch (request.kind) {
+    case "resolve": return { id: request.id, kind: "resolved", results: resolutionSchema.parse(JSON.parse(current().content.resolve(JSON.stringify(request.request)))) };
+    case "lookahead": return { id: request.id, kind: "units", units: await current().book.nextContentUnits() };
+    case "reload": await current().book.reload(); return view(request.id);
     case "choose": return change(request.id, book => book.choose(request.expected, request.choice_point, request.options));
     case "checkout": return change(request.id, book => book.checkout(request.commit));
-    case "restore": return change(request.id, book => book.restore(request.save));
+    case "restore": return change(request.id, book => book.restore(request.save), true);
     case "restart": {
       const root = (await current().book.inspect()).view.history[0];
       if (!root) throw new Error("找不到故事起点");
-      return change(request.id, book => book.checkout(root.id));
+      return change(request.id, book => book.checkout(root.id), true);
     }
     case "open": {
       const candidate = await openWork(request.pack, request.content);
@@ -193,6 +178,6 @@ self.addEventListener("message", (event: MessageEvent<unknown>) => {
     const parsed = requestSchema.safeParse(event.data);
     if (!parsed.success) { self.postMessage({ id: 0, kind: "error", message: "无法识别的运行请求" } satisfies Reply); return; }
     try { self.postMessage(await handle(parsed.data)); }
-    catch (error) { self.postMessage({ id: parsed.data.id, kind: "error", message: errorMessage(error) } satisfies Reply); }
+    catch (error) { self.postMessage({ id: parsed.data.id, kind: "error", message: errorMessage(error), superseded: error instanceof StoreSuperseded } satisfies Reply); }
   });
 });

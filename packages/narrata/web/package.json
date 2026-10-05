@@ -8,6 +8,7 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./storage": { "types": "./dist/storage.d.ts", "import": "./dist/storage.js" },
+    "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
     "./testing": { "types": "./dist/testing/index.d.ts", "import": "./dist/testing/index.js" }
   },
   "scripts": {
@@ -21,11 +22,17 @@
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "ajv": "^8.17.1",
     "fake-indexeddb": "6.2.5",
     "json-schema-to-typescript": "16.0.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "typescript": "~5.9.3",
     "vite": "8.2.2",
     "vitest": "5.0.3"
-  }
+  },
+  "peerDependencies": { "react": "^18.0.0 || ^19.0.0" },
+  "peerDependenciesMeta": { "react": { "optional": true } }
 }

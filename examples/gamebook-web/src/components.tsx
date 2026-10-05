@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
-import type { BookView, GraphAnalysis, Interaction, NodeAddress, PresentationItem, Segment, VariableView } from "@rezics/narrata";
-import type { Args } from "./protocol";
-import { graphTitle, missing, nodeLabel, nodeName, type Texts } from "./texts";
+import { useId } from "react";
+import type { BookView, GraphAnalysis, NodeAddress, ReaderController, VariableView } from "@rezics/narrata";
+import { ReaderPath } from "@rezics/narrata/react";
+import { graphTitle, nodeLabel, nodeName, type Texts } from "./texts";
+import { messages, slots } from "./reader";
 
 export function Arrow({ back = false }: { back?: boolean }) {
   return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={back ? { transform: "rotate(180deg)" } : undefined}><path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -50,73 +51,6 @@ export function Outline({ graphs, texts, current, selected, open, onSelect, onGr
   </aside>;
 }
 
-function Blocks({ texts, content, args }: { texts: Texts; content: Segment; args: Args }) {
-  const resolved = texts.resolved(content, args);
-  if (!resolved?.ok) return <p className="missing" title={resolved?.reason}>{missing(content)}</p>;
-  return <>{resolved.blocks.map((text, index) => <p key={index}>{text}</p>)}</>;
-}
-
-function Item({ item, texts }: { item: PresentationItem; texts: Texts }) {
-  const content = item.content;
-  if (!("unit" in content)) return <h2 className="passage-subtitle">{texts.text(content, missing(content), item.args)}</h2>;
-  if (item.role === "reply") return <blockquote className="reply"><Blocks texts={texts} content={content} args={item.args} /></blockquote>;
-  return <Blocks texts={texts} content={content} args={item.args} />;
-}
-
-function pageKey(item: PresentationItem) { return `${item.commit}-${item.occurrence}`; }
-
-type Choose = Extract<Interaction, { kind: "choose" }>;
-
-function Choices({ interaction, texts, busy, onChoose }: { interaction: Choose; texts: Texts; busy: boolean; onChoose: (options: string[]) => void }) {
-  const [chosen, setChosen] = useState<string[]>([]);
-  const single = interaction.min === 1 && interaction.max === 1;
-  const label = (option: Choose["options"][number]) => texts.text(option.label, option.key ?? option.id, interaction.args);
-  const reason = (option: Choose["options"][number]) => !option.enabled && option.reason ? <p className="choice-reason" id={`reason-${option.id}`}>{texts.text(option.reason, missing(option.reason), interaction.args)}</p> : null;
-  if (single) return <div className="choices" aria-label="当前可执行行动">{interaction.options.map(option => <div className="choice-item" key={option.id}>
-    <button className="choice" disabled={busy || !option.enabled} onClick={() => onChoose([option.id])} aria-describedby={!option.enabled && option.reason ? `reason-${option.id}` : undefined}>
-      <span>{label(option)}</span><Arrow />
-    </button>
-    {reason(option)}
-  </div>)}</div>;
-  const { min, max } = interaction;
-  const hint = min === 0 ? `最多选择 ${max} 项，也可以都不选` : min === max ? `选择 ${min} 项` : `选择 ${min}–${max} 项`;
-  const ready = chosen.length >= min && chosen.length <= max;
-  return <fieldset className="choices multi" aria-describedby="choice-hint">
-    <legend id="choice-hint">{hint}</legend>
-    {interaction.options.map(option => {
-      const checked = chosen.includes(option.id);
-      return <div className="choice-item" key={option.id}>
-        <label className={`choice choice-check ${!option.enabled ? "disabled" : ""}`}>
-          <input type="checkbox" checked={checked} disabled={busy || !option.enabled || (!checked && chosen.length >= max)} aria-describedby={!option.enabled && option.reason ? `reason-${option.id}` : undefined}
-            onChange={() => setChosen(checked ? chosen.filter(id => id !== option.id) : [...chosen, option.id])} />
-          <span>{label(option)}</span>
-        </label>
-        {reason(option)}
-      </div>;
-    })}
-    <button className="primary-button choice-submit" disabled={busy || !ready} onClick={() => onChoose(interaction.options.filter(option => chosen.includes(option.id)).map(option => option.id))}>
-      {chosen.length === 0 ? "都不选，继续" : `确定（${chosen.length} 项）`} <Arrow />
-    </button>
-  </fieldset>;
-}
-
-export function Reading({ book, texts, title, lead, busy, onChoose }: { book: BookView; texts: Texts; title: string; lead: number; busy: boolean; onChoose: (options: string[]) => void }) {
-  const view = book.view;
-  const interaction = view.interaction;
-  const before = book.page.slice(0, Math.max(lead, 0));
-  const after = book.page.slice(lead + 1);
-  return <article className="reading" aria-labelledby="passage-title" aria-busy={busy}>
-    {before.length ? <div className="prose lead-in">{before.map(item => <Item key={pageKey(item)} item={item} texts={texts} />)}</div> : null}
-    <div className="reading-heading"><p className="chapter-label">{texts.text(view.product.title, view.product.id)}</p><h1 id="passage-title" tabIndex={-1}>{title}</h1></div>
-    <div className="prose">
-      {after.map(item => <Item key={pageKey(item)} item={item} texts={texts} />)}
-      {interaction.kind === "finished" && interaction.body ? <Blocks texts={texts} content={interaction.body} args={{}} /> : null}
-    </div>
-    {interaction.kind === "choose" ? <Choices key={view.cursor} interaction={interaction} texts={texts} busy={busy} onChoose={onChoose} /> : null}
-    <p className="reading-note">{interaction.kind === "finished" ? "已有路线保留在旅程中，可以随时回看。" : "当前选择会保留为独立的故事分支。"}</p>
-  </article>;
-}
-
 function VariableList({ values, texts }: { values: VariableView[]; texts: Texts }) {
   return <dl className="variable-list">{values.map(value => {
     const text = texts.scalar(value.value);
@@ -124,28 +58,18 @@ function VariableList({ values, texts }: { values: VariableView[]; texts: Texts 
   })}</dl>;
 }
 
-export function Inspector({ book, texts, title, selected, open, busy, onCheckout }: { book: BookView; texts: Texts; title: string; selected: NodeAddress | null; open: boolean; busy: boolean; onCheckout: (id: string) => void }) {
+export function Inspector({ book, texts, title, selected, open, controller, busy }: { book: BookView; texts: Texts; title: string; selected: NodeAddress | null; open: boolean; controller: ReaderController; busy: boolean }) {
   const view = book.view;
   const here = view.history.find(commit => commit.current);
   const pickedGraph = selected ? book.graphs.find(g => g.reference.package === selected.package && g.reference.graph === selected.graph) : undefined;
   const picked = pickedGraph?.nodes.find(n => n.id === selected?.node);
-  const branches = new Map<string, number>();
-  for (const commit of view.history) if (commit.parent) branches.set(commit.parent, (branches.get(commit.parent) ?? 0) + 1);
   const edgeKinds: Record<string, string> = { call: "调用", return: "返回后", choice: "选择", condition: "条件", next: "继续" };
   return <aside className={`inspector side-panel ${open ? "mobile-open" : ""}`} aria-label="旅程检查器">
     <div className="panel-title"><h2>旅程</h2></div>
     <section className="inspector-section"><h3>当前节点</h3><p className="current-location">{here ? graphTitle(book.graphs, here.graph, texts) : null} / {title}</p></section>
     <section className="inspector-section"><h3>变量</h3><VariableList values={view.shared} texts={texts} /></section>
     <section className="inspector-section"><h3>旅程时间线</h3>
-      <ol className="history">{view.history.map((commit, index) => {
-        const passage = texts.text(commit.title, commit.key ?? commit.node);
-        const branch = (branches.get(commit.parent ?? "") ?? 0) > 1;
-        return <li key={commit.id} className={`${commit.current ? "current" : ""} ${branch ? "branch" : ""}`}>
-          <button disabled={busy} onClick={() => onCheckout(commit.id)} aria-current={commit.current ? "step" : undefined} title={`回到 ${passage} · ${commit.id.slice(7, 17)}`}>
-            <span className="history-dot" /><span>{index === 0 ? "故事开始" : passage}<small>{index === 0 ? passage : branch ? "另一条路线" : `第 ${commit.depth} 步`}</small></span>
-          </button>
-        </li>;
-      })}</ol>
+      <ReaderPath controller={controller} slots={slots} messages={messages} className="history" disabled={busy} />
     </section>
     {picked && selected ? <section className="inspector-section node-details"><h3>节点连接</h3><strong>{nodeLabel(picked, book.graphs, texts)}</strong><code>{nodeName(book.graphs, selected)}</code>
       <ul>{picked.edges.map((edge, i) => <li key={i}><span>{edgeKinds[edge.kind] ?? edge.kind}{edge.label || edge.key ? ` · ${texts.text(edge.label, edge.key ?? "")}` : ""}</span><code>{nodeName(book.graphs, edge.target)}</code></li>)}</ul>

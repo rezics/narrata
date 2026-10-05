@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { strict as assert } from "node:assert";
@@ -20,8 +20,10 @@ npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", ta
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./storage", "./testing"]);
+assert.deepEqual(Object.keys(manifest.exports), [".", "./storage", "./react", "./testing"]);
 assert.equal(manifest.dependencies, undefined, "Runtime assets and storage host are self-contained");
+assert.deepEqual(manifest.peerDependenciesMeta, { react: { optional: true } });
+assert.equal(existsSync(join(directory, "node_modules/react")), false, "Framework-free hosts must not install React");
 assert.equal(createHash("sha256").update(readFileSync(join(installed, "dist/wasm/narrata_nodes_wasm_bg.wasm"))).digest("hex"),
   createHash("sha256").update(readFileSync(join(here, "dist/wasm/narrata_nodes_wasm_bg.wasm"))).digest("hex"));
 const publicDirectory = join(directory, "public");
@@ -71,21 +73,31 @@ for (const mode of ["default", "url", "bytes"]) execFileSync(process.execPath, [
 // Bun is already part of the repository toolchain; test its file-URL loader too.
 execFileSync("bun", [join(directory, "node.mjs"), "default"], { cwd: directory, stdio: "inherit" });
 
-writeFileSync(join(directory, "index.html"), '<!doctype html><html><head><title>Narrata install test</title></head><body><p id="status">loading</p><script type="module" src="/main.js"></script></body></html>');
-writeFileSync(join(directory, "main.js"), `
-import { openBook } from "@rezics/narrata";
+npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "react@19.2.8", "react-dom@19.2.8", "@types/react@^19.0.0", "@types/react-dom@^19.0.0");
+cpSync(resolve(here, "test/reader-types.tsx"), join(directory, "reader-types.tsx"));
+writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, jsx: "react-jsx" }, include: ["types.ts", "reader-types.tsx"] }));
+execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
+
+writeFileSync(join(directory, "index.html"), '<!doctype html><html><head><title>Narrata install test</title></head><body><p id="status">loading</p><div id="reader"></div><script type="module" src="/main.tsx"></script></body></html>');
+writeFileSync(join(directory, "main.tsx"), `
+import { openBook, createReader } from "@rezics/narrata";
 import { IndexedDbStore } from "@rezics/narrata/storage";
+import { Reader } from "@rezics/narrata/react";
+import { createRoot } from "react-dom/client";
 async function bytes(url) { const response = await fetch(url); if (!response.ok) throw new Error("HTTP " + response.status); return new Uint8Array(await response.arrayBuffer()); }
 window.ready = (async () => {
   const store = await IndexedDbStore.open("installed-package-session");
   const book = await openBook({ manifest: await bytes("/manifest.cbor"), execution: ${JSON.stringify(execution)}, storage: store,
     fetchChunk: id => bytes("/objects/" + id.slice(7) + ".cbor") });
-  window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), choose: async () => {
-    const view = await book.inspect(); const interaction = view.view.interaction;
-    if (interaction.kind !== "choose") throw new Error("Expected a choice");
-    const option = interaction.options.find(option => option.enabled); if (!option) throw new Error("No option");
-    return book.choose(view.view.cursor, interaction.choice_point, [option.id]);
-  }, close: async () => { await book.close(); store.close(); } };
+  const controller = createReader(book, { resolve: async request => request.items.map(() => ({ status: "ok", revision: "host", payload: { text: "HOST CONTENT" } })) }, { persistence: "durable", context: { languages: ["en"] } });
+  const slot = props => <span data-host-role={props.role} data-realization={props.context.realization}>{props.resolution.status === "ok" ? props.resolution.payload.text : props.resolution.status}</span>;
+  const root = createRoot(document.querySelector("#reader"));
+  root.render(<Reader controller={controller} slots={{ body: slot, option: slot, reference: slot }} />);
+  let firstScreenRequests;
+  controller.subscribe(() => { if (firstScreenRequests === undefined && controller.getSnapshot().phase === "ready") firstScreenRequests = performance.getEntriesByType("resource").filter(entry => entry.name.endsWith(".cbor")).length; });
+  window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), firstScreen: () => firstScreenRequests,
+    close: async () => { controller.dispose(); root.unmount(); await book.close(); store.close(); } };
+  if (!await controller.start()) throw new Error("Controller failed to open the screen");
   document.querySelector("#status").textContent = "ready";
 })();
 `);
@@ -114,16 +126,19 @@ try {
   await page.goto(`http://127.0.0.1:${port}/`);
   await page.waitForFunction(() => document.querySelector("#status")?.textContent === "ready", { timeout: 30_000 });
   await page.evaluate(() => window.ready);
+  assert.equal(await page.title(), "Narrata install test");
+  await page.locator('[data-host-role="body"]').first().waitFor();
   assert.deepEqual(errors, []);
   assert.equal((await page.evaluate(() => window.installed.inspect())).view.depth, 0);
-  assert.equal(requests.filter(path => path.endsWith(".cbor")).length, 2, "First screen requests only the manifest and entry chunk");
+  assert.equal(await page.evaluate(() => window.installed.firstScreen()), 2, "First screen requests only the manifest and entry chunk before speculative prefetch");
   assert.equal(requests.filter(path => path.endsWith(".wasm")).length, 1);
   const beforePrefetch = await page.evaluate(() => window.installed.save());
   const units = await page.evaluate(() => window.installed.prefetch());
   assert.ok(units.some(reference => reference.key === "camp.fire"));
   assert.ok(units.some(reference => reference.key === "road.rocks"));
   assert.equal(await page.evaluate(() => window.installed.save()), beforePrefetch);
-  await page.evaluate(() => window.installed.choose());
+  await page.locator('button:has([data-host-role="option"])').first().press("Enter");
+  await page.waitForFunction(async () => (await window.installed.inspect()).view.depth === 1);
   const before = await page.evaluate(() => window.installed.inspect());
   assert.equal(before.view.depth, 1);
   const save = await page.evaluate(() => window.installed.save());
@@ -135,8 +150,11 @@ try {
   assert.equal(after.view.cursor, before.view.cursor);
   assert.equal(await page.evaluate(() => window.installed.save()), save);
   assert.deepEqual(errors, []);
+  await page.screenshot({ path: join(directory, "desktop-reader.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: join(directory, "mobile-reader.png"), fullPage: true });
   await page.evaluate(() => window.installed.close());
-  console.log("Installed package: production Vite, first-screen requests, choice, durable save and reopen passed");
+  console.log("Installed package: optional React peer, React slots, production Vite, first-screen requests, keyboard choice, durable save and reopen passed");
 } finally {
   await browser?.close();
   await new Promise(done => server.close(done));

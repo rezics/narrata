@@ -53,7 +53,9 @@ button { transition: background-color 130ms ease, border-color 130ms ease; }
 .reading h1 { font: 600 46px/1.4 var(--serif); letter-spacing: 5px; margin: 0; outline: none; }
 .prose { color: #262c26; font-family: var(--serif); font-size: 20px; line-height: 2; letter-spacing: 1px; }
 .prose p { margin: 0 0 24px; text-indent: 2em; overflow-wrap: anywhere; white-space: pre-wrap; }
-.choices { display: grid; gap: 15px; margin-top: 33px; }
+.choices { display: grid; gap: 15px; margin-top: 33px; border: 0; padding: 0; margin-inline: 0; }
+.choices:not(.multi) > legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.save-status p { margin: 0; }
 .choice { border: 1px solid #48766a; border-radius: 3px; background: transparent; display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; text-align: left; font: 18px/1.6 var(--serif); }
 .choice svg { flex-shrink: 0; }
 .choice:hover:not(:disabled) { background: #eaf0e7; border-color: var(--accent); }

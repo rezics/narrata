@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { compileFromFile } from "json-schema-to-typescript";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -35,6 +35,8 @@ if (check) {
   if (readFileSync(typePath, "utf8") !== types) throw new Error("BookView declarations drifted; run task web:build");
 } else writeFileSync(typePath, types);
 mkdirSync(resolve(stage, "src"), { recursive: true });
+// Resolve optional peer types from this package while compiling the copied source tree.
+symlinkSync(resolve(here, "node_modules"), resolve(stage, "node_modules"), "junction");
 cpSync(resolve(here, "src"), resolve(stage, "src"), { recursive: true });
 cpSync(resolve(root, "packages/narrata/kernel/js/src"), resolve(stage, "src/storage"), { recursive: true });
 writeFileSync(resolve(stage, "src/storage.ts"), 'export * from "./storage/index.js";\n');
@@ -54,8 +56,9 @@ writeFileSync(resolve(stage, "tsconfig.json"), JSON.stringify({ compilerOptions:
   target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"],
   strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noImplicitOverride: true,
   verbatimModuleSyntax: true, skipLibCheck: true, declaration: true, rootDir: "src", outDir: dist,
+  jsx: "react-jsx",
   types: ["node"], typeRoots: [resolve(here, "node_modules/@types")],
-}, include: ["src/**/*.ts"] }, null, 2));
+}, include: ["src/**/*.ts", "src/**/*.tsx"] }, null, 2));
 writeFileSync(resolve(stage, "package.json"), '{"type":"module"}\n');
 execFileSync(process.execPath, [resolve(here, "node_modules/typescript/bin/tsc"), "-p", resolve(stage, "tsconfig.json"), ...(check ? ["--noEmit"] : [])], { cwd: here, stdio: "inherit" });
 if (!check) {

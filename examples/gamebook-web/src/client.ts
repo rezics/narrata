@@ -1,4 +1,5 @@
 import { errorMessage, replySchema, type Command, type Reply } from "./protocol";
+import { StoreSuperseded } from "@rezics/narrata/storage";
 
 class ReaderClient {
   private worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
@@ -12,7 +13,7 @@ class ReaderClient {
       const reply = parsed.data;
       const pending = this.pending.get(reply.id);
       this.pending.delete(reply.id);
-      if (reply.kind === "error") pending?.reject(new Error(reply.message)); else pending?.resolve(reply);
+      if (reply.kind === "error") pending?.reject(reply.superseded ? new StoreSuperseded() : new Error(reply.message)); else pending?.resolve(reply);
     };
     this.worker.onerror = event => this.fail(new Error(event.message || "运行线程发生错误"));
     this.worker.onmessageerror = error => this.fail(new Error(errorMessage(error)));

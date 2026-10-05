@@ -1,11 +1,17 @@
 {
-  "measurement": "Release Wasm and all dist/**/*.js, including the separate testing export; gzip level 9, each JavaScript module compressed separately. Mock content is absent from runtime imports. Budgets leave about 3–5% headroom.",
+  "measurement": "Release Wasm and all dist/**/*.js; gzip level 9 per module. Exclusive JavaScript groups: runtime includes the framework-free root, controller, storage and Wasm glue; react counts only dist/react modules, with the host's React peer external; testing counts only dist/testing fixtures. javascript is the aggregate. Limits leave about 4–6% raw/gzip headroom for each JS group; Wasm is unchanged.",
   "baseline": {
     "wasm": { "raw": 3870397, "gzip": 800106 },
-    "javascript": { "raw": 214734, "gzip": 38895 }
+    "javascript": { "raw": 242855, "gzip": 46727 },
+    "runtime": { "raw": 212305, "gzip": 36900 },
+    "react": { "raw": 12401, "gzip": 3303 },
+    "testing": { "raw": 18149, "gzip": 6524 }
   },
   "maximum": {
     "wasm": { "raw": 4020000, "gzip": 824000 },
-    "javascript": { "raw": 226000, "gzip": 41000 }
+    "javascript": { "raw": 255000, "gzip": 49000 },
+    "runtime": { "raw": 223000, "gzip": 38800 },
+    "react": { "raw": 13100, "gzip": 3480 },
+    "testing": { "raw": 19100, "gzip": 6860 }
   }
 }

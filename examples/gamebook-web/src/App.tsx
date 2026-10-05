@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { reader } from "./client";
-import { Arrow, GraphMap, Inspector, Outline, Reading } from "./components";
+import { GraphMap, Inspector, Outline } from "./components";
+import { Reader, ReaderNavigation } from "@rezics/narrata/react";
 import type { NodeAddress } from "@rezics/narrata";
-import { errorMessage, limits, type Command, type ViewReply } from "./protocol";
+import { contentKey, errorMessage, limits, type Command, type ViewReply } from "./protocol";
 import { graphTitle, heading, Texts } from "./texts";
+import { classes, messages, referenceReader, slots } from "./reader";
+
+const subscribeNone = () => () => undefined;
+const noSnapshot = () => null;
 
 function download(data: string | Uint8Array, filename: string, type: string) {
   const url = URL.createObjectURL(new Blob([data as BlobPart], { type: type === "application/json" ? `${type};charset=utf-8` : type }));
@@ -14,7 +19,10 @@ function download(data: string | Uint8Array, filename: string, type: string) {
 
 export function App() {
   const [state, setState] = useState<ViewReply | null>(null);
-  const [busy, setBusy] = useState(true);
+  const [externalBusy, setBusy] = useState(true);
+  const [binding, setBinding] = useState<ReturnType<typeof referenceReader> | null>(null);
+  const snapshot = useSyncExternalStore(binding?.controller.subscribe ?? subscribeNone, binding?.controller.getSnapshot ?? noSnapshot);
+  const busy = externalBusy || snapshot?.phase !== "ready";
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<NodeAddress | null>(null);
   const [map, setMap] = useState(false);
@@ -32,7 +40,8 @@ export function App() {
     try {
       const reply = await reader.call(command);
       if (reply.kind === "view") {
-        setState(reply);
+        binding?.accept(reply);
+        await binding?.controller.refresh();
         if (command.kind === "open") { setSelected(null); setMap(false); }
         if (["choose", "checkout", "restore", "restart"].includes(command.kind)) setMobilePanel(null);
       } else if (reply.kind === "file") for (const file of reply.files) download(file.data, file.filename, file.type);
@@ -42,12 +51,26 @@ export function App() {
 
   useEffect(() => {
     let mounted = true;
-    reader.call({ kind: "boot" }).then(reply => { if (mounted && reply.kind === "view") setState(reply); }).catch(error => { if (mounted) setError(errorMessage(error)); }).finally(() => { if (mounted) setBusy(false); });
-    return () => { mounted = false; };
+    let opened: ReturnType<typeof referenceReader> | undefined;
+    reader.call({ kind: "boot" }).then(reply => {
+      if (mounted && reply.kind === "view") {
+        setState(reply);
+        opened = referenceReader(reply, next => { if (mounted) setState(next); });
+        setBinding(opened);
+        void opened.controller.start();
+      }
+    }).catch(error => { if (mounted) setError(errorMessage(error)); }).finally(() => { if (mounted) setBusy(false); });
+    return () => { mounted = false; opened?.controller.dispose(); };
   }, []);
 
-  const texts = useMemo(() => new Texts(state?.texts ?? {}), [state]);
-  const book = state?.book;
+  const texts = useMemo(() => {
+    const entries = { ...state?.texts };
+    for (const { item, resolution } of snapshot?.screen?.content ?? []) entries[contentKey(item.content, item.args)] = resolution.status === "ok"
+      ? { ok: true, blocks: "text" in resolution.payload ? [resolution.payload.text] : resolution.payload.blocks.map(block => block.text) }
+      : { ok: false, reason: resolution.status };
+    return new Texts(entries);
+  }, [state, snapshot?.screen]);
+  const book = snapshot?.screen?.book;
   const view = book?.view;
   const productTitle = view ? texts.text(view.product.title, view.product.id) : null;
   useEffect(() => { if (productTitle) document.title = `${productTitle} · Narrata`; }, [productTitle]);
@@ -57,6 +80,7 @@ export function App() {
     const cursor = view?.cursor;
     if (!cursor) return;
     if (previousCursor.current && previousCursor.current !== cursor && !map) {
+      setMobilePanel(null);
       document.getElementById("passage-title")?.focus({ preventScroll: true });
       if (window.innerWidth <= 920) window.scrollTo({ top: 0 });
     }
@@ -87,11 +111,6 @@ export function App() {
   const rootPackage = view?.history[0]?.graph.package;
   const graphs = book ? [...book.graphs].sort((a, b) => Number(b.reference.package === rootPackage) - Number(a.reference.package === rootPackage) || graphTitle(book.graphs, a.reference, texts).localeCompare(graphTitle(book.graphs, b.reference, texts), "zh-CN") || a.reference.graph.localeCompare(b.reference.graph)) : [];
   const title = book ? heading(book, texts) : null;
-  const children = view?.history.filter(c => c.parent === view.cursor) ?? [];
-  const interaction = view?.interaction;
-  const only = interaction?.kind === "choose" && interaction.min === 1 && interaction.max === 1 && interaction.options.length === 1 ? interaction.options[0] : undefined;
-  const next = only?.enabled && interaction?.kind === "choose" ? { choicePoint: interaction.choice_point, option: only.id } : null;
-  const savedTime = state?.saved_at ? new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date(state.saved_at)) : null;
 
   return <div className="app">
     <header className="topbar"><a className="wordmark" href="/" aria-label="Narrata 首页">Narrata</a><span className="work-title">{productTitle ?? "Gamebook"}</span>
@@ -102,18 +121,15 @@ export function App() {
     <div className="mobile-bar"><button aria-expanded={mobilePanel === "outline"} onClick={() => setMobilePanel(mobilePanel === "outline" ? null : "outline")}>目录 <span>⌄</span></button><button aria-expanded={mobilePanel === "inspector"} onClick={() => setMobilePanel(mobilePanel === "inspector" ? null : "inspector")}>旅程 <span>⌄</span></button></div>
     {error ? <div role="alert" className="message error"><span>{error}</span><button onClick={() => setError(null)} aria-label="关闭错误提示">×</button></div> : null}
     {state?.warning ? <div role="status" className="message warning">{state.warning}</div> : null}
-    {book && view && current && title ? <div className="workspace">
+    {book && view && current && title && binding ? <div className="workspace">
       <Outline graphs={graphs} texts={texts} current={current} selected={selected} open={mobilePanel === "outline"} onSelect={inspectNode} onGraph={() => { setMap(true); setMobilePanel(null); }} />
       <main className="main-column">
         {map ? <GraphMap graphs={graphs} texts={texts} current={current} onSelect={inspectNode} onRead={() => { setMap(false); setMobilePanel(null); }} />
-          : <Reading book={book} texts={texts} title={title.text} lead={title.index} busy={busy} onChoose={options => { if (interaction?.kind === "choose") void execute({ kind: "choose", expected: view.cursor, choice_point: interaction.choice_point, options }); }} />}
-        <footer className="reading-footer"><button className="outline-button" disabled={busy || !here?.parent} onClick={() => { if (here?.parent) void execute({ kind: "checkout", commit: here.parent }); }}><Arrow back /> 上一步</button>
-          <p className="save-status" role="status"><span aria-hidden="true">{busy ? "◌" : savedTime ? "✓" : "○"}</span>{busy ? "正在处理" : savedTime ? "保存到本机" : "尚未保存到本机"}{savedTime ? <time dateTime={state.saved_at ?? undefined}>{savedTime}</time> : null}</p>
-          <button className="primary-button" disabled={busy || (!next && children.length !== 1)} onClick={() => { if (next) void execute({ kind: "choose", expected: view.cursor, choice_point: next.choicePoint, options: [next.option] }); else if (children[0]) void execute({ kind: "checkout", commit: children[0].id }); }}>下一步 <Arrow /></button>
-        </footer>
+          : <Reader controller={binding.controller} slots={slots} messages={messages} classes={classes} headingId="passage-title" showPath={false} showState={false} showNavigation={false} disabled={externalBusy} />}
+        <ReaderNavigation controller={binding.controller} messages={messages} classes={classes} disabled={externalBusy} />
         <details className="project-export"><summary>作品文件</summary><button className="text-button" disabled={busy} onClick={() => void execute({ kind: "export_pack" })}>导出构件</button> · <button className="text-button" disabled={busy} onClick={() => void execute({ kind: "export_content" })}>导出内容包</button><p>作品由构件（结构）与内容包（文字）组成，导入时一并选择。存档需要对应的构件；换用另一份内容包不影响存档。重新开始会回到起点并保留已有路线。</p></details>
       </main>
-      <Inspector book={book} texts={texts} title={title.text} selected={selected} open={mobilePanel === "inspector"} busy={busy} onCheckout={commit => void execute({ kind: "checkout", commit })} />
-    </div> : <main className="loading"><p role="status">{busy ? "正在打开故事……" : "暂时无法打开故事，请刷新后重试。"}</p></main>}
+      <Inspector book={book} texts={texts} title={title.text} selected={selected} open={mobilePanel === "inspector"} controller={binding.controller} busy={externalBusy} />
+    </div> : <main className="loading">{binding ? <Reader controller={binding.controller} slots={slots} messages={messages} showState={false} showPath={false} showNavigation={false} /> : <p role="status">{busy ? "正在打开故事……" : "暂时无法打开故事，请刷新后重试。"}</p>}</main>}
   </div>;
 }

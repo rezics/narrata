@@ -206,6 +206,10 @@ test("locked choices and corrupt saves preserve the current story", async ({ pag
   await act(page, "走向灯火", "抵达山口");
   await expect(page.getByRole("button", { name: "将老人的信交给守门人", exact: true })).toBeDisabled();
   await expect(page.getByText("需要先从营地老人那里取到信件", { exact: true })).toBeVisible();
+  const locked = page.getByRole("button", { name: "将老人的信交给守门人", exact: true });
+  const description = await locked.getAttribute("aria-describedby");
+  expect(description).toBeTruthy();
+  await expect(page.locator(`[id="${description}"]`)).toHaveText("需要先从营地老人那里取到信件");
   const save = await exportSave(page);
   const damaged = `${save.slice(0, -1)}${save.endsWith("0") ? "1" : "0"}`;
   await importSave(page, damaged);
@@ -254,8 +258,75 @@ test("two tabs cannot overwrite each other's newer persisted state", async ({ pa
   await second.getByRole("button", { name: "沿山路出发", exact: true }).click();
   await expect(second.getByRole("alert")).toContainText("另一页面已更新");
   await expect(second.getByRole("heading", { name: "旧驿站", exact: true })).toBeVisible();
-  await second.reload();
+  await second.getByRole("button", { name: "重新载入存档", exact: true }).press("Enter");
   await expect(second.getByRole("heading", { name: "篝火夜谈", exact: true })).toBeVisible();
+  await expect(second.getByRole("alert")).toHaveCount(0);
+});
+
+test("host body and option slots expose unavailable content without diagnostic reasons, and checkout still works", async ({ page }) => {
+  const content = z.object({ entries: z.record(z.string(), z.unknown()) }).passthrough().parse(JSON.parse(await readFile(contentPath, "utf8")));
+  delete content.entries["main.station"];
+  await open(page);
+  await importWork(page, await readFile(packPath), JSON.stringify(content));
+  await expect(page.locator('.prose [data-content-status="unavailable"]')).toHaveText("内容暂不可用");
+  await expect(page.locator('.prose [data-content-status="unavailable"]')).not.toHaveAttribute("title", /.+/);
+  await act(page, "到营地歇脚", "篝火夜谈");
+  await act(page, "上一步", "旧驿站");
+  await expect(page.locator('.prose [data-content-status="unavailable"]')).toHaveText("内容暂不可用");
+  const optionLabels = Object.keys(content.entries).filter(key => key.startsWith("main.journey:station.") && key.endsWith(".label"));
+  expect(optionLabels.length).toBeGreaterThan(0);
+  for (const key of optionLabels) delete content.entries[key];
+  await importWork(page, await readFile(packPath), JSON.stringify(content));
+  await expect(page.locator('.choices [data-content-status="unavailable"]')).toHaveCount(optionLabels.length);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("multi-selection supports the keyboard, count limits and checkout without keeping stale selections", async ({ page }) => {
+  await open(page);
+  await act(page, "翻看桌上的登记册", "驿站登记册");
+  await act(page, "用炭笔写下自己的名字", "驿站登记册");
+  const candle = page.getByRole("checkbox", { name: "带上一截蜡烛", exact: true });
+  await candle.focus(); await candle.press("Space");
+  await expect(candle).toBeChecked();
+  await page.getByRole("checkbox", { name: "带上一只空水壶", exact: true }).press("Space");
+  await expect(page.getByRole("checkbox", { name: "带上一卷麻绳", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "确定（2 项）", exact: true }).press("Enter");
+  await expect(page.getByRole("heading", { name: "旧驿站", exact: true, level: 1 })).toBeFocused();
+  await act(page, "上一步", "驿站登记册");
+  await expect(page.getByRole("checkbox", { name: "带上一截蜡烛", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "都不选，继续", exact: true })).toBeEnabled();
+});
+
+test("incompatible host content has a separate fallback and never exposes the provider's reason", async ({ page }) => {
+  const content = z.object({ entries: z.record(z.string(), z.unknown()) }).passthrough().parse(JSON.parse(await readFile(contentPath, "utf8")));
+  content.entries["main.station"] = { text: "{privateProviderDiagnostic}" };
+  await open(page);
+  await importWork(page, await readFile(packPath), JSON.stringify(content));
+  await expect(page.locator('.prose [data-content-status="incompatible"]')).toHaveText("此内容无法显示");
+  await expect(page.locator("body")).not.toContainText("privateProviderDiagnostic");
+  await expect(page.locator('.prose [data-content-status="incompatible"]')).not.toHaveAttribute("title", /.+/);
+  await act(page, "到营地歇脚", "篝火夜谈");
+});
+
+test("a required multi-selection cannot submit fewer than its minimum", async ({ page }) => {
+  const temporaryRoot = join(tmpdir(), ".temp");
+  await mkdir(temporaryRoot, { recursive: true });
+  const directory = await mkdtemp(join(temporaryRoot, "narrata-reader-"));
+  await cp(demo, directory, { recursive: true });
+  const packagePath = join(directory, "packages/main.json");
+  const source = await readFile(packagePath, "utf8");
+  expect(source).toContain('"min": 0');
+  await writeFile(packagePath, source.replace('"min": 0', '"min": 2'));
+  native("compose", join(directory, "project.json"), "--out", join(directory, "story.narpack"));
+  await open(page);
+  await importWork(page, await readFile(join(directory, "story.narpack")), await readFile(contentPath, "utf8"));
+  await act(page, "翻看桌上的登记册", "驿站登记册");
+  await act(page, "用炭笔写下自己的名字", "驿站登记册");
+  await expect(page.getByRole("button", { name: "都不选，继续", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox", { name: "带上一截蜡烛", exact: true }).check();
+  await expect(page.getByRole("button", { name: "确定（1 项）", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox", { name: "带上一只空水壶", exact: true }).check();
+  await expect(page.getByRole("button", { name: "确定（2 项）", exact: true })).toBeEnabled();
 });
 
 test("an R1 autosave is migrated on the default work and its record is kept", async ({ page }) => {
