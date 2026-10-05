@@ -80,9 +80,13 @@ pub enum Interaction {
         key: Option<String>,
         min: u16,
         max: u16,
+        /// Whether the host may propose options and passages here.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        proposals: bool,
         /// Arguments for option labels and disabled reasons.
         args: BTreeMap<String, ViewScalar>,
-        /// Visible options in order; hidden ones are left out.
+        /// Visible options in order, proposed ones after the choice point's own; hidden ones
+        /// are left out.
         options: Vec<OptionView>,
     },
     Finished {

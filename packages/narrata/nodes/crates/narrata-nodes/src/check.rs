@@ -416,7 +416,7 @@ fn check_graph(
     Ok(())
 }
 
-fn check_passage(
+pub(crate) fn check_passage(
     declarations: &Declarations<'_>,
     passage: &Passage,
     target: &dyn Fn(&crate::NodeId) -> Result<()>,

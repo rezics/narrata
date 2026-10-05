@@ -484,13 +484,6 @@ fn lower_graph(
                     })?;
                     claim(AuthoredId::ChoicePoint(id), &point_path)?;
                     names.choice_points.insert(id, point.key.clone());
-                    if point.proposals {
-                        return Err(Error::new(
-                            "unsupported",
-                            &point_path,
-                            "host proposals are reserved but not supported yet",
-                        ));
-                    }
                     let mut option_keys = BTreeSet::new();
                     let mut options = Vec::new();
                     for (option_index, option) in point.options.iter().enumerate() {
@@ -532,6 +525,7 @@ fn lower_graph(
                         min: point.min,
                         max: point.max,
                         options,
+                        proposals: point.proposals,
                     });
                 }
                 Plan::Passage(Passage {

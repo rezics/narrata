@@ -7,10 +7,12 @@ use std::collections::BTreeMap;
 use narrata_kernel::content::{AnchorId, Segment};
 
 use crate::{
-    Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, Program, Result, Scalar, Scope, ViewScalar,
+    CommitId, Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, Program, ProposalRequest, Result, Scalar,
+    Scope, ViewScalar,
     expr::{Values, expect},
     plan::{GraphRef, NameTable, Outcome, Passage, Plan},
-    state::{Finished, Frame, Input, State, check_input, check_size},
+    proposal::{apply_proposal, materialize},
+    state::{Finished, Frame, Input, Overlay, State, check_choice, check_size},
     view::{Interaction, OptionView, OutcomeKind, Presented, Role},
 };
 
@@ -146,6 +148,7 @@ impl Machine<'_> {
                 instance: 1,
                 parameters: product.arguments.clone(),
                 locals: graph.header.locals.clone(),
+                overlay: Overlay::default(),
             }],
             next_instance: 2,
             finished: None,
@@ -165,11 +168,44 @@ impl Machine<'_> {
         })
     }
 
-    /// Applies an input to its parent state. Every chosen option is checked against the
-    /// parent state, then all effects run in option order, then replies are presented with
-    /// arguments evaluated after the effects.
-    pub fn choose(&self, parent: &State, input: &Input) -> Result<Step> {
-        let indices = check_input(self.program, parent, input)?;
+    /// Applies an input to the state of commit `parent_commit`.
+    pub fn apply(&self, parent_commit: &CommitId, parent: &State, input: &Input) -> Result<Step> {
+        match input {
+            Input::Choose {
+                choice_point,
+                options,
+            } => self.choose(parent, choice_point, options),
+            Input::Propose { .. } => Ok(Step {
+                state: apply_proposal(self.program, parent_commit, parent, input)?,
+                presentation: Vec::new(),
+                entered: false,
+            }),
+        }
+    }
+
+    /// Records a host proposal made at commit `parent_commit`. The interaction stays at the
+    /// same choice point and nothing is presented.
+    pub fn propose(
+        &self,
+        parent_commit: &CommitId,
+        parent: &State,
+        request: &ProposalRequest,
+    ) -> Result<(Input, Step)> {
+        let input = materialize(parent_commit, request)?;
+        let step = self.apply(parent_commit, parent, &input)?;
+        Ok((input, step))
+    }
+
+    /// Chooses options at the parent's interaction. Every chosen option is checked against
+    /// the parent state, then all effects run in option order, then replies are presented
+    /// with arguments evaluated after the effects.
+    fn choose(
+        &self,
+        parent: &State,
+        choice_point: &crate::ChoicePointId,
+        options: &[crate::OptionId],
+    ) -> Result<Step> {
+        let indices = check_choice(self.program, parent, choice_point, options)?;
         let mut work = Work {
             state: parent.clone(),
             items: Vec::new(),
@@ -177,20 +213,21 @@ impl Machine<'_> {
             entered: false,
         };
         work.tick()?;
-        let frame = work.top()?.clone();
-        let graph = self.program.graph(&frame.graph)?;
-        let Some(Plan::Passage(passage)) = graph.nodes.get(&frame.node) else {
-            return Err(Error::new(
-                "state",
-                "input",
-                "the current node is not a passage",
-            ));
+        let (graph_ref, node, at) = {
+            let frame = work.top()?;
+            (frame.graph.clone(), frame.node, frame.at)
         };
+        let graph = self.program.graph(&graph_ref)?;
+        let passage = work
+            .top()?
+            .overlay
+            .passage(&graph, &node)
+            .ok_or_else(|| Error::new("state", "input", "the current node is not a passage"))?;
         let (index, point) = passage
             .choice_points
             .iter()
             .enumerate()
-            .find(|(_, point)| Some(point.id) == frame.at)
+            .find(|(_, point)| Some(point.id) == at)
             .ok_or_else(|| Error::new("state", "input", "missing current choice point"))?;
         let chosen: Vec<_> = indices
             .iter()
@@ -221,18 +258,13 @@ impl Machine<'_> {
                 }
             }
             _ => {
-                let args = work.args(passage)?;
+                let args = work.args(&passage)?;
                 for option in &chosen {
                     if let Outcome::Local {
                         reply: Some(reply), ..
                     } = &option.outcome
                     {
-                        work.present(
-                            Role::Reply,
-                            frame.node,
-                            Presented::Segment(reply.clone()),
-                            &args,
-                        );
+                        work.present(Role::Reply, node, Presented::Segment(reply.clone()), &args);
                     }
                 }
                 // Multiple selection and min = 0 share one rejoin, so the first option's (or,
@@ -245,7 +277,7 @@ impl Machine<'_> {
                         Outcome::Local { rejoin, .. } => rejoin.clone(),
                         Outcome::Branch { .. } => None,
                     });
-                self.after_local(&mut work, frame.node, passage, index, rejoin)?;
+                self.after_local(&mut work, node, &passage, index, rejoin)?;
             }
         }
         self.run(&mut work)?;
@@ -262,17 +294,23 @@ impl Machine<'_> {
             if work.state.finished.is_some() {
                 return Ok(());
             }
-            let frame = work.top()?.clone();
-            if frame.at.is_some() {
-                return Ok(());
-            }
+            // The overlay stays in place: copying it on every step would cost its size.
+            let (graph_ref, node, instance) = {
+                let frame = work.top()?;
+                if frame.at.is_some() {
+                    return Ok(());
+                }
+                (frame.graph.clone(), frame.node, frame.instance)
+            };
             work.tick()?;
-            let graph = self.program.graph(&frame.graph)?;
-            let plan = graph.nodes.get(&frame.node).ok_or_else(|| {
-                Error::new("state", frame.node.to_string(), "unknown checked node")
-            })?;
-            match plan {
-                Plan::Passage(passage) => self.enter(work, frame.node, passage)?,
+            let graph = self.program.graph(&graph_ref)?;
+            let plan = work
+                .top()?
+                .overlay
+                .plan(&graph, &node)
+                .ok_or_else(|| Error::new("state", node.to_string(), "unknown checked node"))?;
+            match &*plan {
+                Plan::Passage(passage) => self.enter(work, node, passage)?,
                 Plan::Branch {
                     condition,
                     when_true,
@@ -296,11 +334,11 @@ impl Machine<'_> {
                     if work.state.frames.len() >= MAX_CALL_DEPTH {
                         return Err(Error::new(
                             "depth_limit",
-                            frame.graph.label(),
+                            graph_ref.label(),
                             "subgraph call depth exceeds 64",
                         ));
                     }
-                    let callee_ref = self.program.resolve_call(&frame.graph, target)?;
+                    let callee_ref = self.program.resolve_call(&graph_ref, target)?;
                     let callee = self.program.graph(&callee_ref)?;
                     let parameters = {
                         let values = work.values()?;
@@ -320,6 +358,7 @@ impl Machine<'_> {
                         instance,
                         parameters,
                         locals: callee.header.locals.clone(),
+                        overlay: Overlay::default(),
                     });
                     check_size(&work.state)?;
                 }
@@ -342,8 +381,8 @@ impl Machine<'_> {
                         }
                         None => {
                             work.state.finished = Some(Finished {
-                                node: frame.node,
-                                instance: frame.instance,
+                                node,
+                                instance,
                                 outcome: outcome.clone(),
                             });
                         }
@@ -424,6 +463,12 @@ impl Machine<'_> {
             frame.at = None;
             return Ok(());
         };
+        if point.proposals {
+            // Proposals can add options, so the interaction appears even when no option is
+            // available (ADR 0013 §5).
+            work.top_mut()?.at = Some(point.id);
+            return Ok(());
+        }
         let available = {
             let values = work.values()?;
             let mut count = 0_usize;
@@ -480,13 +525,10 @@ impl Machine<'_> {
             .last()
             .ok_or_else(|| Error::new("state", "session", "no active graph instance"))?;
         let graph = self.program.graph(&frame.graph)?;
-        let Some(Plan::Passage(passage)) = graph.nodes.get(&frame.node) else {
-            return Err(Error::new(
-                "state",
-                "session",
-                "the current node is not a passage",
-            ));
-        };
+        let passage = frame
+            .overlay
+            .passage(&graph, &frame.node)
+            .ok_or_else(|| Error::new("state", "session", "the current node is not a passage"))?;
         let point = passage
             .choice_points
             .iter()
@@ -532,6 +574,7 @@ impl Machine<'_> {
             }),
             min: point.min,
             max: point.max,
+            proposals: point.proposals,
             args,
             options,
         })
@@ -565,10 +608,10 @@ impl Machine<'_> {
             .last()
             .ok_or_else(|| Error::new("state", "session", "no active graph instance"))?;
         let graph = self.program.graph(&frame.graph)?;
-        let title = match graph.nodes.get(&frame.node) {
-            Some(Plan::Passage(passage)) => passage.title.clone(),
-            _ => None,
-        };
+        let title = frame
+            .overlay
+            .passage(&graph, &frame.node)
+            .and_then(|passage| passage.title.clone());
         Ok((frame.graph.clone(), frame.node, frame.instance, title))
     }
 }

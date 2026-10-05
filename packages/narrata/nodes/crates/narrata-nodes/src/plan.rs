@@ -207,6 +207,8 @@ pub struct ChoicePoint {
     pub min: u16,
     pub max: u16,
     pub options: Vec<OptionPlan>,
+    /// Whether the host may append options here and propose passages (ADR 0013 §5).
+    pub proposals: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

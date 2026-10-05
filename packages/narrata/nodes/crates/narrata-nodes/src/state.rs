@@ -2,14 +2,18 @@
 //! never text or aliases. `decode_state` and `decode_input` are the only way to accept them
 //! from outside; both check the bytes against the artifact.
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{
     ArtifactId, ChoicePointId, CommitId, Error, MAX_CALL_DEPTH, MAX_STATE_BYTES, NodeId, ObjectId,
     OptionId, Program, Result, Scalar,
-    plan::{CallTarget, GraphRef, Plan},
+    plan::{CallTarget, Graph, GraphRef, OptionPlan, Passage, Plan},
+    proposal::{apply_proposal, check_overlay},
     wire,
 };
+
+/// A propose input carries at most what a state can hold.
+pub(crate) const MAX_INPUT_BYTES: usize = MAX_STATE_BYTES;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct State {
@@ -29,6 +33,63 @@ pub struct Frame {
     pub instance: u32,
     pub parameters: BTreeMap<String, Scalar>,
     pub locals: BTreeMap<String, Scalar>,
+    /// What the host proposed while the frame ran; it vanishes when the frame returns.
+    pub overlay: Overlay,
+}
+
+/// Structure proposed in one frame (ADR 0013 §5): passages addressed like the graph's own
+/// nodes, and options appended to choice points that accept proposals, after the choice
+/// point's own options and in proposal order.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Overlay {
+    pub nodes: BTreeMap<NodeId, Passage>,
+    pub options: BTreeMap<ChoicePointId, Vec<OptionPlan>>,
+}
+
+impl Overlay {
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty() && self.options.is_empty()
+    }
+
+    /// `node` as a frame with this overlay sees it: a node of `graph` or a proposed passage,
+    /// with the options proposed at its choice points appended.
+    pub(crate) fn plan<'g>(&self, graph: &'g Graph, node: &NodeId) -> Option<Cow<'g, Plan>> {
+        let plan = match graph.nodes.get(node) {
+            Some(plan) => Cow::Borrowed(plan),
+            None => Cow::Owned(Plan::Passage(self.nodes.get(node)?.clone())),
+        };
+        match &*plan {
+            Plan::Passage(passage)
+                if passage
+                    .choice_points
+                    .iter()
+                    .any(|point| self.options.contains_key(&point.id)) =>
+            {
+                Some(Cow::Owned(Plan::Passage(self.compose(passage))))
+            }
+            _ => Some(plan),
+        }
+    }
+
+    /// The passage at `node`, if the node is one.
+    pub(crate) fn passage<'g>(&self, graph: &'g Graph, node: &NodeId) -> Option<Cow<'g, Passage>> {
+        match self.plan(graph, node)? {
+            Cow::Borrowed(Plan::Passage(passage)) => Some(Cow::Borrowed(passage)),
+            Cow::Owned(Plan::Passage(passage)) => Some(Cow::Owned(passage)),
+            _ => None,
+        }
+    }
+
+    /// `passage` with the options proposed at its choice points appended.
+    pub(crate) fn compose(&self, passage: &Passage) -> Passage {
+        let mut passage = passage.clone();
+        for point in &mut passage.choice_points {
+            if let Some(options) = self.options.get(&point.id) {
+                point.options.extend(options.iter().cloned());
+            }
+        }
+        passage
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,6 +105,14 @@ pub enum Input {
     Choose {
         choice_point: ChoicePointId,
         options: Vec<OptionId>,
+    },
+    /// A host proposal at the choice point the parent waits at, checked and recorded with
+    /// derived IDs (ADR 0013 §5). New nodes keep the request's order, which the derivation
+    /// follows.
+    Propose {
+        choice_point: ChoicePointId,
+        options: Vec<OptionPlan>,
+        nodes: Vec<(NodeId, Passage)>,
     },
 }
 
@@ -214,13 +283,15 @@ pub(crate) fn check_state(program: &Program, state: &State) -> Result<()> {
         {
             return Err(invalid("frame locals differ from the graph declaration"));
         }
-        let plan = graph
-            .nodes
-            .get(&frame.node)
+        check_overlay(program, &graph, frame)
+            .map_err(|error| invalid(format!("overlay: {error}")))?;
+        let plan = frame
+            .overlay
+            .plan(&graph, &frame.node)
             .ok_or_else(|| invalid(format!("unknown node {}", frame.node)))?;
         match state.frames.get(index + 1) {
             None => {
-                let Plan::Passage(passage) = plan else {
+                let Plan::Passage(passage) = &*plan else {
                     return Err(invalid("the top frame waits at a passage"));
                 };
                 let at = frame
@@ -231,7 +302,7 @@ pub(crate) fn check_state(program: &Program, state: &State) -> Result<()> {
                 }
             }
             Some(above) => {
-                let Plan::Call { target, .. } = plan else {
+                let Plan::Call { target, .. } = &*plan else {
                     return Err(invalid("a lower frame waits at a call"));
                 };
                 if frame.at.is_some() || program.resolve_call(&frame.graph, target)? != above.graph
@@ -249,30 +320,43 @@ pub(crate) fn check_state(program: &Program, state: &State) -> Result<()> {
     Ok(())
 }
 
-/// Decodes an Input envelope and checks it against the choice point its parent waits at.
+/// Decodes an Input envelope and checks it against the choice point that `parent`, the
+/// state of commit `parent_commit`, waits at. A proposal's derived IDs depend on that commit.
 pub fn decode_input(
     program: &Program,
+    parent_commit: &CommitId,
     parent: &State,
     envelope: &[u8],
 ) -> Result<(Input, ObjectId)> {
     let (input, id) = wire::open(
         envelope,
         wire::KIND_INPUT,
-        8 * 1024,
+        MAX_INPUT_BYTES,
         "input",
         wire::decode_input,
         wire::encode_input,
     )?;
-    check_input(program, parent, &input)?;
+    match &input {
+        Input::Choose {
+            choice_point,
+            options,
+        } => {
+            check_choice(program, parent, choice_point, options)?;
+        }
+        Input::Propose { .. } => {
+            apply_proposal(program, parent_commit, parent, &input)?;
+        }
+    }
     Ok((input, id))
 }
 
 /// Returns the indices of the chosen options within their choice point.
-pub(crate) fn check_input(program: &Program, parent: &State, input: &Input) -> Result<Vec<usize>> {
-    let Input::Choose {
-        choice_point,
-        options,
-    } = input;
+pub(crate) fn check_choice(
+    program: &Program,
+    parent: &State,
+    choice_point: &ChoicePointId,
+    options: &[OptionId],
+) -> Result<Vec<usize>> {
     let frame = parent
         .frames
         .last()
@@ -285,13 +369,10 @@ pub(crate) fn check_input(program: &Program, parent: &State, input: &Input) -> R
         ));
     }
     let graph = program.graph(&frame.graph)?;
-    let Some(Plan::Passage(passage)) = graph.nodes.get(&frame.node) else {
-        return Err(Error::new(
-            "state",
-            "input",
-            "the current node is not a passage",
-        ));
-    };
+    let passage = frame
+        .overlay
+        .passage(&graph, &frame.node)
+        .ok_or_else(|| Error::new("state", "input", "the current node is not a passage"))?;
     let point = passage
         .choice_points
         .iter()

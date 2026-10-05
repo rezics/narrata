@@ -18,6 +18,7 @@ mod json;
 pub mod outline;
 pub mod plan;
 mod program;
+mod proposal;
 pub mod r1;
 mod registry;
 mod runtime;
@@ -39,6 +40,10 @@ pub use json::{parse_json, parse_json_limited};
 pub use outline::ContentOutline;
 pub use plan::NameTable;
 pub use program::{ChunkSource, Lookup, MemorySource, Owner, Program};
+pub use proposal::{
+    ChoicePointProposal, MAX_OVERLAY_NODES, MAX_PROPOSED_NODES, MAX_PROPOSED_OPTIONS,
+    MAX_REQUEST_BYTES, NodeProposal, OptionProposal, ProposalRequest,
+};
 pub use registry::{GAMEBOOK_REVISION, NodeCompiler, NodeRegistry, lower_builtin};
 pub use session::{
     EXPORT_FORMAT_VERSION, MAX_COMMITS, MAX_EXPORT_BYTES, MAX_RETAINED_STATE_BYTES, Session,
@@ -47,7 +52,7 @@ pub use session::{
 pub use source::{
     CompositionLock, PackageLock, PackageSource, ProjectManifest, ProjectSource, SourcePlan,
 };
-pub use state::{Commit, Finished, Frame, Input, State, decode_input, decode_state};
+pub use state::{Commit, Finished, Frame, Input, Overlay, State, decode_input, decode_state};
 pub use value::{Scalar, ScalarType, ViewScalar};
 pub use view::{BookView, SessionView};
 pub use wire::{
@@ -93,6 +98,7 @@ pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {
         ("node-plan.schema.json", schema_for!(SourcePlan)),
         ("package.schema.json", schema_for!(PackageSource)),
         ("project.schema.json", schema_for!(ProjectManifest)),
+        ("proposal-request.schema.json", schema_for!(ProposalRequest)),
         ("session-export.schema.json", schema_for!(SessionExport)),
         ("view.schema.json", schema_for!(SessionView)),
     ]

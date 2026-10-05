@@ -234,7 +234,7 @@ proptest! {
 }
 
 #[test]
-fn a_reserved_proposals_field_in_a_choice_point_is_unsupported() {
+fn a_proposals_field_written_as_false_is_not_canonical() {
     let compilation = compiled();
     let pack = Pack::decode(&compilation.pack).unwrap();
     let chunk_index = compilation
@@ -258,7 +258,8 @@ fn a_reserved_proposals_field_in_a_choice_point_is_unsupported() {
         .find(|plan| matches!(plan, Cbor::Array(items) if items[0] == Cbor::Unsigned(0)))
         .unwrap();
     let point = index(field(index(passage, 1), 3), 0);
-    insert(point, 5, Cbor::Bool(true));
+    // Absent means false, so `false` has no encoding of its own.
+    insert(point, 5, Cbor::Bool(false));
     let chunk_envelope = encode_envelope(KIND_CHUNK, 1, &write(&chunk));
     let chunk_id = narrata_kernel::codec::object_id(KIND_CHUNK, 1, payload(&chunk_envelope));
     let mut manifest = parse(payload(&pack.manifest));
@@ -278,25 +279,22 @@ fn a_reserved_proposals_field_in_a_choice_point_is_unsupported() {
         package: "main".into(),
         graph: "start".into(),
     };
-    assert_eq!(code(program.graph(&start)), "unsupported");
+    assert_eq!(code(program.graph(&start)), "decode");
 }
 
 #[test]
-fn a_reserved_overlay_field_in_a_frame_is_unsupported() {
+fn an_empty_overlay_is_not_canonical() {
     let compilation = compiled();
     let (session, _) = session(&compilation);
     let envelope = session.state().unwrap().envelope();
     let mut state = parse(payload(&envelope));
-    insert(index(field(&mut state, 1), 0), 6, Cbor::Array(Vec::new()));
+    insert(index(field(&mut state, 1), 0), 6, Cbor::Map(Vec::new()));
     let tampered = encode_envelope(KIND_STATE, 1, &write(&state));
-    assert_eq!(
-        code(decode_state(session.program(), &tampered)),
-        "unsupported"
-    );
+    assert_eq!(code(decode_state(session.program(), &tampered)), "decode");
 }
 
 #[test]
-fn a_reserved_proposal_input_is_unsupported() {
+fn a_proposal_at_a_choice_point_without_proposals_is_rejected() {
     let compilation = compiled();
     let (session, _) = session(&compilation);
     let parent = session.state().unwrap();
@@ -308,9 +306,10 @@ fn a_reserved_proposal_input_is_unsupported() {
         Cbor::Array(Vec::new()),
     ]);
     let envelope = encode_envelope(KIND_INPUT, 1, &write(&input));
+    let cursor = session.cursor().unwrap();
     assert_eq!(
-        code(decode_input(session.program(), parent, &envelope)),
-        "unsupported"
+        code(decode_input(session.program(), &cursor, parent, &envelope)),
+        "proposals"
     );
 }
 

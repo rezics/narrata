@@ -1,5 +1,5 @@
 //! ADR 0003 canonical CBOR for node objects. Field numbers are fixed here and by the
-//! `fixtures/compat/nodes-r2` corpus. Maps keyed by names or IDs are arrays of `[key, value]`
+//! `fixtures/compat/nodes-r2` and `fixtures/compat/nodes-r2-proposals` corpora. Maps keyed by names or IDs are arrays of `[key, value]`
 //! pairs in strictly increasing key order, because profile maps only take integer keys.
 //! Decoders check structure and bounded sizes; `check` verifies references and types.
 
@@ -24,8 +24,9 @@ use crate::{
         GraphRef, ImportRef, Manifest, NameTable, OptionPlan, Outcome, PackageInstance, Passage,
         Plan, ProductHeader, SharedVariable, Signature, TombstoneSet,
     },
+    proposal::{MAX_OVERLAY_NODES, MAX_PROPOSED_NODES, MAX_PROPOSED_OPTIONS},
     source::R1ArtifactId,
-    state::{Commit, Finished, Frame, Input, State},
+    state::{Commit, Finished, Frame, Input, Overlay, State},
     valid_name,
 };
 
@@ -59,11 +60,6 @@ pub(crate) fn id_of(kind: u16, payload: &[u8]) -> ObjectId {
     ObjectId::from_bytes(object_id(kind, SCHEMA, payload))
 }
 
-const PROPOSALS: &str = "dynamic proposals";
-const OVERLAY: &str = "dynamic overlay";
-/// Fields reserved for dynamic proposals (ADR 0013 §5); they decode to `unsupported`.
-const RESERVED: [&str; 2] = [PROPOSALS, OVERLAY];
-
 /// Opens an envelope of `kind` and decodes its payload with the checked decoder.
 pub(crate) fn open<T>(
     bytes: &[u8],
@@ -73,13 +69,7 @@ pub(crate) fn open<T>(
     decode: impl for<'a> FnOnce(&mut CborReader<'a>) -> D<T>,
     encode: impl FnOnce(&T) -> Vec<u8>,
 ) -> Result<(T, ObjectId)> {
-    let fail = |error: DecodeError| {
-        let code = match error {
-            DecodeError::Unsupported(feature) if RESERVED.contains(&feature) => "unsupported",
-            _ => "decode",
-        };
-        Error::new(code, what, error.to_string())
-    };
+    let fail = |error: DecodeError| Error::new("decode", what, error.to_string());
     let envelope = decode_envelope(
         bytes,
         kind,
@@ -623,8 +613,25 @@ fn option_plan(r: &mut CborReader<'_>) -> D<OptionPlan> {
     })
 }
 
+fn write_options(w: &mut CborWriter, options: &[OptionPlan]) {
+    w.array(options.len() as u64);
+    for option in options {
+        write_option(w, option);
+    }
+}
+
 fn write_choice_point(w: &mut CborWriter, value: &ChoicePoint) {
-    map_header(w, &[true, value.placement.is_some(), true, true, true]);
+    map_header(
+        w,
+        &[
+            true,
+            value.placement.is_some(),
+            true,
+            true,
+            true,
+            value.proposals,
+        ],
+    );
     w.unsigned(0);
     w.bytes(value.id.as_bytes());
     if let Some(placement) = &value.placement {
@@ -636,14 +643,17 @@ fn write_choice_point(w: &mut CborWriter, value: &ChoicePoint) {
     w.unsigned(3);
     w.unsigned(u64::from(value.max));
     w.unsigned(4);
-    w.array(value.options.len() as u64);
-    for option in &value.options {
-        write_option(w, option);
+    write_options(w, &value.options);
+    // Absent means false, so choice points without proposals keep their bytes.
+    if value.proposals {
+        w.unsigned(5);
+        w.boolean(true);
     }
 }
 
 fn choice_point(r: &mut CborReader<'_>) -> D<ChoicePoint> {
     let (mut id, mut placement, mut min, mut max, mut options) = (None, None, None, None, None);
+    let mut proposals = false;
     let mut map = MapIn::new(r, 6)?;
     while let Some(key) = map.next()? {
         let r = map.r();
@@ -653,8 +663,7 @@ fn choice_point(r: &mut CborReader<'_>) -> D<ChoicePoint> {
             2 => min = Some(u16_value(r)?),
             3 => max = Some(u16_value(r)?),
             4 => options = Some(array(r, MAX_OPTIONS, option_plan)?),
-            // Field 5 is reserved for `proposals = true` (ADR 0013 §5).
-            5 => return Err(DecodeError::Unsupported(PROPOSALS)),
+            5 => proposals = r.boolean()?,
             _ => return Err(unknown()),
         }
     }
@@ -664,6 +673,7 @@ fn choice_point(r: &mut CborReader<'_>) -> D<ChoicePoint> {
         min: required(min, "choice point min")?,
         max: required(max, "choice point max")?,
         options: required(options, "choice point options")?,
+        proposals,
     })
 }
 
@@ -1287,7 +1297,18 @@ pub(crate) fn encode_state(value: &State) -> Vec<u8> {
     w.unsigned(1);
     w.array(value.frames.len() as u64);
     for frame in &value.frames {
-        map_header(&mut w, &[true, true, frame.at.is_some(), true, true, true]);
+        map_header(
+            &mut w,
+            &[
+                true,
+                true,
+                frame.at.is_some(),
+                true,
+                true,
+                true,
+                !frame.overlay.is_empty(),
+            ],
+        );
         w.unsigned(0);
         write_graph_ref(&mut w, &frame.graph);
         w.unsigned(1);
@@ -1302,6 +1323,10 @@ pub(crate) fn encode_state(value: &State) -> Vec<u8> {
         write_scalar_pairs(&mut w, &frame.parameters);
         w.unsigned(5);
         write_scalar_pairs(&mut w, &frame.locals);
+        if !frame.overlay.is_empty() {
+            w.unsigned(6);
+            write_overlay(&mut w, &frame.overlay);
+        }
     }
     w.unsigned(2);
     w.unsigned(u64::from(value.next_instance));
@@ -1318,9 +1343,54 @@ pub(crate) fn encode_state(value: &State) -> Vec<u8> {
     w.into_bytes()
 }
 
+/// Absent fields are empty, and an empty overlay is absent from its frame.
+fn write_overlay(w: &mut CborWriter, value: &Overlay) {
+    map_header(w, &[!value.nodes.is_empty(), !value.options.is_empty()]);
+    if !value.nodes.is_empty() {
+        w.unsigned(0);
+        write_pairs(
+            w,
+            &value.nodes,
+            |w, id: &NodeId| w.bytes(id.as_bytes()),
+            write_passage,
+        );
+    }
+    if !value.options.is_empty() {
+        w.unsigned(1);
+        write_pairs(
+            w,
+            &value.options,
+            |w, id: &ChoicePointId| w.bytes(id.as_bytes()),
+            |w, options: &Vec<OptionPlan>| write_options(w, options),
+        );
+    }
+}
+
+fn overlay(r: &mut CborReader<'_>) -> D<Overlay> {
+    let mut value = Overlay::default();
+    let mut map = MapIn::new(r, 2)?;
+    while let Some(key) = map.next()? {
+        let r = map.r();
+        match key {
+            0 => value.nodes = pairs(r, MAX_OVERLAY_NODES, node_id, passage)?,
+            1 => {
+                value.options = pairs(r, 1 << 16, choice_point_id, |r| {
+                    let options = array(r, MAX_OPTIONS, option_plan)?;
+                    if options.is_empty() {
+                        return Err(DecodeError::Schema("empty overlay options"));
+                    }
+                    Ok(options)
+                })?
+            }
+            _ => return Err(unknown()),
+        }
+    }
+    Ok(value)
+}
+
 fn frame(r: &mut CborReader<'_>) -> D<Frame> {
     let (mut graph_value, mut node, mut at, mut instance) = (None, None, None, None);
-    let (mut parameters, mut locals) = (None, None);
+    let (mut parameters, mut locals, mut overlay_value) = (None, None, None);
     let mut map = MapIn::new(r, 7)?;
     while let Some(key) = map.next()? {
         let r = map.r();
@@ -1331,8 +1401,7 @@ fn frame(r: &mut CborReader<'_>) -> D<Frame> {
             3 => instance = Some(u32_value(r)?),
             4 => parameters = Some(scalar_pairs(r, MAX_VARIABLES)?),
             5 => locals = Some(scalar_pairs(r, MAX_VARIABLES)?),
-            // Field 6 is reserved for the frame's overlay of proposed nodes (ADR 0013 §5).
-            6 => return Err(DecodeError::Unsupported(OVERLAY)),
+            6 => overlay_value = Some(overlay(r)?),
             _ => return Err(unknown()),
         }
     }
@@ -1343,6 +1412,7 @@ fn frame(r: &mut CborReader<'_>) -> D<Frame> {
         instance: required(instance, "frame instance")?,
         parameters: required(parameters, "frame parameters")?,
         locals: required(locals, "frame locals")?,
+        overlay: overlay_value.unwrap_or_default(),
     })
 }
 
@@ -1399,6 +1469,22 @@ pub(crate) fn encode_input(value: &Input) -> Vec<u8> {
                 w.bytes(option.as_bytes());
             }
         }
+        Input::Propose {
+            choice_point,
+            options,
+            nodes,
+        } => {
+            w.array(4);
+            w.unsigned(1);
+            w.bytes(choice_point.as_bytes());
+            write_options(&mut w, options);
+            w.array(nodes.len() as u64);
+            for (id, passage) in nodes {
+                w.array(2);
+                w.bytes(id.as_bytes());
+                write_passage(&mut w, passage);
+            }
+        }
     }
     w.into_bytes()
 }
@@ -1410,8 +1496,14 @@ pub(crate) fn decode_input(r: &mut CborReader<'_>) -> D<Input> {
             choice_point: choice_point_id(r)?,
             options: array(r, MAX_OPTIONS, option_id)?,
         }),
-        // Tag 1 is reserved for recorded host proposals (ADR 0013 §5).
-        (1, _) => Err(DecodeError::Unsupported(PROPOSALS)),
+        (1, 4) => Ok(Input::Propose {
+            choice_point: choice_point_id(r)?,
+            options: array(r, MAX_PROPOSED_OPTIONS, option_plan)?,
+            nodes: array(r, MAX_PROPOSED_NODES, |r| {
+                exact_array(r, 2)?;
+                Ok((node_id(r)?, passage(r)?))
+            })?,
+        }),
         _ => Err(DecodeError::Schema("input")),
     }
 }

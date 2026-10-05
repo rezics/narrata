@@ -8,7 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArtifactId, ChoicePointId, CommitId, Error, ExecutionId, ObjectId, OptionId, Program, Result,
+    ArtifactId, ChoicePointId, CommitId, Error, ExecutionId, ObjectId, OptionId, Program,
+    ProposalRequest, Result,
     json::parse_json_limited,
     plan::NameTable,
     runtime::{Item, Machine, Step},
@@ -168,10 +169,31 @@ impl Session {
             choice_point,
             options,
         };
+        let parent = self.record(self.cursor)?;
         let step = Machine {
             program: &self.program,
         }
-        .choose(&self.record(self.cursor)?.state, &input)?;
+        .apply(&parent.id, &parent.state, &input)?;
+        self.cursor = self.insert(Some(self.cursor), Some(input), step.state)?;
+        self.cursor()
+    }
+
+    /// Records a host proposal at the displayed interaction, which stays the same with the
+    /// proposed options added. The same request after the same commit reuses its commit; a
+    /// stale `expected` commit or a rejected proposal leaves the session unchanged.
+    pub fn propose(&mut self, expected: &CommitId, request: &ProposalRequest) -> Result<CommitId> {
+        if self.cursor()? != *expected {
+            return Err(Error::new(
+                "stale_input",
+                "expected_commit",
+                "the displayed interaction is no longer current",
+            ));
+        }
+        let parent = self.record(self.cursor)?;
+        let (input, step) = Machine {
+            program: &self.program,
+        }
+        .propose(&parent.id, &parent.state, request)?;
         self.cursor = self.insert(Some(self.cursor), Some(input), step.state)?;
         self.cursor()
     }
@@ -204,7 +226,7 @@ impl Session {
                         self.record(*self.index.get(parent).ok_or_else(|| {
                             Error::new("state", "commit", "missing parent commit")
                         })?)?;
-                    machine.choose(&parent.state, input)?
+                    machine.apply(&parent.id, &parent.state, input)?
                 }
                 _ => machine.initial()?,
             };
@@ -486,7 +508,7 @@ impl Session {
                     let bytes = inputs
                         .get(input_id)
                         .ok_or_else(|| Error::new("save", &path, "missing input object"))?;
-                    let (input, _) = decode_input(&program, &parent.state, bytes)?;
+                    let (input, _) = decode_input(&program, &parent.id, &parent.state, bytes)?;
                     used_inputs.insert(*input_id);
                     Some(input)
                 }

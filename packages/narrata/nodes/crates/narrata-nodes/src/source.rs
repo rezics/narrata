@@ -201,7 +201,7 @@ pub struct ChoicePointSource {
     pub min: u16,
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub max: u16,
-    /// Reserved for host proposals (ADR 0013 §5); not supported yet.
+    /// Whether the host may propose options and passages here at run time (ADR 0013 §5).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub proposals: bool,
     pub options: Vec<OptionSource>,

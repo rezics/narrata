@@ -311,11 +311,9 @@ fn branch_targets_must_exist_in_the_same_graph() {
 }
 
 #[test]
-fn dynamic_proposals_are_reserved() {
-    assert_eq!(
-        rejected(|_, main, _| set(main, ROUTE, "proposals", json!(true))),
-        "unsupported"
-    );
+fn accepting_proposals_is_part_of_the_artifact() {
+    let open = try_variant(|_, main, _| set(main, ROUTE, "proposals", json!(true))).unwrap();
+    assert_ne!(open.program.artifact_id(), compiled().program.artifact_id());
 }
 
 #[test]
