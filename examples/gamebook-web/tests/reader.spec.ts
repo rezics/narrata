@@ -367,7 +367,7 @@ test("clearing the Wasm cache reloads the same node session from IndexedDB", asy
       return { before, after, loads: store.reads.loads };
     } finally { await book.close(); store.close(); }
   });
-  expect(result.after).toBe(result.before);
+  expect(result.after).toEqual(result.before);
   expect(result.loads).toBeGreaterThan(0);
   expect(checkedBook(result.after).view.frames).toHaveLength(2);
 });
