@@ -1,12 +1,13 @@
 mod allocator;
 
 use std::{
+    collections::BTreeSet,
     fs,
     num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering::Relaxed},
+        atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed},
     },
     time::{Duration, Instant},
 };
@@ -40,6 +41,7 @@ struct ArtifactInfo {
 struct Reads {
     count: AtomicUsize,
     bytes: AtomicUsize,
+    elapsed_ns: AtomicU64,
 }
 
 struct DirectorySource {
@@ -49,11 +51,16 @@ struct DirectorySource {
 
 impl ChunkSource for DirectorySource {
     fn load(&self, id: &ObjectId) -> Result<Vec<u8>> {
+        let started = Instant::now();
         let bytes = fs::read(
             self.directory
                 .join(format!("{}.cbor", hex::encode(id.as_bytes()))),
         )
         .map_err(io)?;
+        self.reads.elapsed_ns.fetch_add(
+            u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            Relaxed,
+        );
         self.reads.count.fetch_add(1, Relaxed);
         self.reads.bytes.fetch_add(bytes.len(), Relaxed);
         Ok(bytes)
@@ -154,9 +161,17 @@ struct Report {
     completed_choices: usize,
     stop_reason: String,
     choose: Latencies,
+    prefetch: Latencies,
+    prefetch_max_loaded_chunks: usize,
+    choose_with_chunk_load: Latencies,
+    choose_without_chunk_load: Latencies,
+    play_chunk_read_us: f64,
     play: Measurement,
+    checkpoint: Measurement,
+    checkpoint_bytes: usize,
     play_chunk_reads: usize,
     play_max_loaded_chunks: usize,
+    play_max_frame_chunks: usize,
     final_commit: String,
     final_state: String,
     scan: Measurement,
@@ -200,11 +215,21 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
     let first_screen_chunk_reads = reads.count.load(Relaxed);
     let first_screen_transfer_bytes = open_transfer_bytes + reads.bytes.load(Relaxed);
     let mut samples = Vec::with_capacity(steps);
+    let mut cold_samples = Vec::new();
+    let mut warm_samples = Vec::new();
+    let mut prefetch_samples = Vec::with_capacity(steps);
+    let mut prefetch_max_loaded_chunks = 0;
     let before_reads = reads.count.load(Relaxed);
+    let before_read_ns = reads.elapsed_ns.load(Relaxed);
     let interval = Interval::start();
     let mut stop_reason = "requested_choices_completed".to_owned();
     let mut max_loaded = program.loaded_chunks();
+    let mut max_frame_chunks = 0;
     for _ in 0..steps {
+        let started = Instant::now();
+        session.prefetch()?;
+        prefetch_samples.push(started.elapsed());
+        prefetch_max_loaded_chunks = prefetch_max_loaded_chunks.max(program.loaded_chunks());
         let state = session.state()?;
         if state.finished.is_some() {
             stop_reason = "finished".into();
@@ -225,11 +250,32 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
         let (point, option) = (point.id, point.options[index].id);
         drop(graph);
         let expected = session.cursor()?;
+        let choice_reads = reads.count.load(Relaxed);
         let started = Instant::now();
         match session.choose(&expected, point, vec![option]) {
             Ok(_) => {
-                samples.push(started.elapsed());
+                let elapsed = started.elapsed();
+                samples.push(elapsed);
+                if reads.count.load(Relaxed) == choice_reads {
+                    warm_samples.push(elapsed);
+                } else {
+                    cold_samples.push(elapsed);
+                }
                 max_loaded = max_loaded.max(program.loaded_chunks());
+                let frame_chunks = session
+                    .state()?
+                    .frames
+                    .iter()
+                    .map(|frame| {
+                        program
+                            .manifest()
+                            .graphs
+                            .get(&frame.graph)
+                            .map(|entry| entry.chunk)
+                            .ok_or_else(|| fail("frame graph is missing"))
+                    })
+                    .collect::<Result<BTreeSet<_>>>()?;
+                max_frame_chunks = max_frame_chunks.max(frame_chunks.len());
             }
             Err(error) if error.code == "history_limit" => {
                 stop_reason = error.code;
@@ -241,8 +287,19 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
     let play = interval.finish();
     let completed_choices = samples.len();
     let play_chunk_reads = reads.count.load(Relaxed) - before_reads;
+    let play_chunk_read_us = (reads.elapsed_ns.load(Relaxed) - before_read_ns) as f64 / 1000.0;
     let final_commit = session.cursor()?.to_string();
     let final_state = session.state()?.id().to_string();
+    let interval = Interval::start();
+    let exported = session.export()?;
+    let checkpoint_bytes = exported.len() / 2;
+    let restored = Session::restore(program.clone(), &exported)?;
+    if restored.cursor()? != session.cursor()? || restored.state()? != session.state()? {
+        return Err(fail("checkpoint changed the long-play state"));
+    }
+    let checkpoint = interval.finish();
+    drop(restored);
+    drop(exported);
     drop(session);
     program.set_chunk_capacity(capacity);
     let before_reads = reads.count.load(Relaxed);
@@ -269,9 +326,17 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
         completed_choices,
         stop_reason,
         choose: latencies(&mut samples),
+        prefetch: latencies(&mut prefetch_samples),
+        prefetch_max_loaded_chunks,
+        choose_with_chunk_load: latencies(&mut cold_samples),
+        choose_without_chunk_load: latencies(&mut warm_samples),
+        play_chunk_read_us,
         play,
+        checkpoint,
+        checkpoint_bytes,
         play_chunk_reads,
         play_max_loaded_chunks: max_loaded,
+        play_max_frame_chunks: max_frame_chunks,
         final_commit,
         final_state,
         scan,
