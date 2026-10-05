@@ -13,10 +13,14 @@ use narrata_core::{
 fuzz_target!(|data: &[u8]| {
     let first = data.first().copied().unwrap_or(0);
     let hard_limit = u64::from(first);
-    if let Ok(program) = load_program(
-        &encode_program_artifact(&narrata_testkit::generator::hello_v0()),
-        &Default::default(),
-    ) && let Ok(state) = new_execution(&program, ExecutionId::from_u128(u128::from(first)))
+    // Odd seeds run the text-free format 1 story (ADR 0018).
+    let artifact = if first % 2 == 0 {
+        narrata_testkit::generator::hello_v0()
+    } else {
+        narrata_testkit::generator::hello_v1()
+    };
+    if let Ok(program) = load_program(&encode_program_artifact(&artifact), &Default::default())
+        && let Ok(state) = new_execution(&program, ExecutionId::from_u128(u128::from(first)))
     {
         let limits = MacrostepLimits {
             max_instructions: hard_limit,

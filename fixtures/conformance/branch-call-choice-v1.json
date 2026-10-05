@@ -1,0 +1,23 @@
+{
+  "schema": 0,
+  "story": "branch-call-choice-v1",
+  "execution_id": "execution:00000000000000000000000000000002",
+  "inputs": [
+    { "kind": "start", "request_id": "input:0000000000000000000000000000000a" },
+    { "kind": "advance", "request_id": "input:0000000000000000000000000000000b" },
+    { "kind": "select", "request_id": "input:0000000000000000000000000000000c", "choice_id": "choice:00000000000000000000000000000001" },
+    { "kind": "advance", "request_id": "input:0000000000000000000000000000000d" }
+  ],
+  "expected_state_digests": [
+    "state:52b0a826e9a445cef77b12cac44f6f0f5a32b7577f895c303338104847fe8e6a",
+    "state:77e5d11c9bf2f4b5268e479c820e726dd0520b232fe09ac73bacf71662afa4c3",
+    "state:15174d36f4f26b6a68c189adcecf8e54b1b6ad4caf38f205f557e18288501b37",
+    "state:db968bb31223df91ec6e3f25bc5cb2515e532473841a2fc00b8ccf08da6e20e2"
+  ],
+  "expected_receipt_digests": [
+    "receipt:d199e3951e13c3ff06d291351918ca02e9d1fd5cd72adf76151bedbba6d12338",
+    "receipt:41680d438876bc7791fc33e284440c00508f2b3e2c22195a114a1dc328639085",
+    "receipt:9a91a9d585f5abd04e764cb38acdb98a106bd3f5cc2323fe43b873153ce39862",
+    "receipt:83dcd383a17243e5567d57f50287de522ff50db062c7f53c895bd667bbbe714f"
+  ]
+}

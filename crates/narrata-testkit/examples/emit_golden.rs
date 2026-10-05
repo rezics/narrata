@@ -9,7 +9,7 @@ use narrata_core::{
 };
 use narrata_testkit::{
     backend::{ConformanceBackend, NativeBackend},
-    generator::hello_v0,
+    generator::{hello_v0, hello_v1},
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -21,24 +21,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("VALUE_HEX={}", hex::encode(&value_bytes));
     println!("VALUE_SHA256={}", hex::encode(sha256(&value_bytes)));
 
-    let artifact_bytes = encode_program_artifact(&hello_v0());
-    println!("PROGRAM_HEX={}", hex::encode(&artifact_bytes));
-    let program = load_program(&artifact_bytes, &Default::default())?;
-    let state = Arc::new(new_execution(&program, ExecutionId::from_u128(1))?);
-    let draft = NativeBackend.transition(
-        program,
-        state,
-        CheckedRuntimeInput::start(InputId::from_u128(1)),
-        Default::default(),
-        SliceBudget::unlimited(),
-    )?;
-    println!(
-        "SNAPSHOT_HEX={}",
-        hex::encode(export_snapshot(draft.next_state())?)
-    );
-    println!(
-        "RECEIPT_HEX={}",
-        hex::encode(encode_receipt(draft.receipt()))
-    );
+    // Format 0 (`program-v0`, `snapshot-v0`, `receipt-v0`) and the text-free format 1
+    // (`program-v1`, `snapshot-v1`, `receipt-v0-text-free`) of the same story and inputs.
+    for (suffix, artifact) in [("", hello_v0()), ("_V1", hello_v1())] {
+        let artifact_bytes = encode_program_artifact(&artifact);
+        println!("PROGRAM{suffix}_HEX={}", hex::encode(&artifact_bytes));
+        let program = load_program(&artifact_bytes, &Default::default())?;
+        let state = Arc::new(new_execution(&program, ExecutionId::from_u128(1))?);
+        let draft = NativeBackend.transition(
+            program,
+            state,
+            CheckedRuntimeInput::start(InputId::from_u128(1)),
+            Default::default(),
+            SliceBudget::unlimited(),
+        )?;
+        println!(
+            "SNAPSHOT{suffix}_HEX={}",
+            hex::encode(export_snapshot(draft.next_state())?)
+        );
+        println!(
+            "RECEIPT{suffix}_HEX={}",
+            hex::encode(encode_receipt(draft.receipt()))
+        );
+    }
     Ok(())
 }

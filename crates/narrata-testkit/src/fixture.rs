@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use crate::{
     backend::{BackendError, ConformanceBackend, NativeBackend},
-    generator::{branch_call_choice_v0, hello_v0},
+    generator::{branch_call_choice_v0, branch_call_choice_v1, hello_v0, hello_v1},
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -95,6 +95,8 @@ pub fn run_fixture_with_backend(
     let artifact = match fixture.story.as_str() {
         "hello-v0" => hello_v0(),
         "branch-call-choice-v0" => branch_call_choice_v0(),
+        "hello-v1" => hello_v1(),
+        "branch-call-choice-v1" => branch_call_choice_v1(),
         other => return Err(FixtureError::UnknownStory(other.to_owned())),
     };
     let bytes = encode_program_artifact(&artifact);

@@ -19,6 +19,8 @@ fn repository_conformance_fixtures_match_all_slice_budgets() {
     for relative in [
         "fixtures/conformance/hello-v0.json",
         "fixtures/conformance/branch-call-choice-v0.json",
+        "fixtures/conformance/hello-v1.json",
+        "fixtures/conformance/branch-call-choice-v1.json",
     ] {
         let fixture = load_fixture(&root.join(relative)).unwrap();
         let baseline =
