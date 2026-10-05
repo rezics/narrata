@@ -51,6 +51,7 @@ export default function GraphMap({ artifactId, graphs, resolver, onSelect, onRea
         <span data-testid="graph-level">{screen ? levelNames[screen.level] : "正在载入"}</span></nav>
       <AuthorGraph options={options} onController={setController} onError={setMountError} className="author-graph" style={{ height: 480, position: "relative" }} label="故事结构关系" />
       <p role="status" data-testid="graph-status">{snapshot.phase === "loading" ? "正在载入图……" : screen ? `${screen.nodes.length} 个节点 · ${screen.edges.length} 条关系` : "正在打开图……"}</p>
+      {screen?.level === "node" ? <p className="graph-label-hint">叠点数字表示重合的节点数；可从下方列表分别检查。</p> : null}
       {snapshot.limited ? <p role="status">此层超过绘制上限，保留上一层视图。请选择较小的单元。</p> : null}
       {snapshot.error || mountError ? <p role="alert">无法显示此图。{(snapshot.error ?? mountError)?.message}</p> : null}
       {screen ? <details className="graph-list" open><summary>图中单元（{screen.nodes.length}）</summary><ul>

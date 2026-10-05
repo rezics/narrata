@@ -1,8 +1,51 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createServer } from "node:http";
 
 const root = resolve(import.meta.dirname, "../../..");
+
+test("production reader and lazy author graph share the host React instance", async ({ page }) => {
+  const directory = resolve(root, "examples/gamebook-web/dist");
+  const server = createServer((request, response) => {
+    try {
+      const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+      const file = resolve(directory, pathname === "/" ? "index.html" : `.${pathname}`);
+      if (!file.startsWith(directory + "/") && !file.startsWith(directory + "\\")) { response.writeHead(400).end(); return; }
+      response.setHeader("Content-Type", file.endsWith(".wasm") ? "application/wasm" : file.endsWith(".js") ? "text/javascript" : file.endsWith(".css") ? "text/css" : file.endsWith(".html") ? "text/html" : "application/octet-stream");
+      response.end(readFileSync(file));
+    } catch { response.writeHead(404).end(); }
+  });
+  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Production server address unavailable");
+  const errors: string[] = [];
+  const requests: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("request", request => requests.push(request.url()));
+  try {
+    await page.goto(`http://127.0.0.1:${address.port}/`);
+    await expect(page.getByRole("heading", { name: "旧驿站", exact: true })).toBeVisible();
+    expect(requests.some(url => /graph-map|renderer|\.cbor/.test(url))).toBe(false);
+    await page.getByRole("button", { name: "结构图", exact: true }).click();
+    await expect(page.getByTestId("graph-level")).toHaveText("作品");
+    await page.locator(".graph-list button").first().click();
+    await expect(page.getByTestId("graph-level")).toHaveText("作者簇");
+    await page.locator(".graph-list button").first().click();
+    await expect(page.getByTestId("graph-level")).toHaveText("节点");
+    await expect(page.getByTestId("graph-status")).not.toHaveText("正在载入图……");
+    await expect(page.locator(".author-graph canvas")).not.toHaveCount(0);
+    await expect.poll(() => page.locator(".author-graph canvas.sigma-labels").evaluate(element => {
+      const canvas = element as HTMLCanvasElement, context = canvas.getContext("2d");
+      if (!context) return 0;
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let painted = 0;
+      for (let index = 3; index < pixels.length; index += 4) if (pixels[index]! > 0) painted++;
+      return painted;
+    })).toBeGreaterThan(20);
+    expect(errors).toEqual([]);
+  } finally { await page.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
 
 test("author view loads after reading, switches three levels, resolves titles and leaves progress untouched", async ({ page }) => {
   const requests: string[] = [];
