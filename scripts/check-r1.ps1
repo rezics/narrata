@@ -6,8 +6,8 @@ if ($IsWindows -and (Get-NetTCPConnection -State Listen -LocalPort 4173 -ErrorAc
 }
 
 cargo fmt --all --check
-cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools --all-targets --all-features -- -D warnings
-cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools
+cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local --all-targets --all-features -- -D warnings
+cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local
 cargo check -p narrata-nodes-wasm --target wasm32-unknown-unknown
 
 Push-Location examples/gamebook-web
@@ -21,4 +21,9 @@ try {
     Pop-Location
 }
 
-git diff --exit-code -- packages/narrata/nodes/schemas examples/gamebook-web/src/generated products/gamebook-demo
+# Generated files must be committed as generated: changed and new untracked files both count.
+$drift = git status --porcelain --untracked-files=all -- packages/narrata/nodes/schemas examples/gamebook-web/src/generated products/gamebook-demo
+if ($drift) {
+    $drift
+    throw "Generated files differ from the committed ones; regenerate and commit them."
+}

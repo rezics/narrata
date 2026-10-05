@@ -600,7 +600,10 @@ dependencies = [
 name = "narrata-nodes-wasm"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "narrata-content-local",
+ "narrata-kernel",
  "narrata-nodes",
+ "serde",
  "serde_json",
  "wasm-bindgen",
 ]

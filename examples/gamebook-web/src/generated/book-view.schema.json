@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "BookView",
-  "description": "Authoritative read model shared by browser transports and generated TypeScript validation.",
+  "description": "What the browser reader receives: the session view, the reading page of the current\npassage, and the text-free graph analysis.",
   "type": "object",
   "properties": {
     "diagnostics": {
@@ -16,6 +16,13 @@
         "$ref": "#/$defs/GraphAnalysis"
       }
     },
+    "page": {
+      "description": "The presentation of the step that entered the current passage (or ended the story),\nfollowed by those of the local choices made in it since.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PresentationItem"
+      }
+    },
     "view": {
       "$ref": "#/$defs/SessionView"
     }
@@ -23,34 +30,47 @@
   "additionalProperties": false,
   "required": [
     "view",
+    "page",
     "graphs",
     "diagnostics"
   ],
   "$defs": {
-    "ActionView": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "CommitId": {
+      "type": "string",
+      "pattern": "^commit:[0-9a-f]{64}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
       "type": "object",
       "properties": {
-        "enabled": {
-          "type": "boolean"
+        "key": {
+          "$ref": "#/$defs/ContentKey"
         },
-        "id": {
-          "type": "string"
-        },
-        "label": {
-          "type": "string"
-        },
-        "reason": {
-          "type": [
-            "string",
-            "null"
-          ]
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
         }
       },
       "additionalProperties": false,
       "required": [
-        "id",
-        "label",
-        "enabled"
+        "provider",
+        "key"
       ]
     },
     "Diagnostic": {
@@ -76,11 +96,26 @@
     "EdgeAnalysis": {
       "type": "object",
       "properties": {
+        "key": {
+          "description": "An option alias, an outcome name, or `true`/`false` for conditions.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/EdgeKind"
         },
         "label": {
-          "type": "string"
+          "description": "An option label.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "target": {
           "$ref": "#/$defs/NodeAddress"
@@ -89,13 +124,36 @@
       "additionalProperties": false,
       "required": [
         "kind",
-        "label",
         "target"
       ]
+    },
+    "EdgeKind": {
+      "type": "string",
+      "enum": [
+        "next",
+        "choice",
+        "condition",
+        "return",
+        "call"
+      ]
+    },
+    "ExecutionId": {
+      "type": "string",
+      "pattern": "^execution:[0-9a-f]{32}$"
     },
     "FrameView": {
       "type": "object",
       "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "graph": {
           "$ref": "#/$defs/GraphRef"
         },
@@ -104,6 +162,12 @@
           "format": "uint32",
           "minimum": 0
         },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "locals": {
           "type": "array",
           "items": {
@@ -111,7 +175,7 @@
           }
         },
         "node": {
-          "type": "string"
+          "$ref": "#/$defs/NodeId"
         },
         "parameters": {
           "type": "array",
@@ -133,7 +197,10 @@
       "type": "object",
       "properties": {
         "entry": {
-          "type": "string"
+          "$ref": "#/$defs/NodeId"
+        },
+        "exported": {
+          "type": "boolean"
         },
         "nodes": {
           "type": "array",
@@ -145,18 +212,26 @@
           "$ref": "#/$defs/GraphRef"
         },
         "title": {
-          "type": "string"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "reference",
-        "title",
         "entry",
+        "exported",
         "nodes"
       ]
     },
     "GraphRef": {
+      "description": "A graph of one package instance. Package aliases and graph names are composition\nstructure, so unlike node aliases they are part of the artifact identity.",
       "type": "object",
       "properties": {
         "graph": {
@@ -178,34 +253,168 @@
         "current": {
           "type": "boolean"
         },
+        "depth": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "graph": {
+          "description": "Where the commit waits, or the node that finished the story.",
+          "$ref": "#/$defs/GraphRef"
+        },
         "id": {
-          "type": "string"
+          "$ref": "#/$defs/CommitId"
         },
         "instance": {
           "type": "integer",
           "format": "uint32",
           "minimum": 0
         },
-        "node": {
-          "$ref": "#/$defs/NodeAddress"
-        },
-        "parent": {
+        "key": {
           "type": [
             "string",
             "null"
           ]
         },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CommitId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "title": {
-          "type": "string"
+          "description": "The waiting passage's title, or the ending's title.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "id",
-        "title",
+        "depth",
+        "graph",
         "node",
         "instance",
+        "finished",
         "current"
+      ]
+    },
+    "Interaction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "description": "Arguments for option labels and disabled reasons.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/ViewScalar"
+              }
+            },
+            "choice_point": {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "key": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "choose"
+            },
+            "max": {
+              "type": "integer",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0
+            },
+            "min": {
+              "type": "integer",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0
+            },
+            "node": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "options": {
+              "description": "Visible options in order; hidden ones are left out.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OptionView"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph",
+            "node",
+            "choice_point",
+            "min",
+            "max",
+            "args",
+            "options"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "body": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Segment"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "finished"
+            },
+            "outcome": {
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ContentRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "outcome"
+          ]
+        }
       ]
     },
     "NodeAddress": {
@@ -215,7 +424,7 @@
           "type": "string"
         },
         "node": {
-          "type": "string"
+          "$ref": "#/$defs/NodeId"
         },
         "package": {
           "type": "string"
@@ -231,6 +440,17 @@
     "NodeAnalysis": {
       "type": "object",
       "properties": {
+        "callee": {
+          "description": "The graph a call runs.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GraphRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "edges": {
           "type": "array",
           "items": {
@@ -238,48 +458,249 @@
           }
         },
         "id": {
-          "type": "string"
+          "$ref": "#/$defs/NodeId"
         },
-        "label": {
-          "type": "string"
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "type_id": {
-          "type": "string"
+        "kind": {
+          "$ref": "#/$defs/NodeKind"
+        },
+        "outcome": {
+          "description": "The outcome a return reports.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "A passage's title.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "id",
-        "type_id",
-        "label",
+        "kind",
         "edges"
       ]
     },
-    "ScalarType": {
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "NodeKind": {
       "type": "string",
       "enum": [
-        "bool",
-        "int",
-        "text"
+        "passage",
+        "branch",
+        "mutate",
+        "call",
+        "return"
+      ]
+    },
+    "OptionId": {
+      "type": "string",
+      "pattern": "^option:[0-9a-f]{32}$"
+    },
+    "OptionView": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/OptionId"
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/OutcomeKind"
+        },
+        "reason": {
+          "description": "Only for a disabled option that declares a reason.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "enabled",
+        "outcome"
+      ]
+    },
+    "OutcomeKind": {
+      "type": "string",
+      "enum": [
+        "local",
+        "branch"
+      ]
+    },
+    "PresentationItem": {
+      "description": "One item to present. `(execution, commit, occurrence)` is the presentation key that\ngenerative content providers cache by.",
+      "type": "object",
+      "properties": {
+        "args": {
+          "description": "The passage's named arguments when the item was presented.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ViewScalar"
+          }
+        },
+        "commit": {
+          "description": "The commit whose step presented the item.",
+          "$ref": "#/$defs/CommitId"
+        },
+        "content": {
+          "$ref": "#/$defs/Presented"
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "occurrence": {
+          "description": "The item's position in that commit's presentation.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "occurrence",
+        "role",
+        "node",
+        "content",
+        "args"
+      ]
+    },
+    "Presented": {
+      "description": "A title is a reference; body and reply items are segments.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Segment"
+        },
+        {
+          "$ref": "#/$defs/ContentRef"
+        }
+      ]
+    },
+    "ProductView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ]
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "Role": {
+      "type": "string",
+      "enum": [
+        "title",
+        "body",
+        "reply"
+      ]
+    },
+    "Segment": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/ContentRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "unit"
       ]
     },
     "SessionView": {
       "type": "object",
       "properties": {
-        "actions": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ActionView"
-          }
-        },
         "artifact_id": {
-          "type": "string"
+          "$ref": "#/$defs/ArtifactId"
         },
         "cursor": {
-          "type": "string"
+          "$ref": "#/$defs/CommitId"
         },
-        "finished": {
-          "type": "boolean"
+        "depth": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "execution": {
+          "$ref": "#/$defs/ExecutionId"
         },
         "frames": {
           "type": "array",
@@ -293,78 +714,133 @@
             "$ref": "#/$defs/HistoryView"
           }
         },
-        "instance": {
-          "type": "integer",
-          "format": "uint32",
-          "minimum": 0
+        "interaction": {
+          "$ref": "#/$defs/Interaction"
         },
-        "node": {
-          "$ref": "#/$defs/NodeAddress"
-        },
-        "outcome": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "paragraphs": {
+        "presentation": {
+          "description": "What to show since the previous interaction, recomputed from the parent state and the\ninput rather than stored.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/PresentationItem"
           }
         },
-        "product_title": {
-          "type": "string"
+        "product": {
+          "$ref": "#/$defs/ProductView"
         },
         "shared": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/VariableView"
           }
-        },
-        "title": {
-          "type": "string"
         }
       },
       "additionalProperties": false,
       "required": [
         "artifact_id",
+        "execution",
         "cursor",
-        "product_title",
-        "node",
-        "instance",
-        "title",
-        "paragraphs",
-        "actions",
-        "finished",
+        "depth",
+        "product",
+        "presentation",
+        "interaction",
         "shared",
         "frames",
         "history"
       ]
     },
     "VariableView": {
-      "description": "Scalar payloads are formatted strings, so 64-bit integers never lose precision in JavaScript.",
       "type": "object",
       "properties": {
-        "kind": {
-          "$ref": "#/$defs/ScalarType"
-        },
         "label": {
-          "type": "string"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
           "type": "string"
         },
         "value": {
-          "type": "string"
+          "$ref": "#/$defs/ViewScalar"
         }
       },
       "additionalProperties": false,
       "required": [
         "name",
-        "label",
-        "kind",
         "value"
+      ]
+    },
+    "ViewScalar": {
+      "description": "Exchange form of a value. Integers are decimal strings so that 64-bit values survive\nJavaScript; `ref` values are resolved by the host's content provider.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "int"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ref"
+            },
+            "value": {
+              "$ref": "#/$defs/ContentRef"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        }
       ]
     }
   }

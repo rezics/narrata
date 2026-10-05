@@ -60,6 +60,20 @@ button { transition: background-color 130ms ease, border-color 130ms ease; }
 .choice:disabled { color: #8a9186; border-color: #d2d6ca; }
 .choice:disabled svg { opacity: .35; }
 .choice-reason { margin: 7px 4px 0; color: #8a7967; font-size: 12px; line-height: 1.7; }
+.prose h2.passage-subtitle { font: 600 26px/1.5 var(--serif); letter-spacing: 3px; text-align: center; margin: 30px 0 22px; }
+.prose .reply { margin: 0 0 24px; padding: 2px 0 2px 22px; border-left: 2px solid #c79a78; color: #4b4136; }
+.prose .reply p { text-indent: 0; margin-bottom: 12px; }
+.prose .reply p:last-child { margin-bottom: 0; }
+.prose.lead-in { color: #6b7068; font-size: 17px; margin-bottom: 30px; }
+.prose .missing { color: #9b6a4c; font-size: 14px; text-indent: 0; }
+.choices.multi { border: 0; padding: 0; margin-inline: 0; }
+.choices.multi legend { padding: 0; margin-bottom: 15px; color: #536e62; font: 14px/1.6 var(--serif); letter-spacing: 1px; }
+.choice-check { justify-content: flex-start; cursor: pointer; }
+.choice-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+.choice-check:has(input:checked) { background: #eaf0e7; border-color: var(--accent); }
+.choice-check:has(input:disabled) { cursor: default; color: #8a9186; border-color: #d2d6ca; }
+.choice-check:has(input:focus-visible) { outline: 2px solid #b56c40; outline-offset: 4px; }
+.choice-submit { justify-self: end; margin-top: 6px; }
 .reading-note { color: #939489; font: 13px/1.8 var(--serif); letter-spacing: 1px; margin: 19px 5px 0; }
 .reading-footer { min-height: 104px; border-top: 1px solid var(--rule); margin: 0 4px; padding: 22px 45px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .outline-button, .primary-button { display: flex; align-items: center; justify-content: center; gap: 13px; border-radius: 3px; padding: 13px 19px; min-height: 50px; font-family: var(--serif); font-size: 17px; }

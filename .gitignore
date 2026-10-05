@@ -9,7 +9,6 @@
 /examples/gamebook-web/node_modules/
 /examples/gamebook-web/dist/
 /examples/gamebook-web/src/generated/wasm/
-/examples/gamebook-web/src/generated/story.nar.json
-/examples/gamebook-web/src/generated/story.nar.analysis.json
+/examples/gamebook-web/src/generated/story/
 /examples/gamebook-web/test-results/
 /examples/gamebook-web/playwright-report/

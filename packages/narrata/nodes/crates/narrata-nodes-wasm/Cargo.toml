@@ -1,6 +1,6 @@
 [package]
 name = "narrata-nodes-wasm"
-description = "Browser binding for the standalone Narrata node Gamebook profile"
+description = "Browser binding for Narrata R2 Gamebook sessions and the local content provider"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +11,10 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+narrata-content-local = { path = "../../../tooling/crates/narrata-content-local", version = "=0.1.0-alpha.1" }
+narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
 narrata-nodes = { path = "../narrata-nodes", version = "=0.1.0-alpha.1" }
+serde.workspace = true
 serde_json.workspace = true
 wasm-bindgen.workspace = true
 
