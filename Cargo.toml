@@ -13,6 +13,7 @@ members = [
   "packages/narrata/kernel/crates/narrata-storage",
   "packages/narrata/kernel/crates/narrata-storage-sqlite",
   "packages/narrata/kernel/crates/narrata-storage-host",
+  "packages/narrata/kernel/js/browser/counter",
   "packages/narrata/kernel/crates/narrata-history",
   "packages/narrata/nodes/crates/narrata-nodes",
   "packages/narrata/nodes/crates/narrata-nodes-wasm",

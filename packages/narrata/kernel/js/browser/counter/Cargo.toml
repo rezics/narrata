@@ -1,0 +1,20 @@
+[package]
+name = "narrata-storage-browser-counter"
+description = "Counter sessions over the storage cache, exported to JavaScript for the IndexedDB browser tests"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+narrata-history = { path = "../../../crates/narrata-history", version = "=0.1.0-alpha.1", features = ["testing"] }
+narrata-storage-host = { path = "../../../crates/narrata-storage-host", version = "=0.1.0-alpha.1" }
+wasm-bindgen.workspace = true
+
+[lints]
+workspace = true

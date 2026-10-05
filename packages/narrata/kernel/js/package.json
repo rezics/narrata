@@ -1,0 +1,21 @@
+{
+  "name": "@narrata/storage-indexeddb",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "description": "IndexedDB host for the kernel's storage cache (ADR 0017)",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "build:counter": "node scripts/build-counter.mjs",
+    "test:browser": "npm run build:counter && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0",
+    "fake-indexeddb": "6.2.5",
+    "typescript": "~5.9.3",
+    "vite": "8.2.2",
+    "vitest": "5.0.3"
+  }
+}

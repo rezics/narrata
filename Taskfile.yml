@@ -19,6 +19,15 @@ tasks:
   check:r1:
     desc: Node stack and Web Gamebook gate (Rust, Wasm, browser regressions, generated-file drift)
     cmds: [pwsh -NoProfile -File scripts/check-r1.ps1]
+  check:web-storage:
+    desc: IndexedDB storage adapter (type check, vitest) and its Chromium regressions on port 4183
+    dir: packages/narrata/kernel/js
+    cmds:
+      - npm ci
+      - npm run check
+      - npm test
+      - npx playwright install chromium
+      - npm run test:browser
   bench:g2:
     desc: Persistence and kernel benchmarks
     cmds: [pwsh -NoProfile -File scripts/benchmark-g2.ps1]

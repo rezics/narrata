@@ -9,8 +9,11 @@
 | --- | --- | --- | --- |
 | Rust | 1.98.0，组件 clippy、rustfmt，目标 `wasm32-wasip1`；Web 构建与 `check:g2` 另需 `wasm32-unknown-unknown` | 引擎、CLI、绑定 | `rust-toolchain.toml` |
 | PowerShell | 7.x | 现有 gate 脚本 `scripts/check-*.ps1` | 本页 |
-| Node.js / npm | CI 用 24，本机 26 | `examples/gamebook-web`、TypeScript 绑定 | `.github/workflows/ci.yml` |
-| Playwright | 1.63.0 | Web 阅读器的浏览器回归 | `examples/gamebook-web/package.json` |
+| Node.js / npm | CI 用 24，本机 26 | `examples/gamebook-web`、TypeScript 绑定、IndexedDB 存储适配器 | `.github/workflows/ci.yml` |
+| Playwright | 1.63.0 | Web 阅读器与 IndexedDB 存储适配器的浏览器回归 | `examples/gamebook-web/package.json`、`packages/narrata/kernel/js/package.json` |
+| Vite | 8.2.2 | Web 阅读器构建、存储适配器浏览器测试页 | 同上 |
+| Vitest、fake-indexeddb | 5.0.3、6.2.5 | IndexedDB 存储适配器的单元测试 | `packages/narrata/kernel/js/package.json` |
+| wasm-bindgen CLI | 与 `Cargo.lock` 中的 `wasm-bindgen` 相同 | 为 Web 生成 Wasm 的 JS 绑定；构建脚本按需装进 `.temp/wasm-tools` | `Cargo.lock` |
 | Bun | 1.4.0 | `goalctl`、文档检查及其测试 | 本页 |
 | Windows Terminal | 本机安装 | `task goal:manager` 为每个 manager 开一个标签页 | [manager 章程](../goals/manager.md#启动-manager) |
 | Task（go-task） | 3.52.0 | 统一命令入口 | `Taskfile.yml` |
@@ -23,6 +26,7 @@
 | --- | --- | --- |
 | `task check:g1` … `task check:g5` | 累进的 Stage 1–5 gate：fmt、clippy、全 workspace 测试，逐级加上存储、Effect、Statechart、迁移与协议测试 | 改动 `crates/**` 时运行到受影响的级别；合并前 `g5` |
 | `task check:r1` | 节点栈与 Web Gamebook：Rust 测试、Wasm 构建、浏览器回归、生成文件漂移 | 改动 `packages/narrata/**`、`products/**`、`examples/gamebook-web/**` |
+| `task check:web-storage` | IndexedDB 存储适配器：类型检查、Vitest、计数器 Wasm 模块上的 Chromium 回归（端口 4183） | 改动 `packages/narrata/kernel/js/**` 或 `narrata-storage-host` |
 | `task bench:g2` | 持久化与内核基准 | 改动存储或快照路径时对比 |
 | `task docs:check` | Markdown 相对链接与标题锚点 | 任何文档改动 |
 | `task test:scripts` | `goalctl` 与文档检查的 Bun 测试 | 改动 `scripts/**` |
