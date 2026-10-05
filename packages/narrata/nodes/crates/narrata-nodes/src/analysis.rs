@@ -1,7 +1,7 @@
 //! Text-free structural analysis for graph inspectors: nodes, edges and structural
 //! reachability. Labels are content references and aliases, resolved by the host.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use narrata_kernel::content::ContentRef;
 use schemars::JsonSchema;
@@ -199,12 +199,13 @@ pub fn analyze(program: &Program, names: Option<&NameTable>) -> Result<Analysis>
             nodes.push(node);
         }
         let mut reachable = BTreeSet::new();
+        let by_id: BTreeMap<_, _> = nodes.iter().map(|node| (node.id, node)).collect();
         let mut queue = vec![graph.header.entry];
         while let Some(id) = queue.pop() {
             if !reachable.insert(id) {
                 continue;
             }
-            if let Some(node) = nodes.iter().find(|node| node.id == id) {
+            if let Some(node) = by_id.get(&id) {
                 queue.extend(
                     node.edges
                         .iter()
