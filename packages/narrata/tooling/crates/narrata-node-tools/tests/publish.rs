@@ -1,6 +1,10 @@
 #![allow(clippy::unwrap_used)]
 
-use std::{collections::BTreeSet, fs, path::Path};
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use narrata_graph::{
     EdgeKind, Id, NodeKind, SemanticSummary, decode_labels,
@@ -36,6 +40,105 @@ fn project(root: &Path) {
     ] {
         write_text(&root.join(file), &pretty(&value).unwrap()).unwrap();
     }
+}
+
+fn compose_cli(root: &Path, outlines: &[PathBuf], locked: bool) -> Result<(), String> {
+    let mut args = vec![
+        "compose".to_owned(),
+        root.join("project.json").display().to_string(),
+        "--out".to_owned(),
+        root.join("story.narpack").display().to_string(),
+    ];
+    if locked {
+        args.push("--locked".into());
+    }
+    for path in outlines {
+        args.extend(["--outline".into(), path.display().to_string()]);
+    }
+    narrata_node_tools::run(&args)
+}
+
+#[test]
+fn compose_cli_reads_multiple_provider_outlines_and_reproduces_locked_publications() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    project(root);
+    let local = root.join("outline.json");
+    let other = root.join("other outline.json");
+    write_text(
+        &other,
+        r#"{"format_version":1,"provider":"external","units":{}}"#,
+    )
+    .unwrap();
+    compose_cli(root, &[local.clone(), other.clone()], false).unwrap();
+    let files = GraphFiles::decode_json(&fs::read(root.join("story.graph.json")).unwrap()).unwrap();
+    assert!(!files.labels.is_empty());
+    let before: Vec<_> = [
+        "story.narpack",
+        "story.analysis.json",
+        "story.graph.json",
+        "story.summary.json",
+        "project.lock.json",
+    ]
+    .into_iter()
+    .map(|name| (name, fs::read(root.join(name)).unwrap()))
+    .collect();
+    compose_cli(root, &[other, local.clone()], true).unwrap();
+    for (name, bytes) in before {
+        assert_eq!(bytes, fs::read(root.join(name)).unwrap(), "{name}");
+    }
+    let mut damaged = outline();
+    damaged["units"]["main.gate"]["blocks"] = json!(["b1", "b2", "b3"]);
+    write_text(&local, &pretty(&damaged).unwrap()).unwrap();
+    compose_cli(root, &[local], true).unwrap();
+    let analysis: Analysis =
+        narrata_nodes::parse_json(&fs::read_to_string(root.join("story.analysis.json")).unwrap())
+            .unwrap();
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "outline_anchor_missing")
+    );
+    assert!(
+        !analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "outline_checks_skipped")
+    );
+}
+
+#[test]
+fn compose_cli_reports_absent_outlines_and_rejects_duplicate_providers_or_missing_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    project(root);
+    compose_cli(root, &[], false).unwrap();
+    let analysis: Analysis =
+        narrata_nodes::parse_json(&fs::read_to_string(root.join("story.analysis.json")).unwrap())
+            .unwrap();
+    assert!(
+        analysis
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "outline_checks_skipped")
+    );
+    let local = root.join("outline.json");
+    assert!(
+        compose_cli(root, &[local.clone(), local], true)
+            .unwrap_err()
+            .contains("outline_provider")
+    );
+    assert!(compose_cli(root, &[root.join("missing.json")], true).is_err());
+    assert_eq!(
+        narrata_node_tools::run(&[
+            "compose".into(),
+            root.join("project.json").display().to_string(),
+            "--outline".into()
+        ])
+        .unwrap_err(),
+        "--outline requires a value"
+    );
 }
 
 #[test]

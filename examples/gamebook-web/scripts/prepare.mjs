@@ -23,7 +23,9 @@ execFileSync(executable, [
 ], { cwd: root, stdio: "inherit" });
 // The committed pack must match its sources and lock; the reader bundles a copy of it and of
 // the work's content pack.
-cargo("run", "--quiet", "--locked", "-p", "narrata-node-tools", "--", "compose", "products/gamebook-demo/project.json", "--out", "products/gamebook-demo/story.narpack", "--locked");
+const outline = ".temp/gamebook-demo.outline.json";
+cargo("run", "--quiet", "--locked", "-p", "narrata-node-tools", "--", "outline", "products/gamebook-demo/content/zh-Hans.json", "--out", outline);
+cargo("run", "--quiet", "--locked", "-p", "narrata-node-tools", "--", "compose", "products/gamebook-demo/project.json", "--out", "products/gamebook-demo/story.narpack", "--locked", "--outline", outline);
 cargo("run", "--quiet", "--locked", "-p", "narrata-node-tools", "--", "schemas", "--out", "packages/narrata/nodes/schemas");
 const story = resolve(here, "src/generated/story");
 mkdirSync(story, { recursive: true });

@@ -10,7 +10,11 @@ mod play;
 pub mod publish;
 pub mod r1;
 
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use narrata_content_local::{ContentPack, LocalContent};
 use narrata_nodes::{
@@ -49,7 +53,7 @@ fn options(
         i += 1;
     }
     for (key, values) in &out {
-        if values.len() > 1 && key != "--content" {
+        if values.len() > 1 && !["--content", "--outline"].contains(&key.as_str()) {
             return Err(format!("duplicate option {key}"));
         }
     }
@@ -152,16 +156,16 @@ pub fn run(args: &[String]) -> std::result::Result<(), String> {
 }
 
 fn compose_command(path: &Path, args: &[String]) -> std::result::Result<(), String> {
-    let flags = options(args, &["--out"], &["--locked"])?;
+    let flags = options(args, &["--out", "--outline"], &["--locked"])?;
     let output = Path::new(one(&flags, "--out").ok_or("compose requires --out <story.narpack>")?);
     let locked = flags.contains_key("--locked");
-    let mut project = load_project(path).map_err(text)?;
-    let previous = if output.exists() {
-        Some(read_bytes(output).map_err(text)?)
-    } else {
-        None
-    };
-    let composed = compose(&mut project, previous.as_deref(), locked).map_err(text)?;
+    let outlines: Vec<PathBuf> = flags
+        .get("--outline")
+        .into_iter()
+        .flatten()
+        .map(PathBuf::from)
+        .collect();
+    let composed = compose_published(path, output, locked, &outlines).map_err(text)?;
     if !composed.compared {
         eprintln!(
             "no previous artifact at {}; tombstone checks skipped",
@@ -172,22 +176,6 @@ fn compose_command(path: &Path, args: &[String]) -> std::result::Result<(), Stri
         eprintln!("tombstone appended to {alias}: {id}");
     }
     let compilation = &composed.compilation;
-    if locked {
-        verify_lock(&compilation.lock, &project).map_err(text)?;
-    }
-    write_bytes(output, &compilation.pack).map_err(text)?;
-    if !locked {
-        write_text(
-            &project.lock_path(),
-            &pretty(&compilation.lock).map_err(text)?,
-        )
-        .map_err(text)?;
-    }
-    write_text(
-        &output.with_extension("analysis.json"),
-        &pretty(&compilation.analysis).map_err(text)?,
-    )
-    .map_err(text)?;
     for diagnostic in &compilation.diagnostics {
         eprintln!(
             "{}: {} ({})",
@@ -368,7 +356,7 @@ pub fn inspect(program: &Program, names: Option<&NameTable>) -> Result<serde_jso
 }
 
 pub fn usage() -> &'static str {
-    "narrata-book compose <project.json> --out <story.narpack> [--locked]\n\
+    "narrata-book compose <project.json> --out <story.narpack> [--locked] [--outline <outline.json>]...\n\
      narrata-book ids <project.json>\n\
      narrata-book inspect <story.narpack>\n\
      narrata-book outline <content.json> [--out <outline.json>]\n\

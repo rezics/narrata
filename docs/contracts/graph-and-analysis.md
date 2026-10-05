@@ -1,6 +1,6 @@
 # 图、分析与摘要
 
-状态：发布时计算、R2 适配与受检分发格式已实现；compose CLI 与宿主接入待实现。依据：[决定 7、12](../product/decisions.md) 与
+状态：发布时计算、R2 适配、compose CLI 与受检分发格式已实现；宿主接入待实现。依据：[决定 7、12](../product/decisions.md) 与
 [图渲染调研](../research/2026-10-05-choice-granularity-and-scale/graph_rendering.md)。
 
 叙事图归 Narrata，与宿主的章节结构无关。图视图是用户需求，但它是程序的一个投影，
@@ -23,7 +23,8 @@ CBOR 瓦片；[摘要类型与 JSON Schema](../../packages/narrata/tooling/crate
 固定宿主交换形状。[兼容测试](../../packages/narrata/tooling/crates/narrata-graph/tests/distribution.rs)
 受检读取冻结语料，并与重新生成的字节比较。[R2 适配器](../../packages/narrata/tooling/crates/narrata-node-tools/src/publish.rs)
 与[发布文件 API](../../packages/narrata/tooling/crates/narrata-node-tools/src/compose.rs) 把程序、内容方导出的大纲
-和这些输出连起来，保留现有节点检查器的分析形状；CLI 入口仍须接入该 API。
+和这些输出连起来，保留现有节点检查器的分析形状。compose 的 `--outline <路径>` 可重复，
+每个内容方提供一份原文语言的大纲；没有提供的内容方在分析中报告检查跳过。
 伴随文件的引用形状由 [Rust 类型生成的 schema](../../packages/narrata/tooling/crates/narrata-node-tools/schema/graph-files-v1.schema.json) 固定。
 
 ## 作者视图
