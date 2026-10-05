@@ -1,6 +1,6 @@
 # ADR 0023：节点构件演化与读者存档迁移
 
-状态：Proposed（2026-10-05）。扩展 [ADR 0013](0013-r2-text-free-node-format.md) 的节点会话，
+状态：Accepted（2026-10-05）。扩展 [ADR 0013](0013-r2-text-free-node-format.md) 的节点会话，
 复用 [ADR 0020](0020-shared-effects-and-migrations.md) 的协调器；不改变旧构件、State、普通
 Input、Commit、Checkpoint Bundle 或存储键的编码。
 

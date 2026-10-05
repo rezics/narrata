@@ -1,6 +1,6 @@
 # ADR 0021：服务器存档与按库维护
 
-状态：Proposed（2026-10-05）。落实[决定 15](../product/decisions.md#15-服务器存档实现同一个存储契约)，
+状态：Accepted（2026-10-05）。落实[决定 15](../product/decisions.md#15-服务器存档实现同一个存储契约)，
 沿用 [ADR 0012](0012-narrow-storage-backend-contract.md)、[ADR 0017](0017-browser-storage-host-cache.md)
 的契约与协议版本 1；对象、键、布局版本 1 和现有冻结语料均不改。
 

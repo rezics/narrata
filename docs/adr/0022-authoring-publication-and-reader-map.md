@@ -1,6 +1,6 @@
 # ADR 0022：创作记录、发布对象、关系投影与读者地图
 
-状态：Proposed（2026-10-05）。依据[决定 2、3、4、5、7、10、12、16、17](../product/decisions.md)，
+状态：Accepted（2026-10-05）。依据[决定 2、3、4、5、7、10、12、16、17](../product/decisions.md)，
 补充 [ADR 0013](0013-r2-text-free-node-format.md) 与 [ADR 0016](0016-graph-publication-format.md)。
 本页决定无界面的宿主接口，不决定 REZICS 的编辑器界面。
 
