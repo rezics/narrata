@@ -1299,15 +1299,17 @@ async function waitFor(id: string): Promise<void> {
     + `${result.text.length > 8000 ? `${result.text.slice(0, 8000)}\n[truncated]` : result.text}`);
 }
 
-async function resumeTask(id: string, args: string[]): Promise<void> {
-  let message = '';
+/** Options of `resume`. Every `-m` text and `--file` content is kept, in argument order: a later option must not
+ * silently drop an earlier instruction. */
+export function parseResumeArgs(args: string[], read = (path: string) => readFileSync(path, 'utf8')) {
+  const parts: string[] = [];
   let effort: string | undefined;
   let engine: Engine | undefined;
   let fresh = false;
   let skipPreflight = false;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-m') message = args[++i] ?? '';
-    else if (args[i] === '--file') message = readFileSync(args[++i] ?? '', 'utf8');
+    if (args[i] === '-m') parts.push(args[++i] ?? '');
+    else if (args[i] === '--file') parts.push(read(args[++i] ?? ''));
     else if (args[i] === '--effort') effort = args[++i];
     else if (args[i] === '--engine') {
       const value = args[++i];
@@ -1317,7 +1319,13 @@ async function resumeTask(id: string, args: string[]): Promise<void> {
     else if (args[i] === '--skip-preflight') skipPreflight = true;
     else throw new Error(`Unsupported resume option: ${args[i]}`);
   }
-  if (!message.trim()) throw new Error('resume needs -m <message> or --file <path>');
+  const message = parts.filter(part => part.trim()).join('\n\n');
+  if (!message) throw new Error('resume needs -m <message> or --file <path>');
+  return { message, effort, engine, fresh, skipPreflight };
+}
+
+async function resumeTask(id: string, args: string[]): Promise<void> {
+  const { message, effort, engine, fresh, skipPreflight } = parseResumeArgs(args);
   if (!skipPreflight) {
     const known = readLedger().tasks[id.toUpperCase()];
     if (known?.attempts.length) preflight(engine ?? engineOf(lastAttempt(known)), repoRoot());
@@ -1829,7 +1837,7 @@ function authReport(): void {
 
 const USAGE = 'Usage: goalctl goal start <slug> --manager <session> [--allow-area] | goal close <slug> [--dry-run]'
   + ' | new [--goal <slug>] <title> | dispatch <brief.md> [--dry-run] [--allow-area] [--skip-preflight] [--force-usage]'
-  + ' | wait <id> | resume <id> (-m <text> | --file <path>) [--effort e] [--engine e] [--fresh] [--skip-preflight]'
+  + ' | wait <id> | resume <id> (-m <text> | --file <path>)... [--effort e] [--engine e] [--fresh] [--skip-preflight]'
   + ' | reclaim <id> <brief> | stop <id> | scope <id> | owner <path> | merge <id> [--allow-scope] [--allow-ids] [--landed]'
   + ' | close <id>... verified|cancelled | tidy | status | usage [<id>...] | auth | slot [--heavy] -- <command>'
   + `\nEngines: ${ENGINES.map(engine => `${engine} (${modelOf(engine)})`).join(', ')}`;

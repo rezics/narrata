@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { areaConflicts, authProblem, briefFile, claimConflicts, CODEX_MODEL, commitPaths, commitTrailers, failureHint,
   goalAreas, goalOfBriefPath, historyIntroductions, isHeavyCommand, killTree, killWorktreeProcesses, launchCommand,
   lockHolder, MANAGER_SESSION_ENV, maintainerDocCommits, modelOf, nextTaskId, outOfScope, ownerRefusal, parseBrief,
-  parseCodexUsage, parsePorcelainZ, pathsOverlap, preserveWorktreeArtifacts, processInfo, promptOnStdin, readResult,
+  parseCodexUsage, parsePorcelainZ, parseResumeArgs, pathsOverlap, preserveWorktreeArtifacts, processInfo, promptOnStdin, readResult,
   relinkMarkdown, sameProcess, type Task, terminate, treeMentions, tryLock, validateBrief, workerEnv,
   worktreeProcessPattern } from './goalctl.ts';
 // The repository's own link checker (`task docs:check`), which also reads archive/.
@@ -189,6 +189,15 @@ describe('history gate', () => {
       { path: 'products/gamebook-demo/cover.png', status: 'A', after: 'PNG\0G-012' },
       { path: 'crates/narrata-core/src/b.rs', status: 'D', before: 'G-1' },
     ])).toEqual([]);
+  });
+});
+
+describe('resume', () => {
+  test('keeps every -m text and --file content in argument order', () => {
+    const read = (path: string) => `review in ${path}`;
+    expect(parseResumeArgs(['--file', 'r.md', '-m', 'apply it'], read).message).toBe('review in r.md\n\napply it');
+    expect(parseResumeArgs(['-m', 'first', '--effort', 'high'], read)).toMatchObject({ message: 'first', effort: 'high' });
+    expect(() => parseResumeArgs(['-m', '  '], read)).toThrow('resume needs');
   });
 });
 
