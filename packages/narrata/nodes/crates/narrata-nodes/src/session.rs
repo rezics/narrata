@@ -40,6 +40,7 @@ struct Record {
 /// Only the current decoded state and its live frame pins are held by the coordinator.
 pub struct Session<B = MemoryBackend> {
     program: Arc<Program>,
+    programs: BTreeMap<ArtifactId, Arc<Program>>,
     execution: ExecutionId,
     history: History<B, DomainKinds<NodeDomain>>,
     session: narrata_history::Session<NodeDomain>,
@@ -90,6 +91,38 @@ fn bundle_error(error: BundleError<HistoryError>) -> Error {
 }
 
 impl Session {
+    /// Resolves the save's checked root header, never the work's current publication.
+    /// Descriptors are not needed to restore an already committed target state.
+    pub fn restore_with_registry(
+        registry: &crate::history::evolution::EvolutionRegistry,
+        text: &str,
+    ) -> Result<Self> {
+        let artifact = if text.trim_start().starts_with('{') {
+            parse_json_limited::<SessionExport>(text, MAX_INTERIM_EXPORT_BYTES)?.artifact_id
+        } else {
+            if text.len() > MAX_EXPORT_BYTES {
+                return Err(Error::new(
+                    "limit",
+                    "checkpoint",
+                    "checkpoint exceeds 64 MiB",
+                ));
+            }
+            let bytes = hex::decode(text.trim())
+                .map_err(|e| Error::new("decode", "checkpoint", e.to_string()))?;
+            let (root, objects) = checkpoint_objects(&bytes)?;
+            let object = objects.iter().find(|o| o.id() == root).ok_or_else(|| {
+                Error::new(
+                    "needs_object",
+                    root.to_string(),
+                    "checkpoint root is missing",
+                )
+            })?;
+            Commit::decode(object.bytes())?.artifact
+        };
+        let mut session = Self::restore(registry.program(artifact)?.clone(), text)?;
+        session.programs.extend(registry.programs.clone());
+        Ok(session)
+    }
     pub fn new(program: Arc<Program>, execution: ExecutionId) -> Result<Self> {
         Self::open(program, execution, MemoryBackend::new())
     }
@@ -130,19 +163,9 @@ impl Session {
         }
         let bytes = hex::decode(text.trim())
             .map_err(|e| Error::new("decode", "checkpoint", e.to_string()))?;
-        let bundle = narrata_history::CheckpointBundle::from_bytes(
-            &bytes,
-            BundleLimits::default(),
-            |kind| {
-                matches!(
-                    kind,
-                    wire::KIND_COMMIT | wire::KIND_STATE | wire::KIND_INPUT
-                )
-            },
-        )
-        .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
+        let root = checkpoint_root(&bytes)?;
         let mut id = [0; 16];
-        id.copy_from_slice(&bundle.manifest.root.as_bytes()[..16]);
+        id.copy_from_slice(&root.as_bytes()[..16]);
         let execution = ExecutionId::from_bytes(id);
         let mut history = History::in_memory(DomainKinds::<NodeDomain>::new());
         history
@@ -161,6 +184,129 @@ impl Session {
 }
 
 impl<B: StorageBackend> Session<B> {
+    /// Opens the exact artifact named by the active cursor. An absent cursor is an error;
+    /// starting a new execution remains the explicit single-program `open` operation.
+    pub fn open_with_registry(
+        registry: &crate::history::evolution::EvolutionRegistry,
+        execution: ExecutionId,
+        backend: B,
+    ) -> Result<Self> {
+        let history =
+            History::open(backend, DomainKinds::<NodeDomain>::new()).map_err(history_error)?;
+        let key = RefKey::active(name(execution))
+            .map_err(|e| Error::new("name", "cursor", e.to_string()))?;
+        let cursor = history
+            .read_ref(&key)
+            .map_err(history_error)?
+            .ok_or_else(|| Error::new("save", "cursor", "missing active cursor"))?;
+        let object = history
+            .reader()
+            .require(cursor.commit, Some(wire::KIND_COMMIT))
+            .map_err(history_error)?;
+        let header = Commit::decode(object.bytes())?;
+        let mut session = Self::open(
+            registry.program(header.artifact)?.clone(),
+            execution,
+            history.into_backend(),
+        )?;
+        session.programs.extend(registry.programs.clone());
+        Ok(session)
+    }
+    /// Adds an exact historic program for page rendering and checkout, without upgrading.
+    pub fn register_history_program(&mut self, program: Arc<Program>) -> Result<()> {
+        program.verify_artifact()?;
+        self.programs.insert(program.artifact_id(), program);
+        Ok(())
+    }
+    fn header(&self, id: CommitId) -> Result<Commit> {
+        let object = self
+            .history
+            .reader()
+            .require(kernel(id), Some(wire::KIND_COMMIT))
+            .map_err(history_error)?;
+        Commit::decode(object.bytes())
+    }
+    fn program_at(&self, artifact: ArtifactId) -> Result<&Arc<Program>> {
+        self.programs.get(&artifact).ok_or_else(|| {
+            Error::new(
+                "needs_artifact",
+                artifact.to_string(),
+                "exact historic program is unavailable",
+            )
+        })
+    }
+    fn reopen(&mut self, program: Arc<Program>) -> Result<()> {
+        let (session, loaded) = narrata_history::Session::open(
+            &self.history,
+            NodeDomain(program.clone()),
+            name(self.execution),
+        )
+        .map_err(history_error)?;
+        let pins = program.pin_state(&loaded.state)?;
+        self.programs.insert(program.artifact_id(), program.clone());
+        self.program = program;
+        self.session = session;
+        self.current = record(loaded);
+        self._pins = pins;
+        self.prefetched.clear();
+        Ok(())
+    }
+    /// Presents the stored migration state without applying its parent's input or effects.
+    fn migration_page(&self, program: &Program, state: &State) -> Result<Step> {
+        let mut presentation = Vec::new();
+        if let Some(frame) = state.frames.last() {
+            let graph = program.graph(&frame.graph)?;
+            let passage = frame
+                .overlay
+                .passage(&graph, &frame.node)
+                .ok_or_else(|| Error::new("state", "migration", "current node is not a passage"))?;
+            let values = crate::expr::Values {
+                parameters: &frame.parameters,
+                locals: &frame.locals,
+                shared: &state.shared,
+            };
+            let args = passage
+                .args
+                .iter()
+                .map(|(key, expr)| Ok((key.clone(), values.evaluate(expr)?.view())))
+                .collect::<Result<BTreeMap<_, _>>>()?;
+            if let Some(title) = &passage.title {
+                presentation.push(Item {
+                    role: crate::view::Role::Title,
+                    node: frame.node,
+                    content: crate::view::Presented::Ref(title.clone()),
+                    args: args.clone(),
+                });
+            }
+            if let Some(body) = &passage.body {
+                let mut body = body.clone();
+                // A migration establishes a new page boundary at the pending interaction;
+                // later body blocks must still wait for their choices.
+                if let Some(placement) = passage
+                    .choice_points
+                    .iter()
+                    .find(|point| Some(point.id) == frame.at)
+                    .and_then(|point| point.placement.clone())
+                {
+                    body.last = Some(placement);
+                }
+                presentation.push(Item {
+                    role: crate::view::Role::Body,
+                    node: frame.node,
+                    content: crate::view::Presented::Segment(body),
+                    args,
+                });
+            }
+        }
+        Ok(Step {
+            state: state.clone(),
+            pins: program.pin_state(state)?,
+            presentation,
+            entered: true,
+            #[cfg(feature = "trace")]
+            trace: Vec::new(),
+        })
+    }
     /// Reopens this execution's cursor without replay; creates its root only when absent.
     pub fn open(program: Arc<Program>, execution: ExecutionId, backend: B) -> Result<Self> {
         let mut history =
@@ -188,6 +334,7 @@ impl<B: StorageBackend> Session<B> {
             None => program.pin_state(&loaded.state)?,
         };
         Ok(Self {
+            programs: [(program.artifact_id(), program.clone())].into(),
             program,
             execution,
             history,
@@ -223,9 +370,18 @@ impl<B: StorageBackend> Session<B> {
     pub fn state(&self) -> Result<&State> {
         Ok(&self.current.state)
     }
+    /// Current interaction needs only the exact restored state, including shallow saves.
+    pub fn interaction(&self, names: Option<&NameTable>) -> Result<crate::view::Interaction> {
+        (Machine {
+            program: &self.program,
+        })
+        .interaction(&self.current.state, names)
+    }
     fn load(&self, id: CommitId) -> Result<Record> {
+        let header = self.header(id)?;
+        let program = self.program_at(header.artifact)?;
         self.history
-            .load(self.session.domain(), kernel(id))
+            .load(&NodeDomain(program.clone()), kernel(id))
             .map(record)
             .map_err(history_error)
     }
@@ -354,7 +510,36 @@ impl<B: StorageBackend> Session<B> {
         self.advance(expected, crate::proposal::materialize(expected, request)?)
     }
     pub fn checkout(&mut self, commit: &CommitId) -> Result<()> {
-        let pins = self.program.pin_state(&self.load(*commit)?.state)?;
+        let target = self.load(*commit)?;
+        let program = self.program_at(target.commit.artifact)?.clone();
+        let pins = program.pin_state(&target.state)?;
+        if program.artifact_id() != self.program.artifact_id() {
+            let key = RefKey::active(name(self.execution))
+                .map_err(|e| Error::new("name", "session", e.to_string()))?;
+            let cursor = self
+                .history
+                .read_ref(&key)
+                .map_err(history_error)?
+                .ok_or_else(|| Error::new("stale_input", "cursor", "missing active cursor"))?;
+            if cursor.commit != kernel(self.current.id) {
+                return Err(Error::new("stale_input", "cursor", "active cursor moved"));
+            }
+            self.history
+                .write_atomic(
+                    &Transaction {
+                        refs: vec![RefMutation {
+                            key,
+                            expected: Some(cursor.revision),
+                            next: Some(kernel(*commit)),
+                        }],
+                        ..Transaction::default()
+                    },
+                    |_| Ok(Vec::new()),
+                )
+                .map_err(history_error)?;
+            self.reopen(program)?;
+            return Ok(());
+        }
         let loaded = self
             .session
             .checkout(
@@ -388,6 +573,9 @@ impl<B: StorageBackend> Session<B> {
             .read_ref(&key)
             .map_err(history_error)?
             .ok_or_else(|| Error::new("save", "slot", "missing save slot"))?;
+        if self.header(node(target.commit))?.artifact != self.program.artifact_id() {
+            return self.checkout(&node(target.commit));
+        }
         let pins = self
             .program
             .pin_state(&self.load(node(target.commit))?.state)?;
@@ -402,23 +590,44 @@ impl<B: StorageBackend> Session<B> {
     }
     fn step(&self, id: CommitId) -> Result<Step> {
         let record = self.load(id)?;
-        let machine = Machine {
-            program: &self.program,
-        };
+        let program = self.program_at(record.commit.artifact)?;
+        let machine = Machine { program };
         let step = match (record.commit.parent, record.commit.input) {
             (Some(parent), Some(input)) => {
-                let parent = self.load(parent)?;
                 let object = self
                     .history
                     .reader()
                     .require(
                         narrata_history::ObjectId::from_bytes(*input.as_bytes()),
-                        Some(wire::KIND_INPUT),
+                        None,
                     )
                     .map_err(history_error)?;
+                if object.kind() == narrata_history::migration::MIGRATION_INPUT_KIND {
+                    let edge = narrata_history::migration::MigrationInput::from_object(&object)
+                        .map_err(history_error)?;
+                    let parent_header = self.header(parent)?;
+                    if edge.from.as_bytes() != parent_header.artifact.as_bytes()
+                        || edge.to.as_bytes() != record.commit.artifact.as_bytes()
+                    {
+                        return Err(Error::new(
+                            "save",
+                            "migration",
+                            "migration artifact link differs",
+                        ));
+                    }
+                    return self.migration_page(program, &record.state);
+                }
+                let parent = self.load(parent)?;
+                if parent.commit.artifact != record.commit.artifact {
+                    return Err(Error::new(
+                        "save",
+                        "input",
+                        "ordinary input changed artifact",
+                    ));
+                }
                 let input_parent = self.input_parent(parent.id, &parent.state, object.bytes())?;
                 let (input, _) =
-                    decode_input(&self.program, &input_parent, &parent.state, object.bytes())?;
+                    decode_input(program, &input_parent, &parent.state, object.bytes())?;
                 machine.apply(&input_parent, &parent.state, &input)?
             }
             _ => machine.initial()?,
@@ -468,11 +677,13 @@ impl<B: StorageBackend> Session<B> {
         parent.ok_or_else(|| Error::new("save", "path", "missing root"))
     }
     fn input_parent(&self, id: CommitId, state: &State, bytes: &[u8]) -> Result<CommitId> {
-        match decode_input(&self.program, &id, state, bytes) {
+        let header = self.header(id)?;
+        let program = self.program_at(header.artifact)?;
+        match decode_input(program, &id, state, bytes) {
             Ok(_) => Ok(id),
             Err(error) if error.code == "derived_id" => {
                 let old = self.interim_id(id)?;
-                decode_input(&self.program, &old, state, bytes)?;
+                decode_input(program, &old, state, bytes)?;
                 Ok(old)
             }
             Err(error) => Err(error),
@@ -570,9 +781,30 @@ impl<B: StorageBackend> Session<B> {
             let (_, cursor, objects, commits) = legacy(&self.program, text)?;
             return self.import_objects(objects, commits, cursor);
         }
-        let restored = Session::restore(self.program.clone(), text)?;
-        let bytes = hex::decode(restored.export()?)
+        if text.len() > MAX_EXPORT_BYTES {
+            return Err(Error::new(
+                "limit",
+                "checkpoint",
+                "checkpoint exceeds 64 MiB",
+            ));
+        }
+        let bytes = hex::decode(text.trim())
             .map_err(|e| Error::new("decode", "checkpoint", e.to_string()))?;
+        let (root, objects) = checkpoint_objects(&bytes)?;
+        let header = Commit::decode(
+            objects
+                .iter()
+                .find(|o| o.id() == root)
+                .ok_or_else(|| {
+                    Error::new(
+                        "needs_object",
+                        root.to_string(),
+                        "checkpoint root is missing",
+                    )
+                })?
+                .bytes(),
+        )?;
+        let program = self.program_at(header.artifact)?.clone();
         let key = RefKey::active(name(self.execution))
             .map_err(|e| Error::new("name", "session", e.to_string()))?;
         let expected = self
@@ -582,7 +814,7 @@ impl<B: StorageBackend> Session<B> {
             .map(|v| v.revision);
         self.history
             .import(
-                self.session.domain(),
+                &NodeDomain(program.clone()),
                 &bytes,
                 BundleLimits::default(),
                 key,
@@ -590,18 +822,7 @@ impl<B: StorageBackend> Session<B> {
                 0,
             )
             .map_err(bundle_error)?;
-        let (session, loaded) = narrata_history::Session::open(
-            &self.history,
-            NodeDomain(self.program.clone()),
-            name(self.execution),
-        )
-        .map_err(history_error)?;
-        let pins = self.program.pin_state(&loaded.state)?;
-        self.session = session;
-        self.current = record(loaded);
-        self.prefetched.clear();
-        self._pins = pins;
-        Ok(())
+        self.reopen(program)
     }
     /// Transfers all retained native branches, for R1 migration.
     pub fn import_session(&mut self, source: &Session) -> Result<()> {
@@ -636,7 +857,9 @@ impl<B: StorageBackend> Session<B> {
                 objects.insert(object_id, object);
             }
         }
-        self.import_objects(objects.into_values().collect(), commits, source.current.id)
+        self.import_objects(objects.into_values().collect(), commits, source.current.id)?;
+        self.programs.extend(source.programs.clone());
+        Ok(())
     }
     fn import_objects(
         &mut self,
@@ -716,12 +939,15 @@ impl<B: StorageBackend> Session<B> {
             .collect::<Result<Vec<_>>>()?
             .iter()
             .map(|record| {
-                let (graph, node, instance, title) = machine.title(&record.state)?;
+                let program = self.program_at(record.commit.artifact)?;
+                let (graph, node, instance, title) = (Machine { program }).title(&record.state)?;
                 Ok(HistoryView {
                     id: record.id,
                     parent: record.commit.parent,
                     depth: record.commit.depth,
-                    key: names.and_then(|names| names.node(&graph, &node).map(str::to_owned)),
+                    key: names
+                        .filter(|names| names.artifact == record.commit.artifact)
+                        .and_then(|names| names.node(&graph, &node).map(str::to_owned)),
                     graph,
                     node,
                     instance,
@@ -774,6 +1000,291 @@ impl<B: StorageBackend> Session<B> {
 }
 
 type Legacy = (ExecutionId, CommitId, Vec<Object>, Vec<CommitId>);
+
+#[cfg(feature = "trace")]
+impl<B: StorageBackend> Session<B> {
+    /// Read-only assessment. The host selects the complete descriptor path explicitly;
+    /// neither registration nor assessment changes an execution's artifact or any Ref.
+    pub fn assess_evolution(
+        &self,
+        registry: &crate::history::evolution::EvolutionRegistry,
+        target: ArtifactId,
+        migration_ids: &[crate::history::evolution::MigrationId],
+        limits: crate::history::evolution::PathLimits,
+    ) -> crate::history::evolution::AssessmentV1 {
+        use crate::history::evolution::*;
+        match self.assess(registry, target, migration_ids, limits) {
+            Ok(result) => result,
+            Err(error) if matches!(error.code.as_str(), "needs_object" | "needs_artifact") => {
+                AssessmentV1::NeedsObjects {
+                    digests: vec![ObjectId::from_bytes(
+                        error
+                            .path
+                            .parse::<narrata_history::ObjectId>()
+                            .map(|id| *id.as_bytes())
+                            .or_else(|_| error.path.parse::<ArtifactId>().map(|id| *id.as_bytes()))
+                            .unwrap_or(*target.as_bytes()),
+                    )],
+                    retryable: true,
+                }
+            }
+            Err(error) => AssessmentV1::InvalidSave {
+                diagnostic: evolution_diagnostic(&error),
+                restart_available: true,
+            },
+        }
+    }
+
+    fn assess(
+        &self,
+        registry: &crate::history::evolution::EvolutionRegistry,
+        target: ArtifactId,
+        migration_ids: &[crate::history::evolution::MigrationId],
+        limits: crate::history::evolution::PathLimits,
+    ) -> Result<crate::history::evolution::AssessmentV1> {
+        use crate::history::evolution::*;
+        use narrata_history::migration::{MigrationError, MigrationRequest};
+        let key = RefKey::active(name(self.execution))
+            .map_err(|e| Error::new("name", "cursor", e.to_string()))?;
+        let cursor = self
+            .history
+            .read_ref(&key)
+            .map_err(history_error)?
+            .ok_or_else(|| Error::new("invalid_save", "cursor", "missing active cursor"))?;
+        let source_header = self.header(node(cursor.commit))?;
+        let source_program = registry.program(source_header.artifact)?;
+        self.history
+            .load(&NodeDomain(source_program.clone()), cursor.commit)
+            .map_err(history_error)?;
+        let source = SourceV1 {
+            source_commit: node(cursor.commit),
+            artifact_id: source_header.artifact,
+        };
+        if source_header.artifact == target {
+            return Ok(AssessmentV1::Exact { source });
+        }
+        registry.program(target)?;
+        let path = registry.compare_path(&self.history, source.source_commit, target, limits)?;
+        let request = MigrationRequest {
+            source: cursor.commit,
+            target: artifact(target),
+            explicit_path: Some(migration_ids.iter().copied().map(migration).collect()),
+            target_ref: key,
+            expected_ref: Some(cursor.revision),
+            observed_at: 0,
+        };
+        let prepared = match self.history.dry_run_migration(
+            &registry.artifacts,
+            &registry.migrations,
+            &request,
+            |descriptor, from, to, state| descriptor.transform(&from.0, &to.0, state),
+        ) {
+            Ok(result) => result,
+            Err(MigrationError::Step(error)) => {
+                return Ok(AssessmentV1::OldVersionOnly {
+                    source,
+                    target,
+                    reason: error.code,
+                    restart_available: true,
+                });
+            }
+            Err(MigrationError::Registry(error)) => {
+                return Ok(AssessmentV1::OldVersionOnly {
+                    source,
+                    target,
+                    reason: error.to_string(),
+                    restart_available: true,
+                });
+            }
+            Err(MigrationError::MissingArtifact(id)) => {
+                return Err(Error::new(
+                    "needs_artifact",
+                    ArtifactId::from_bytes(*id.as_bytes()).to_string(),
+                    "missing migration artifact",
+                ));
+            }
+            Err(MigrationError::History(error)) => return Err(history_error(error)),
+        };
+        let losses = prepared.reports.into_iter().flatten().collect::<Vec<_>>();
+        let reason = if !losses.is_empty() {
+            Some(ConfirmationReason::Recovery)
+        } else {
+            match &path {
+                PathComparisonV1::Equivalent => None,
+                PathComparisonV1::Diverged { .. } => Some(ConfirmationReason::Divergence),
+                PathComparisonV1::Unverified { .. } => Some(ConfirmationReason::Unverified),
+            }
+        };
+        let report = MigrationReportV1 {
+            from_artifact: source_header.artifact,
+            to_artifact: target,
+            source_commit: source.source_commit,
+            migration_commit: node(prepared.commit),
+            losses,
+            path,
+            external_effects: ExternalEffectsV1::NotApplicable,
+        };
+        let plan = Box::new(PlanV1 {
+            source_commit: source.source_commit,
+            target_artifact: target,
+            migration_ids: migration_ids.to_vec(),
+            expected_cursor_revision: CursorRevision(cursor.revision.get()),
+            migration_commit: node(prepared.commit),
+            report_digest: report.digest()?,
+            report,
+        });
+        Ok(match reason {
+            Some(reason) => AssessmentV1::NeedsConfirmation { plan, reason },
+            None => AssessmentV1::Automatic { plan },
+        })
+    }
+
+    /// Explicit application of a host-approved plan. Reassessment invalidates stale
+    /// confirmations; the coordinator repeats planning and atomically CASes only the cursor.
+    pub fn apply_evolution(
+        &mut self,
+        registry: &crate::history::evolution::EvolutionRegistry,
+        approved: &crate::history::evolution::PlanV1,
+        limits: crate::history::evolution::PathLimits,
+    ) -> crate::history::evolution::ApplyV1 {
+        use crate::history::evolution::*;
+        match self.apply_evolution_checked(registry, approved, limits) {
+            Ok(result) => result,
+            Err(error) => ApplyV1::Failed {
+                diagnostic: evolution_diagnostic(&error),
+            },
+        }
+    }
+    fn apply_evolution_checked(
+        &mut self,
+        registry: &crate::history::evolution::EvolutionRegistry,
+        approved: &crate::history::evolution::PlanV1,
+        limits: crate::history::evolution::PathLimits,
+    ) -> Result<crate::history::evolution::ApplyV1> {
+        use crate::history::evolution::*;
+        use narrata_history::migration::{MigrationError, MigrationRequest};
+        let key = RefKey::active(name(self.execution))
+            .map_err(|e| Error::new("name", "cursor", e.to_string()))?;
+        let current = self.history.read_ref(&key).map_err(history_error)?;
+        let actual = current.map(|v| CursorV1 {
+            commit: node(v.commit),
+            revision: CursorRevision(v.revision.get()),
+        });
+        if actual.as_ref().is_none_or(|v| {
+            v.commit != approved.source_commit || v.revision != approved.expected_cursor_revision
+        }) {
+            return Ok(ApplyV1::Conflict {
+                actual_cursor: actual,
+            });
+        }
+        let fresh = match self.assess_evolution(
+            registry,
+            approved.target_artifact,
+            &approved.migration_ids,
+            limits,
+        ) {
+            AssessmentV1::Automatic { plan } | AssessmentV1::NeedsConfirmation { plan, .. } => plan,
+            _ => return Ok(ApplyV1::PlanChanged),
+        };
+        if fresh.as_ref() != approved {
+            return Ok(ApplyV1::PlanChanged);
+        }
+        let program = registry.program(approved.target_artifact)?.clone();
+        let request = MigrationRequest {
+            source: kernel(approved.source_commit),
+            target: artifact(approved.target_artifact),
+            explicit_path: Some(
+                approved
+                    .migration_ids
+                    .iter()
+                    .copied()
+                    .map(migration)
+                    .collect(),
+            ),
+            target_ref: key.clone(),
+            expected_ref: current.map(|v| v.revision),
+            observed_at: 0,
+        };
+        let result = self.history.apply_migration(
+            &registry.artifacts,
+            &registry.migrations,
+            &request,
+            |descriptor, from, to, state| descriptor.transform(&from.0, &to.0, state),
+        );
+        match result {
+            Ok(prepared) => {
+                if node(prepared.commit) != approved.migration_commit {
+                    return Err(Error::new(
+                        "nondeterministic",
+                        "migration",
+                        "application commit differs from its plan",
+                    ));
+                }
+                self.programs.extend(registry.programs.clone());
+                self.reopen(program)?;
+                Ok(ApplyV1::Migrated {
+                    source_commit: approved.source_commit,
+                    migration_commit: approved.migration_commit,
+                    target_artifact: approved.target_artifact,
+                    report: Box::new(approved.report.clone()),
+                })
+            }
+            Err(MigrationError::History(
+                HistoryError::RefConflict(_) | HistoryError::HeadMoved { .. },
+            )) => {
+                let actual_cursor = self
+                    .history
+                    .read_ref(&key)
+                    .map_err(history_error)?
+                    .map(|v| CursorV1 {
+                        commit: node(v.commit),
+                        revision: CursorRevision(v.revision.get()),
+                    });
+                Ok(ApplyV1::Conflict { actual_cursor })
+            }
+            Err(MigrationError::History(error)) => Err(history_error(error)),
+            Err(MigrationError::Step(error)) => Err(error),
+            Err(other) => Err(Error::new("migration", "apply", other.to_string())),
+        }
+    }
+}
+
+#[cfg(feature = "trace")]
+fn evolution_diagnostic(error: &Error) -> crate::Diagnostic {
+    // Runtime diagnostics can contain values. Evolution reports reveal only classification
+    // and structural location, never private variable values or resolved content.
+    crate::Diagnostic {
+        code: error.code.clone(),
+        path: "evolution".into(),
+        message: "artifact evolution could not complete".into(),
+    }
+}
+
+fn checkpoint_objects(bytes: &[u8]) -> Result<(narrata_history::ObjectId, Vec<Object>)> {
+    let allowed = |kind| {
+        matches!(
+            kind,
+            wire::KIND_COMMIT
+                | wire::KIND_STATE
+                | wire::KIND_INPUT
+                | narrata_history::migration::MIGRATION_INPUT_KIND
+        )
+    };
+    if bytes.starts_with(narrata_history::SHALLOW_MAGIC) {
+        let bundle =
+            narrata_history::ShallowBundle::from_bytes(bytes, BundleLimits::default(), allowed)
+                .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
+        Ok((bundle.manifest.checkpoint.root, bundle.objects))
+    } else {
+        let bundle =
+            narrata_history::CheckpointBundle::from_bytes(bytes, BundleLimits::default(), allowed)
+                .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
+        Ok((bundle.manifest.root, bundle.objects))
+    }
+}
+fn checkpoint_root(bytes: &[u8]) -> Result<narrata_history::ObjectId> {
+    checkpoint_objects(bytes).map(|(root, _)| root)
+}
 
 fn legacy(program: &Arc<Program>, text: &str) -> Result<Legacy> {
     let export: SessionExport = parse_json_limited(text, MAX_INTERIM_EXPORT_BYTES)?;

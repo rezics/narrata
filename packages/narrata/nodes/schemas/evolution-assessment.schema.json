@@ -1,0 +1,605 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AssessmentV1",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "exact"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceV1"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "automatic"
+        },
+        "plan": {
+          "$ref": "#/$defs/PlanV1"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "plan"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "needs_confirmation"
+        },
+        "plan": {
+          "$ref": "#/$defs/PlanV1"
+        },
+        "reason": {
+          "$ref": "#/$defs/ConfirmationReason"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "plan",
+        "reason"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "old_version_only"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "restart_available": {
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceV1"
+        },
+        "target": {
+          "$ref": "#/$defs/ArtifactId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "target",
+        "reason",
+        "restart_available"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "digests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ObjectId"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "needs_objects"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "digests",
+        "retryable"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "diagnostic": {
+          "$ref": "#/$defs/Diagnostic"
+        },
+        "kind": {
+          "type": "string",
+          "const": "invalid_save"
+        },
+        "restart_available": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "diagnostic",
+        "restart_available"
+      ]
+    }
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "AuthoredId": {
+      "type": "string",
+      "pattern": "^(node|choice-point|option):[0-9a-f]{32}$"
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "CommitId": {
+      "type": "string",
+      "pattern": "^commit:[0-9a-f]{64}$"
+    },
+    "ConfirmationReason": {
+      "type": "string",
+      "enum": [
+        "recovery",
+        "divergence",
+        "unverified"
+      ]
+    },
+    "CursorRevision": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$"
+    },
+    "DeletedId": {
+      "description": "Only continuation positions can declare recovery; options cannot relocate a state.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NodeId"
+        },
+        {
+          "$ref": "#/$defs/ChoicePointId"
+        }
+      ]
+    },
+    "Diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "path",
+        "message"
+      ]
+    },
+    "DiscardedFrameV1": {
+      "type": "object",
+      "properties": {
+        "instance": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "local_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "overlay_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuthoredId"
+          }
+        },
+        "parameter_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pending_choice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "instance",
+        "node",
+        "local_keys",
+        "parameter_keys",
+        "overlay_ids"
+      ]
+    },
+    "DivergenceReason": {
+      "type": "string",
+      "enum": [
+        "initial_state",
+        "invalid_input",
+        "execution",
+        "semantic_state",
+        "control_trace"
+      ]
+    },
+    "ExternalEffectsV1": {
+      "type": "string",
+      "enum": [
+        "not_applicable"
+      ]
+    },
+    "GraphRef": {
+      "description": "A graph of one package instance. Package aliases and graph names are composition\nstructure, so unlike node aliases they are part of the artifact identity.",
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "LocationV1": {
+      "type": "object",
+      "properties": {
+        "choice_point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "instance": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "graph",
+        "node",
+        "instance"
+      ]
+    },
+    "MigrationId": {
+      "type": "string",
+      "pattern": "^migration:[0-9a-f]{64}$"
+    },
+    "MigrationReportV1": {
+      "type": "object",
+      "properties": {
+        "external_effects": {
+          "$ref": "#/$defs/ExternalEffectsV1"
+        },
+        "from_artifact": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "losses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecoveryLossV1"
+          }
+        },
+        "migration_commit": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "path": {
+          "$ref": "#/$defs/PathComparisonV1"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "to_artifact": {
+          "$ref": "#/$defs/ArtifactId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from_artifact",
+        "to_artifact",
+        "source_commit",
+        "migration_commit",
+        "losses",
+        "path",
+        "external_effects"
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "ObjectId": {
+      "type": "string",
+      "pattern": "^object:[0-9a-f]{64}$"
+    },
+    "PathComparisonV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "equivalent"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "differing_fields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "input_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ObjectId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "diverged"
+            },
+            "new_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LocationV1"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "old_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LocationV1"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "$ref": "#/$defs/DivergenceReason"
+            },
+            "source_commit": {
+              "$ref": "#/$defs/CommitId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "source_commit",
+            "reason",
+            "differing_fields"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CommitId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "checked_through": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CommitId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "unverified"
+            },
+            "reason": {
+              "$ref": "#/$defs/UnverifiedReason"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ]
+        }
+      ]
+    },
+    "PlanV1": {
+      "type": "object",
+      "properties": {
+        "expected_cursor_revision": {
+          "$ref": "#/$defs/CursorRevision"
+        },
+        "migration_commit": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "migration_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MigrationId"
+          }
+        },
+        "report": {
+          "$ref": "#/$defs/MigrationReportV1"
+        },
+        "report_digest": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "target_artifact": {
+          "$ref": "#/$defs/ArtifactId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "target_artifact",
+        "migration_ids",
+        "expected_cursor_revision",
+        "migration_commit",
+        "report",
+        "report_digest"
+      ]
+    },
+    "RecoveryLossV1": {
+      "type": "object",
+      "properties": {
+        "cleared_finished": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discarded_frames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DiscardedFrameV1"
+          }
+        },
+        "reset_local_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retained_shared_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "target": {
+          "$ref": "#/$defs/RecoveryTarget"
+        },
+        "tombstones": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DeletedId"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tombstones",
+        "discarded_frames",
+        "retained_shared_keys",
+        "reset_local_keys",
+        "target"
+      ]
+    },
+    "RecoveryTarget": {
+      "type": "object",
+      "properties": {
+        "choice_point": {
+          "$ref": "#/$defs/ChoicePointId"
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "choice_point"
+      ]
+    },
+    "SourceV1": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/CommitId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "artifact_id"
+      ]
+    },
+    "UnverifiedReason": {
+      "type": "string",
+      "enum": [
+        "missing_ancestor",
+        "missing_artifact",
+        "missing_descriptor",
+        "limit",
+        "baseline",
+        "trace_unavailable"
+      ]
+    }
+  }
+}

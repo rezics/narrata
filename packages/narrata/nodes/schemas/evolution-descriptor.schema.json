@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvolutionDescriptorV1",
+  "type": "object",
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "from_artifact": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "recoveries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Recovery"
+      },
+      "maxItems": 4096
+    },
+    "to_artifact": {
+      "$ref": "#/$defs/ArtifactId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "from_artifact",
+    "to_artifact",
+    "recoveries"
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "DeletedId": {
+      "description": "Only continuation positions can declare recovery; options cannot relocate a state.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NodeId"
+        },
+        {
+          "$ref": "#/$defs/ChoicePointId"
+        }
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "Recovery": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "$ref": "#/$defs/DeletedId"
+        },
+        "target": {
+          "$ref": "#/$defs/RecoveryTarget"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "deleted",
+        "target"
+      ]
+    },
+    "RecoveryTarget": {
+      "type": "object",
+      "properties": {
+        "choice_point": {
+          "$ref": "#/$defs/ChoicePointId"
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "node",
+        "choice_point"
+      ]
+    }
+  }
+}

@@ -14,6 +14,7 @@ fixtures/compat/kernel-history-v3/** -text
 fixtures/compat/browser-storage-v1/** -text
 fixtures/compat/publication-v1/** -text
 fixtures/compat/relations-v1/** -text
+fixtures/compat/nodes-evolution-v1/** -text
 
 # Packed node artifacts are binary envelopes.
 *.narpack binary

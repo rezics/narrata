@@ -1,5 +1,7 @@
 //! Registration of the existing node object bytes in the kernel history layer.
 
+pub mod evolution;
+
 use std::sync::Arc;
 
 use narrata_history::{Domain, HistoryError};
@@ -54,6 +56,13 @@ impl Domain for NodeDomain {
 }
 
 pub(crate) fn history_error(error: HistoryError) -> Error {
+    if let HistoryError::MissingObject(id) = &error {
+        return Error::new(
+            "needs_object",
+            id.to_string(),
+            "required history object is unavailable",
+        );
+    }
     let code = match &error {
         HistoryError::HeadMoved { .. } | HistoryError::RefConflict(_) => "stale_input",
         HistoryError::ArtifactMismatch { .. } => "incompatible_save",
