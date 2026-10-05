@@ -2,10 +2,9 @@
 
 本 Goal 的 manager 检查点（[Goal](GOAL.md)）；存活任务：`task goal -- status`。
 
-| 字段 | 状态（2026-10-05） |
+| 字段 | 状态（2026-10-06） |
 | --- | --- |
-| Done | 维护者讨论确定第一阶段范围（决定 15–17、[目标·以后](../../product/goal.md#以后)）：服务器存档实现存储契约、关系投影进宿主数据库、一个平台运行时；声明式能力与自带运行时留待以后；npm 公共发布以后再定。  CI 首次三平台全绿（G-019）。ADR 0021–0023 已接受，能力请求 R1/R4/R6/R9/R12 改写、新增 R13。 |
-| 现状盘点 | 已有：R2 源稿与编译（仅 Rust/CLI，首错即停）、选择模型全部运行时能力、内容引用与大纲诊断、`NodeBook` Wasm（清单打开与缺块重试）、节点栈注册历史层、IndexedDB 缓存与多标签页冲突、图分析/瓦片/标签表/语义摘要（Rust 与 `publishGraph`）。缺：JS/Wasm 编译与发布、草稿记录组装、发布对象拆分、解析上下文的译本与读者、预取列表、`packages/narrata/web`、阅读器外壳与渲染插槽、服务器同步、Wasm 浅存档、节点栈重新发布迁移、瓦片读取与作者视图、读者地图、关系投影、模拟 REZICS 内容方、打包与预算。`main` 上 CI 一直失败（Windows 换行与 goalctl 短路径）。 |
-| Running | G-023 Web 包骨架；G-024 创作核心（ADR 0022 §1–2）；G-025 共享只读执行轨迹。 |
-| Next | G-023 合并后：存档宿主一致性与 put-if-absent 修正（ADR 0021）、阅读器外壳与渲染插槽、内容解析补全与模拟 REZICS 内容方。G-024 后：发布对象集合与关系投影；G-025 后：节点构件演化核心（ADR 0023）与 visits/读者地图。之后：authoring Wasm 与 npm 子路径、PostgreSQL 参考宿主、在线阅读器生命周期、图视图、模拟宿主验收与交付。 |
+| Done | 维护者讨论确定第一阶段范围（决定 15–17、[目标·以后](../../product/goal.md#以后)）。ADR 0021–0023 已接受，能力请求 R1/R4/R6/R9/R12 改写、新增 R13。已合并：CI 三平台全绿并加实库 PostgreSQL job（G-019、G-028 修 SQLite 并发打开）；`@rezics/narrata` 包、类型化运行时、tarball 安装测试与预算（G-023）；共享只读执行轨迹（G-025）；存档宿主一致性套件与 put-if-absent（G-026）；解析上下文、下一步预取与 `@rezics/narrata/testing` 模拟 REZICS 内容方（G-027）；PostgreSQL 参考宿主（G-029，CI 实库 46 项通过）；阅读器控制器与 `@rezics/narrata/react` 渲染插槽（G-030）。 |
+| Running | G-024 创作核心（ADR 0022 §1–2）；G-031 作者图视图。 |
+| Next | G-024 合并后：读者 Wasm 瘦身（现 gzip 约 800 KB，因依赖整个 `narrata-node-tools` 提供 `publishGraph`；移入 authoring Wasm、Wasm 专用 release 配置与 wasm-opt、重定预算、CI 跑 `check:web`）；发布对象集合与关系投影；节点构件演化核心（ADR 0023）。之后：visits 与读者地图、authoring Wasm 与 npm server 子路径、节点存档与 GC 维护入口、网络与在线阅读器生命周期、模拟宿主验收与交付。 |
 | Coupling | REZICS 一侧由另一台电脑的 manager 实施；能力请求随 ADR 更新。维护者 2026-10-05 授权 manager 推送 `main`；CI 修复合并后推送并在 GitHub 上确认。 |
