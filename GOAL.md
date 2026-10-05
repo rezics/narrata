@@ -7,7 +7,7 @@ Goal 都长寿。
 
 | Goal | 结果 | Manager |
 | --- | --- | --- |
-| [Web 宿主 SDK](docs/goals/web-and-rezics/GOAL.md) | 带版本的 npm/Wasm 交付物、正文渲染插槽、存档接口与图视图；模拟宿主验收 | 本机 manager 负责；依赖已完成，维护者已要求启动 |
+| [Gamebook 第一阶段](docs/goals/web-and-rezics/GOAL.md) | REZICS 实现 Gamebook 所需的全部 Narrata 能力：创作与发布接口、npm/Wasm 包与阅读器外壳、存档同步、作品演化、图视图与关系投影；模拟宿主验收 | 本机 manager `narrata-web-and-rezics` |
 
 REZICS 接入由另一台电脑上的独立 manager 在 REZICS 仓库执行，见
 [REZICS 接入 Goal 交接简报](docs/integrations/rezics-goal.md)。真实联合验证是该 Goal 的最后一个任务，

@@ -4,7 +4,8 @@
 
 | 字段 | 状态（2026-10-05） |
 | --- | --- |
-| Done | 依赖的两个 Goal 已关闭。维护者要求将第三个 Goal 拆为本机 Web 宿主 SDK 和另一台机器的 REZICS 接入；交接见 `docs/integrations/rezics-goal.md`。 |
-| Running | 无。 |
-| Next | 依赖已就绪：R2 节点格式与内容引用（ADR 0013）、`narrata-nodes-wasm` 的仅清单打开与缺块重试、Wasm 发布分析（瓦片、标签表、摘要，ADR 0016）、本地内容方、kernel 历史层与 IndexedDB 宿主缓存（ADR 0015、0017）。`narrative-core` 曾一次性认领阅读器做 R2 与持久化适配；阅读器外壳、渲染插槽、模拟 REZICS 内容方与网络懒加载归本 Goal。 |
-| Coupling | 本机只实施 Narrata，用模拟宿主与打包后的 npm 交付物验收。另一台机器的 REZICS manager 负责真实适配器和网站，最后一个任务用固定发行版本联合验证；版本、提交与包校验和随交付记录。公开发布仍需维护者授权。 |
+| Done | 维护者讨论确定第一阶段范围（决定 15–17、[目标·以后](../../product/goal.md#以后)）：服务器存档实现存储契约、关系投影进宿主数据库、一个平台运行时；声明式能力与自带运行时留待以后；npm 公共发布以后再定。 |
+| 现状盘点 | 已有：R2 源稿与编译（仅 Rust/CLI，首错即停）、选择模型全部运行时能力、内容引用与大纲诊断、`NodeBook` Wasm（清单打开与缺块重试）、节点栈注册历史层、IndexedDB 缓存与多标签页冲突、图分析/瓦片/标签表/语义摘要（Rust 与 `publishGraph`）。缺：JS/Wasm 编译与发布、草稿记录组装、发布对象拆分、解析上下文的译本与读者、预取列表、`packages/narrata/web`、阅读器外壳与渲染插槽、服务器同步、Wasm 浅存档、节点栈重新发布迁移、瓦片读取与作者视图、读者地图、关系投影、模拟 REZICS 内容方、打包与预算。`main` 上 CI 一直失败（Windows 换行与 goalctl 短路径）。 |
+| Running | 第一批：CI 修复，三份 ADR（服务器存档同步、创作与发布接口含关系投影与读者地图、节点栈作品演化）。 |
+| Next | ADR 评审后派发实现：Web 包骨架与预算 → 创作发布 API → 存档同步 → 作品演化 → 图视图 → 模拟宿主验收与交付。 |
+| Coupling | REZICS 一侧由另一台电脑的 manager 实施；能力请求随 ADR 更新。推送 `main` 由维护者决定，CI 修复需推送后才能在 GitHub 上验证。 |

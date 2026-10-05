@@ -38,7 +38,7 @@
 | CLI、调试、桌面工具 | SQLite | 按行读写；schema v2 旧库用 `narrata store migrate-v2` 显式迁移 |
 | 浏览器 | IndexedDB，经 `narrata-storage-host` 的缓存后端与 `packages/narrata/kernel/js`（[ADR 0017](../adr/0017-browser-storage-host-cache.md)） | 按需读取、先落盘后发布、多标签页冲突检测；浏览器会整源驱逐存储，Safari 删除 7 天无交互的脚本存储：申请持久化并提供导出 |
 | 本地游戏 | 存档字节 | 引擎导出 Checkpoint Bundle 字节（可选浅存档，只带最近 N 个祖先，[ADR 0019](../adr/0019-shallow-history-bundles.md)），宿主写入自己的存档系统；导入时引擎重新校验 |
-| 网站登录用户 | 存档字节 | 宿主（如 REZICS）把字节存在自己的数据库并同步，Narrata 不连接该数据库 |
+| 网站登录用户 | 宿主服务器上的契约实现 | 每个"用户 × 作品"一个库，浏览器经批次协议增量同步；Narrata 不连接该数据库，结构变化由 Narrata 逐库迁移（[决定 15](../product/decisions.md#15-服务器存档实现同一个存储契约)，ADR 待写） |
 
 JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
 
@@ -50,6 +50,6 @@ JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
 
 ## 当前缺口
 
-- 节点栈尚未注册到历史层（kinds `0x0110`–`0x0112` 已按 ADR 0015 的通用提交分配），浏览器
-  阅读器仍把整份会话（含源）存为一条 IndexedDB 记录；由 Goal `narrative-core` 接入。
-- FFI 与 Wasm 宿主仍用默认的内存后端加存档字节；Rust 宿主可以给协议引擎注入任意后端。
+- 服务器存档同步（决定 15）、浅存档在 Wasm 中的导出、节点栈的重新发布迁移由 Goal
+  `web-and-rezics` 实施。
+- FFI 宿主仍用默认的内存后端加存档字节；Rust 宿主可以给协议引擎注入任意后端。
