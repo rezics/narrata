@@ -136,3 +136,66 @@ fn saves_reopen_and_checkpoints_are_checked() {
     assert!(Session::restore(program, &hex::encode(bytes)).is_err());
     session.verify_path(&chosen).unwrap();
 }
+
+/// Set NARRATA_EMIT_NODE_HISTORY to an empty temporary directory to reproduce the corpus.
+#[test]
+fn checkpoint_corpus_is_deterministic_and_imports() {
+    let emit = std::env::var_os("NARRATA_EMIT_NODE_HISTORY").map(std::path::PathBuf::from);
+    let frozen = corpus("nodes-r2-history");
+    let mut artifacts = serde_json::Map::new();
+    for (name, directory, save) in [
+        ("branched.checkpoint", "nodes-r2", "branched.export.json"),
+        (
+            "proposals.checkpoint",
+            "nodes-r2-proposals",
+            "session.export.json",
+        ),
+    ] {
+        let (program, names) =
+            Program::from_pack(&std::fs::read(corpus(directory).join("story.narpack")).unwrap())
+                .unwrap();
+        let program = Arc::new(program);
+        let text = std::fs::read_to_string(corpus(directory).join(save)).unwrap();
+        let session = Session::restore(program.clone(), &text).unwrap();
+        let bytes = hex::decode(session.export().unwrap()).unwrap();
+        assert_eq!(
+            bytes,
+            hex::decode(
+                Session::restore(program.clone(), &text)
+                    .unwrap()
+                    .export()
+                    .unwrap()
+            )
+            .unwrap()
+        );
+        let restored = Session::restore(program, &hex::encode(&bytes)).unwrap();
+        assert_eq!(session.state().unwrap(), restored.state().unwrap());
+        assert_eq!(session.page().unwrap(), restored.page().unwrap());
+        assert_eq!(
+            session.view(names.as_ref()).unwrap().interaction,
+            restored.view(names.as_ref()).unwrap().interaction
+        );
+        restored.verify_path(&restored.cursor().unwrap()).unwrap();
+        artifacts.insert(name.to_owned(), serde_json::json!({"sha256": hex::encode(narrata_kernel::codec::sha256(&bytes)),
+            "bytes": bytes.len(), "artifact_id": session.program().artifact_id(), "cursor": session.cursor().unwrap(),
+            "state": session.state().unwrap().id(), "program": format!("../{directory}/story.narpack")}));
+        if let Some(emit) = &emit {
+            std::fs::create_dir_all(emit).unwrap();
+            std::fs::write(emit.join(name), &bytes).unwrap();
+        } else {
+            assert_eq!(std::fs::read(frozen.join(name)).unwrap(), bytes);
+        }
+    }
+    let manifest = serde_json::to_vec_pretty(
+        &serde_json::json!({"format": "kernel-checkpoint-v1", "artifacts": artifacts}),
+    )
+    .unwrap();
+    if let Some(emit) = &emit {
+        std::fs::write(emit.join("manifest.json"), manifest).unwrap();
+    } else {
+        assert_eq!(
+            std::fs::read(frozen.join("manifest.json")).unwrap(),
+            manifest
+        );
+    }
+}

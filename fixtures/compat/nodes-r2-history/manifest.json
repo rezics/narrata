@@ -1,0 +1,21 @@
+{
+  "artifacts": {
+    "branched.checkpoint": {
+      "artifact_id": "artifact:705163c2d401e60115dce5bd457d8e31d77b275ff155205cbefd58a6cf68f7d9",
+      "bytes": 8949,
+      "cursor": "commit:281ec09397e8a300ef1b39c44f67f5a924e386a96fa861364a8fded036bbecf5",
+      "program": "../nodes-r2/story.narpack",
+      "sha256": "1cd68362b4da8e15a2bb6148445b0d6069ffcb0f6a220c4c8e0cd0ea54d3f8aa",
+      "state": "object:89113368bfa16ec7fa538dd3ee0d3ed4a4f9b8b2adef0c34837c64ef33d73f37"
+    },
+    "proposals.checkpoint": {
+      "artifact_id": "artifact:d2f7394dd08bec286ec26922efb0937852f925a0a3fc258f0644d4def30451be",
+      "bytes": 9922,
+      "cursor": "commit:1e007ac7cf502d997630027ff3c6c92f1c6296731276058ebd9827e6edcc4a8c",
+      "program": "../nodes-r2-proposals/story.narpack",
+      "sha256": "d60e25125ad3e8c49cbc3b4248fcf02c7efa33cf2470a869e752ebb19ca5e38e",
+      "state": "object:f777f119f49c3899dd35d88185eedb46970ec85663726b4dc4fdd260eefb6339"
+    }
+  },
+  "format": "kernel-checkpoint-v1"
+}
