@@ -106,10 +106,11 @@ outlines 复用 `ContentOutline` v1，每个内容方一份原文大纲；只含
 | 图索引、三层瓦片、按簇标签表 | 沿用 ADR 0016 的身份与受检读取，不塞进程序 manifest |
 | 语义摘要 | 原 `SemanticSummary` v1，经 `canonical_json` 编码；`digest_bytes("narrata.nodes.summary", 1, bytes)` |
 | 关系投影片及其索引 | 下节的规范 JSON；分别用 `narrata.nodes.relation-part` / `narrata.nodes.relation-index`，摘要版本 1 |
+| 可选演化描述符（角色 `evolution`） | ADR 0023 定义的规范编码与受检读取，按其 `MigrationId` 寻址，随候选发布永久保留 |
 | 发布对象集合描述 | 规范 JSON v1；`digest_bytes("narrata.nodes.publication", 1, bytes)`，称 `publication_id` |
 
 集合描述包含 `format_version, artifact_id, graph`（原 `GraphFiles` v1 的引用形状）、summary ID、
-relation index ID、可选 names ID，以及按角色与 ID 排序的全部对象 ID、字节长度和编码。
+relation index ID、可选 names ID 与 evolution MigrationId，以及按角色与 ID 排序的全部对象 ID、字节长度和编码。
 对象名为 64 位小写十六进制摘要加 `.cbor` / `.json`；JSON 身份对照上述域，不把裸 SHA-256
 或信封内的载荷校验值当作 object id。重复对象去重；同 ID 不同字节、缺对象、未知角色、长度或
 版本不符均拒绝。组装读取复核程序与伴随对象的 artifact 归属，发布方还重建投影验证语义对应。
@@ -135,8 +136,10 @@ node?, choice_point?, option?, unit?, anchor?, related: [...], message}]}`。
 最后比较并交换“作品当前发布”（宿主修订号 + publication_id + artifact_id + 投影版本）。
 失败只留下未被当前引用引用的对象，读者继续读旧发布；重试相同字节与投影是幂等的。
 旧程序永久保留供存档读取与重新投影，正文撤回仍由内容方处理，发布对象不含正文。
-返回 `previous_artifact_id, candidate_artifact_id` 及受检对象访问器，供 ADR 0023 在切换前挂接
-存档 dry-run / 演化检查；迁移计划与存档改写不进入本 ADR 的发布算法。
+返回 `previous_artifact_id, candidate_artifact_id` 及受检对象访问器；`publishRecords` 的签名不变。
+发布服务在 `publishRecords` 之后、CAS 之前调用作者模块的独立函数 `planEvolution(previous, candidate, declarations?)`。
+它产出的 ADR 0023 演化描述符以可选 `evolution` 角色加入候选对象集合，列入集合描述后重算
+publication_id，随发布永久保留，无需另一套保留机制；描述符格式、演化规划与存档改写归 ADR 0023。
 
 ### 4. 创作 Wasm 与读者 Wasm 独立交付
 
@@ -280,9 +283,11 @@ R2 图与程序读取路径不改；没有已有关系投影需要原地迁移�
 ### 6. 已访问集合与地图都是纯计算
 
 提议 `visitedFromSave(checkedProgram, saveObjects, cursor) -> VisitReport`：受检读提交、State、Input，
-从根到 cursor 重放，验证状态与提交摘要；在现有执行核心以默认关闭的作者 feature 加只读 trace，
-使 reader 构建不包含 trace；收集自动经过的节点、呈现的 Segment 单元 / 锚点及
-`Interaction::Finished.body`、相邻单元转移及选择点 / 选项，并记录首次访问顺序。
+从根到 cursor 重放，验证状态与提交摘要；只读执行 trace 只定义并实现一次，同时供 ADR 0023 路径比较。
+trace 按执行顺序记录 graph / node、呈现的 Segment（单元 / 锚点及 `Interaction::Finished.body`）、
+选中选项的 outcome / target、branch 去向与 call / return；从它派生相邻单元转移及首次访问顺序。
+默认关闭的 feature 将它编进 authoring / server Wasm，读者 Wasm 不含 trace；作品升级的评估与应用
+也在此模块运行：服务器在 Node 中，匿名读者在浏览器中只在需要升级时懒加载，不计入阅读首屏。
 不能只收集 `HistoryView.node`：一次输入可经过多段落与调用，等待位置会漏掉自动执行的内容。
 输出带 artifact、cursor、已访问静态节点 / 单元 / 段、走过的边、当前可见交互的 frontier；
 动态提议中的引用可记已呈现单元，但不冒充静态投影节点或改写投影。
@@ -318,7 +323,7 @@ Wasm 在浏览器与 Node / Bun 运行；服务器按允许集合取投影行的
 | --- | --- |
 | `nodes/crates/narrata-nodes/src/{compile,check,registry}.rs`；`tooling/crates/narrata-authoring/src/{records,validate,ids,compose}.rs` | 先提取共用语义检查及 compose 核心，生成 `nodes/schemas/draft-record.schema.json` 等新 schema；测试多错并报、坏 JSON、1 MiB 边界、split/assemble、UUIDv7、移主与墓碑连续、locked 失败不写入；`fixtures/compat/draft-records-v1/` 冻结规范记录与 R2 组装结果 |
 | `tooling/crates/narrata-authoring/src/{publication,relations}.rs`；现有 `narrata-node-tools/src/{compose,publish}.rs` | 依赖上项与共用对象编译路径，CLI 成为文件适配器；新发布 / 投影 schema、受检解码；`fixtures/compat/publication-v1/`、`relations-v1/` 冻结索引、分片、行、全部对象摘要；测试原 pack 拆装、对象总量超过 64 MiB 而单对象合法、不同输入顺序同摘要、正文独立、坏引用 / 重复 / 缺片拒绝、旧构件重建、新旧发布隔离与幂等 |
-| `nodes/crates/narrata-nodes/src/runtime.rs`；`tooling/crates/narrata-authoring/src/maps.rs` | 只读 trace 依赖既有历史读取，地图依赖投影；测试自动节点、调用、局部 / 多选、提议、回退、浅存档 incomplete、visible / disabled frontier，以及输出递归不含隐藏 ID / key / 坐标；生成地图交换 schema，不修改存档格式 |
+| `nodes/crates/narrata-nodes/src/runtime.rs`；`tooling/crates/narrata-authoring/src/maps.rs` | 唯一的共用只读 trace 依赖既有历史读取，同时是 ADR 0023 路径比较的前提；地图依赖投影；测试自动节点、调用、局部 / 多选、提议、回退、浅存档 incomplete、visible / disabled frontier，以及输出递归不含隐藏 ID / key / 坐标；生成地图交换 schema，不修改存档格式 |
 | `tooling/crates/narrata-authoring-wasm/`；`packages/narrata/web/`；`examples/gamebook-web/`、`products/gamebook-demo/` | 依赖前述接口；同一“山口来信”经记录发布与 CLI 的程序字节一致；浏览器 Worker、Node、Bun、打包 tarball 消费测试，验证 authoring 懒加载、reader 首屏体积不增长、超大作品不通过 JSON 全量搬运 |
 
 上表 `nodes/`、`tooling/` 均相对 `packages/narrata/`。实现按 crate 跑 test / clippy 和 Wasm target
