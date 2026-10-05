@@ -571,6 +571,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-node-bench"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "hex",
+ "narrata-nodes",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "narrata-node-tools"
 version = "0.1.0-alpha.1"
 dependencies = [

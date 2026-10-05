@@ -1,0 +1,27 @@
+[package]
+name = "narrata-node-bench"
+description = "Deterministic synthetic narrative works and native chunk-cache measurements"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+narrata-nodes = { path = "../../../nodes/crates/narrata-nodes", version = "=0.1.0-alpha.1" }
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+
+# The binary's counting System allocator needs a narrowly scoped unsafe implementation.
+# The generator library forbids unsafe code; every other binary module denies it.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unchecked_time_subtraction = "deny"
+unwrap_used = "deny"

@@ -31,6 +31,9 @@ tasks:
   bench:g2:
     desc: Persistence and kernel benchmarks
     cmds: [pwsh -NoProfile -File scripts/benchmark-g2.ps1]
+  bench:nodes:
+    desc: Synthetic 100k-choice works, lazy chunk loading and bounded cache measurements
+    cmds: ['pwsh -NoProfile -File scripts/benchmark-nodes.ps1 {{.CLI_ARGS}}']
   docs:check:
     desc: Check relative links and heading anchors in Markdown
     cmds:
