@@ -52,9 +52,14 @@ export type Interaction =
       min: number;
       node: NodeId;
       /**
-       * Visible options in order; hidden ones are left out.
+       * Visible options in order, proposed ones after the choice point's own; hidden ones
+       * are left out.
        */
       options: OptionView[];
+      /**
+       * Whether the host may propose options and passages here.
+       */
+      proposals?: boolean;
     }
   | {
       body?: Segment | null;
