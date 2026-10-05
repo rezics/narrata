@@ -1,7 +1,7 @@
 # 存储与存档
 
-状态：目标契约。现有实现见 [时间旅行与存档](../architecture/time-travel-and-save.md) 与
-`crates/narrata-store`；收敛工作属于 Goal `kernel-and-saves`。依据：[决定 7、8、9](../product/decisions.md)。
+状态：已实现，本页只保留代码说不了的角色划分与场景选择；格式与机制见下文链接的 ADR。
+依据：[决定 7、8、9](../product/decisions.md)。
 
 ## 三种角色
 
@@ -36,8 +36,8 @@
 | --- | --- | --- |
 | 测试与 Wasm 内临时会话 | 内存 | 行为参考 |
 | CLI、调试、桌面工具 | SQLite | 按行读写；schema v2 旧库用 `narrata store migrate-v2` 显式迁移 |
-| 浏览器 | IndexedDB（以后可选 OPFS 上的 SQLite-Wasm） | 浏览器会整源驱逐存储，Safari 删除 7 天无交互的脚本存储：申请持久化并提供导出 |
-| 本地游戏 | 存档字节 | 引擎导出 Checkpoint Bundle 字节，宿主写入自己的存档系统；导入时引擎重新校验 |
+| 浏览器 | IndexedDB，经 `narrata-storage-host` 的缓存后端与 `packages/narrata/kernel/js`（[ADR 0017](../adr/0017-browser-storage-host-cache.md)） | 按需读取、先落盘后发布、多标签页冲突检测；浏览器会整源驱逐存储，Safari 删除 7 天无交互的脚本存储：申请持久化并提供导出 |
+| 本地游戏 | 存档字节 | 引擎导出 Checkpoint Bundle 字节（可选浅存档，只带最近 N 个祖先，[ADR 0019](../adr/0019-shallow-history-bundles.md)），宿主写入自己的存档系统；导入时引擎重新校验 |
 | 网站登录用户 | 存档字节 | 宿主（如 REZICS）把字节存在自己的数据库并同步，Narrata 不连接该数据库 |
 
 JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
@@ -50,8 +50,6 @@ JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
 
 ## 当前缺口
 
-- Checkpoint Bundle 携带目标提交的全部祖先，导出字节随历史深度线性增长；浅存档会改变 bundle
-  语义，需要单独的 ADR。
-- 协议引擎（FFI、Wasm、TypeScript 绑定使用）写死了内存存储。
 - 节点栈尚未注册到历史层（kinds `0x0110`–`0x0112` 已按 ADR 0015 的通用提交分配），浏览器
-  阅读器仍把整份会话（含源）存为一条 IndexedDB 记录。
+  阅读器仍把整份会话（含源）存为一条 IndexedDB 记录；由 Goal `narrative-core` 接入。
+- FFI 与 Wasm 宿主仍用默认的内存后端加存档字节；Rust 宿主可以给协议引擎注入任意后端。
