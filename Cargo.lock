@@ -550,6 +550,7 @@ dependencies = [
  "narrata-history",
  "narrata-kernel",
  "narrata-storage",
+ "narrata-storage-host",
  "narrata-storage-sqlite",
  "serde_json",
  "tempfile",
