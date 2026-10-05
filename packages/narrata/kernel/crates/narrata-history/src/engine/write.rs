@@ -596,6 +596,11 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             }),
             Err(error) if error.outcome_unknown() => match self.reconcile(&batch) {
                 Ok(Some(applied)) => Ok(applied),
+                // The host loads what the read-back lacks and runs the operation again, which
+                // decides better than reporting the outcome as unknown.
+                Err(StorageError::NotLoaded) => Err(Attempt::Fail(
+                    HistoryError::from(StorageError::NotLoaded).into(),
+                )),
                 Ok(None) | Err(_) => Err(Attempt::Fail(HistoryError::from(error).into())),
             },
             Err(error) => Err(Attempt::Fail(HistoryError::from(error).into())),

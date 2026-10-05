@@ -28,6 +28,11 @@ pub enum StorageError {
     /// The store is damaged. A batch may or may not have been applied.
     #[error("storage is corrupt: {0}")]
     Corrupt(String),
+    /// The backend holds only part of the store in memory and lacks what the call reads; the
+    /// call had no effect. The backend records what it lacks, its host loads that and runs the
+    /// whole operation again (ADR 0017), so the engine passes this error up unchanged.
+    #[error("storage has not loaded what the call reads")]
+    NotLoaded,
 }
 
 impl StorageError {

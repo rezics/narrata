@@ -2,7 +2,8 @@
 //!
 //! Each case is a public function over a [`Harness`]; [`conformance_tests!`](crate::conformance_tests)
 //! expands all of them into one `#[test]` each. Cases that need a capability the backend does
-//! not declare (durable storage, concurrent writers) pass without checking anything.
+//! not declare (storage that outlives its handles, concurrent writers) pass without checking
+//! anything.
 
 // The suite reports failures by panicking, like any test.
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
@@ -31,8 +32,8 @@ pub trait Harness {
         None
     }
 
-    /// Closes `backend` and opens its store again. Required when the backend declares durable
-    /// storage.
+    /// Closes `backend` and opens its store again. Required when the backend's data outlives its
+    /// handles, that is when it declares durable or evictable storage.
     fn reopen(&mut self, _backend: Self::Backend) -> Option<Self::Backend> {
         None
     }
@@ -835,7 +836,8 @@ pub fn limits_reject_requests_without_effect<H: Harness>(harness: &mut H) {
 pub fn reopened_store_keeps_state_and_revisions<H: Harness>(harness: &mut H) {
     let mut backend = create(harness);
     let capabilities = backend.capabilities();
-    if capabilities.durability != Durability::Durable {
+    // Evictable stores survive restarts too; only the platform may drop them whole.
+    if capabilities.durability == Durability::Memory {
         return;
     }
     backend
@@ -863,7 +865,7 @@ pub fn reopened_store_keeps_state_and_revisions<H: Harness>(harness: &mut H) {
 
     let mut reopened = harness
         .reopen(backend)
-        .expect("the harness of a durable backend must reopen it");
+        .expect("the harness of a persistent backend must reopen it");
     assert_eq!(reopened.capabilities(), capabilities);
     assert_eq!(dump(&reopened), before);
     let next = revision(

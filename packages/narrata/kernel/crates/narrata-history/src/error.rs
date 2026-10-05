@@ -49,6 +49,9 @@ pub enum HistoryError {
     Io(String),
     #[error("storage database is corrupt: {0}")]
     CorruptStore(String),
+    /// Limits, malformed requests, unreadable formats, and [`StorageError::NotLoaded`], which
+    /// stays itself so that a caching backend's host can load what is missing and run the
+    /// operation again.
     #[error(transparent)]
     Storage(StorageError),
 }
@@ -62,7 +65,8 @@ impl From<StorageError> for HistoryError {
             StorageError::Corrupt(message) => Self::CorruptStore(message),
             other @ (StorageError::Limit(_)
             | StorageError::Invalid(_)
-            | StorageError::Format(_)) => Self::Storage(other),
+            | StorageError::Format(_)
+            | StorageError::NotLoaded) => Self::Storage(other),
         }
     }
 }

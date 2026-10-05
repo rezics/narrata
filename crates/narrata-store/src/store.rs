@@ -172,7 +172,8 @@ impl From<StorageError> for StoreError {
             StorageError::Corrupt(message) => Self::CorruptStore(message),
             other @ (StorageError::Limit(_)
             | StorageError::Invalid(_)
-            | StorageError::Format(_)) => Self::Storage(other),
+            | StorageError::Format(_)
+            | StorageError::NotLoaded) => Self::Storage(other),
         }
     }
 }
