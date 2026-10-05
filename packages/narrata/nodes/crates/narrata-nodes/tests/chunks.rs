@@ -167,16 +167,13 @@ fn every_reload_is_checked_and_failed_loads_do_not_enter_the_cache() {
 fn deep_frame_pins_survive_a_smaller_budget_and_release_independently() {
     let (program, source) = opened(&fixture(64), 1);
     let mut session = Session::new(program.clone(), ExecutionId::from_bytes([2; 16])).unwrap();
-    let mut pins = program.pin_state(session.state().unwrap()).unwrap();
     for _ in 1..64 {
         descend(&mut session);
-        let next = program.pin_state(session.state().unwrap()).unwrap();
-        pins = next;
     }
     assert_eq!(session.state().unwrap().frames.len(), 64);
     assert_eq!(program.loaded_chunks(), 64);
     let second = program.pin_state(session.state().unwrap()).unwrap();
-    drop(pins);
+    drop(session);
     program
         .graph(&GraphRef {
             package: "side".into(),
@@ -214,12 +211,120 @@ fn failed_pinning_releases_partial_pins() {
     let (program, source) = opened(&fixture(4), 1);
     let mut session = Session::new(program.clone(), ExecutionId::from_bytes([3; 16])).unwrap();
     descend(&mut session);
+    let state = session.state().unwrap().clone();
+    drop(session);
     let id = program.manifest().chunks[program.manifest().graphs[&graph(1)].chunk as usize];
     source.lock().unwrap().bytes.remove(&id);
     program.graph(&graph(2)).unwrap();
-    assert!(program.pin_state(session.state().unwrap()).is_err());
+    assert!(program.pin_state(&state).is_err());
     program.graph(&graph(3)).unwrap();
     assert_eq!(program.loaded_chunks(), 1);
+}
+
+#[test]
+fn checkout_restore_and_cloning_keep_only_their_live_frame_chunks() {
+    let (program, source) = opened(&fixture(4), 1);
+    let mut session = Session::new(program.clone(), ExecutionId::from_bytes([6; 16])).unwrap();
+    let root = session.cursor().unwrap();
+    descend(&mut session);
+    let deep = session.cursor().unwrap();
+    let copy = session.clone();
+    let save = session.export().unwrap();
+    session.checkout(&root).unwrap();
+    program.set_chunk_capacity(NonZeroUsize::new(1).unwrap());
+    assert_eq!(program.loaded_chunks(), 2);
+    drop(copy);
+    assert_eq!(program.loaded_chunks(), 1);
+    let restored = Session::restore(program.clone(), &save).unwrap();
+    assert_eq!(restored.cursor().unwrap(), deep);
+    program.graph(&graph(3)).unwrap();
+    program.set_chunk_capacity(NonZeroUsize::new(1).unwrap());
+    assert_eq!(program.loaded_chunks(), 2);
+    let reads = source.lock().unwrap().reads.clone();
+    restored.view(None).unwrap();
+    assert_eq!(source.lock().unwrap().reads, reads);
+    drop(restored);
+    assert_eq!(program.loaded_chunks(), 1);
+}
+
+#[test]
+fn automatic_calls_pin_the_entire_stack_before_the_next_interaction() {
+    let compilation = try_variant(|manifest, main, _| {
+        manifest["product"]["entry"]["graph"] = json!("g0");
+        manifest["product"]["bindings"] = json!([]);
+        manifest["product"]["endings"] = json!({});
+        main["exports"] = json!(["g0"]);
+        let mut graphs = serde_json::Map::new();
+        for index in 0..64 {
+            let base = 400 + index * 3;
+            let mut nodes = json!({"out": {"id": node(base), "type_id": "narrata.return", "data": {"outcome": "done"}}});
+            if index == 63 {
+                nodes["entry"] = json!({"id": node(base + 1), "type_id": "narrata.passage", "data": {
+                    "choice_points": [{"id": point(base), "key": "leave", "options": [{"id": option(base), "key": "leave", "label": content("leave"), "outcome": {"kind": "branch", "target": "out"}}]}]
+                }});
+            } else {
+                nodes["entry"] = json!({"id": node(base + 1), "type_id": "narrata.call", "data": {
+                    "target": {"kind": "local", "graph": format!("g{}", index + 1)}, "on_return": {"done": "out"}
+                }});
+            }
+            graphs.insert(format!("g{index}"), json!({"entry": "entry", "outcomes": ["done"], "nodes": nodes}));
+        }
+        main["graphs"] = graphs.into();
+    }).unwrap();
+    let (program, source) = opened(&compilation.pack, 1);
+    let mut session = Session::new(program.clone(), ExecutionId::from_bytes([7; 16])).unwrap();
+    assert_eq!(session.state().unwrap().frames.len(), 64);
+    assert_eq!(program.loaded_chunks(), 64);
+    assert!(
+        source
+            .lock()
+            .unwrap()
+            .reads
+            .values()
+            .all(|reads| *reads == 1)
+    );
+    descend(&mut session);
+    assert!(session.state().unwrap().frames.is_empty());
+    assert_eq!(program.loaded_chunks(), 1);
+    assert!(
+        source
+            .lock()
+            .unwrap()
+            .reads
+            .values()
+            .all(|reads| *reads == 1)
+    );
+}
+
+#[test]
+fn a_failed_choice_keeps_the_previous_session_pins() {
+    let (program, source) = opened(&fixture(4), 1);
+    let mut session = Session::new(program.clone(), ExecutionId::from_bytes([8; 16])).unwrap();
+    let cursor = session.cursor().unwrap();
+    let before = session.state().unwrap().clone();
+    let callee = program.manifest().chunks[program.manifest().graphs[&graph(1)].chunk as usize];
+    source.lock().unwrap().bytes.remove(&callee);
+    let frame = &before.frames[0];
+    let graph = program.graph(&frame.graph).unwrap();
+    let narrata_nodes::plan::Plan::Passage(passage) = &graph.nodes[&frame.node] else {
+        unreachable!()
+    };
+    let point = &passage.choice_points[0];
+    assert!(
+        session
+            .choose(&cursor, point.id, vec![point.options[0].id])
+            .is_err()
+    );
+    drop(graph);
+    assert_eq!(session.cursor().unwrap(), cursor);
+    assert_eq!(session.state().unwrap(), &before);
+    program.graph(&crate::graph(3)).unwrap();
+    program.set_chunk_capacity(NonZeroUsize::new(1).unwrap());
+    assert_eq!(program.loaded_chunks(), 1);
+    let root =
+        program.manifest().chunks[program.manifest().graphs[&crate::graph(0)].chunk as usize];
+    program.graph(&crate::graph(0)).unwrap();
+    assert_eq!(source.lock().unwrap().reads[&root], 1);
 }
 
 #[test]

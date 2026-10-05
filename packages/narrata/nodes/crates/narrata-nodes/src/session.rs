@@ -33,7 +33,7 @@ struct Record {
 }
 
 /// Single-process coordinator. A host persists an export before it shows a new view.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Session {
     program: Arc<Program>,
     execution: ExecutionId,
@@ -41,6 +41,19 @@ pub struct Session {
     index: BTreeMap<CommitId, usize>,
     states: BTreeMap<ObjectId, usize>,
     cursor: usize,
+    // Cloned sessions can share the guard until one of them moves its cursor.
+    pins: Arc<crate::ChunkPins>,
+}
+
+impl std::fmt::Debug for Session {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Session")
+            .field("execution", &self.execution)
+            .field("cursor", &self.cursor)
+            .field("records", &self.records)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Temporary session export (ADR 0013 §6). The objects are the same envelopes a kernel store
@@ -59,6 +72,7 @@ pub struct SessionExport {
 impl Session {
     pub fn new(program: Arc<Program>, execution: ExecutionId) -> Result<Self> {
         let step = Machine { program: &program }.initial()?;
+        let pins = Arc::new(step.pins);
         let mut session = Self {
             program,
             execution,
@@ -66,6 +80,7 @@ impl Session {
             index: BTreeMap::new(),
             states: BTreeMap::new(),
             cursor: 0,
+            pins,
         };
         session.insert(None, None, step.state)?;
         Ok(session)
@@ -174,7 +189,9 @@ impl Session {
             program: &self.program,
         }
         .apply(&parent.id, &parent.state, &input)?;
+        let pins = Arc::new(step.pins);
         self.cursor = self.insert(Some(self.cursor), Some(input), step.state)?;
+        self.pins = pins;
         self.cursor()
     }
 
@@ -194,7 +211,9 @@ impl Session {
             program: &self.program,
         }
         .propose(&parent.id, &parent.state, request)?;
+        let pins = Arc::new(step.pins);
         self.cursor = self.insert(Some(self.cursor), Some(input), step.state)?;
+        self.pins = pins;
         self.cursor()
     }
 
@@ -207,8 +226,9 @@ impl Session {
             )
         })?;
         // The target's presentation is recomputed before the cursor moves.
-        self.step(index)?;
+        let step = self.step(index)?;
         self.cursor = index;
+        self.pins = Arc::new(step.pins);
         Ok(())
     }
 
@@ -456,7 +476,13 @@ impl Session {
         if commits.is_empty() || commits.len() > MAX_COMMITS {
             return Err(Error::new("limit", "objects", "expected 1..512 commits"));
         }
+        let cursor_state = commits
+            .iter()
+            .find(|commit| commit.id() == export.cursor)
+            .and_then(|commit| states.get(&commit.state))
+            .ok_or_else(|| Error::new("save", "cursor", "cursor has no retained state"))?;
         let mut session = Self {
+            pins: Arc::new(program.pin_state(&cursor_state.0)?),
             program: program.clone(),
             execution: export.execution,
             records: Vec::new(),

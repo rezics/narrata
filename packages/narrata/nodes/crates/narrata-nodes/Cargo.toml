@@ -16,6 +16,7 @@ hex.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+narrata-history = { path = "../../../kernel/crates/narrata-history", version = "=0.1.0-alpha.1" }
 proptest.workspace = true
 
 [lints]

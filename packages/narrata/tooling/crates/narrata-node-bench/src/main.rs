@@ -196,7 +196,6 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
                 .map_err(|_| fail("execution ID length"))?,
         ),
     )?;
-    let mut pins = program.pin_state(session.state()?)?;
     let first_screen = interval.finish();
     let first_screen_chunk_reads = reads.count.load(Relaxed);
     let first_screen_transfer_bytes = open_transfer_bytes + reads.bytes.load(Relaxed);
@@ -229,8 +228,6 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
         let started = Instant::now();
         match session.choose(&expected, point, vec![option]) {
             Ok(_) => {
-                let next = program.pin_state(session.state()?)?;
-                pins = next;
                 samples.push(started.elapsed());
                 max_loaded = max_loaded.max(program.loaded_chunks());
             }
@@ -246,7 +243,6 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
     let play_chunk_reads = reads.count.load(Relaxed) - before_reads;
     let final_commit = session.cursor()?.to_string();
     let final_state = session.state()?.id().to_string();
-    drop(pins);
     drop(session);
     program.set_chunk_capacity(capacity);
     let before_reads = reads.count.load(Relaxed);

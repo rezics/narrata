@@ -26,9 +26,9 @@ pub(crate) struct Item {
 }
 
 /// The result of running one input (or of starting the story).
-#[derive(Clone, Debug)]
 pub(crate) struct Step {
     pub state: State,
+    pub pins: crate::ChunkPins,
     pub presentation: Vec<Item>,
     /// Whether the passage the step stops in was entered during this step, rather than
     /// continued after a local choice.
@@ -37,6 +37,7 @@ pub(crate) struct Step {
 
 struct Work {
     state: State,
+    pins: crate::ChunkPins,
     items: Vec<Item>,
     steps: u32,
     entered: bool,
@@ -154,6 +155,7 @@ impl Machine<'_> {
             finished: None,
         };
         let mut work = Work {
+            pins: self.program.pin_state(&state)?,
             state,
             items: Vec::new(),
             steps: 0,
@@ -163,6 +165,7 @@ impl Machine<'_> {
         check_size(&work.state)?;
         Ok(Step {
             state: work.state,
+            pins: work.pins,
             presentation: work.items,
             entered: work.entered,
         })
@@ -175,11 +178,15 @@ impl Machine<'_> {
                 choice_point,
                 options,
             } => self.choose(parent, choice_point, options),
-            Input::Propose { .. } => Ok(Step {
-                state: apply_proposal(self.program, parent_commit, parent, input)?,
-                presentation: Vec::new(),
-                entered: false,
-            }),
+            Input::Propose { .. } => {
+                let state = apply_proposal(self.program, parent_commit, parent, input)?;
+                Ok(Step {
+                    pins: self.program.pin_state(&state)?,
+                    state,
+                    presentation: Vec::new(),
+                    entered: false,
+                })
+            }
         }
     }
 
@@ -207,6 +214,7 @@ impl Machine<'_> {
     ) -> Result<Step> {
         let indices = check_choice(self.program, parent, choice_point, options)?;
         let mut work = Work {
+            pins: self.program.pin_state(parent)?,
             state: parent.clone(),
             items: Vec::new(),
             steps: 0,
@@ -284,6 +292,7 @@ impl Machine<'_> {
         check_size(&work.state)?;
         Ok(Step {
             state: work.state,
+            pins: work.pins,
             presentation: work.items,
             entered: work.entered,
         })
@@ -360,10 +369,12 @@ impl Machine<'_> {
                         locals: callee.header.locals.clone(),
                         overlay: Overlay::default(),
                     });
+                    work.pins = self.program.pin_state(&work.state)?;
                     check_size(&work.state)?;
                 }
                 Plan::Return { outcome } => {
                     work.state.frames.pop();
+                    work.pins = self.program.pin_state(&work.state)?;
                     match work.state.frames.last_mut() {
                         Some(parent) => {
                             let caller = self.program.graph(&parent.graph)?;

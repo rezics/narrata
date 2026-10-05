@@ -602,6 +602,7 @@ name = "narrata-nodes"
 version = "0.1.0-alpha.1"
 dependencies = [
  "hex",
+ "narrata-history",
  "narrata-kernel",
  "proptest",
  "schemars",
