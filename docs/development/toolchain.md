@@ -28,6 +28,7 @@
 | `task check:r1` | 节点栈与 Web Gamebook：Rust 测试、Wasm 构建、浏览器回归、生成文件漂移 | 改动 `packages/narrata/**`、`products/**`、`examples/gamebook-web/**` |
 | `task check:web-storage` | IndexedDB 存储适配器：类型检查、Vitest、计数器 Wasm 模块上的 Chromium 回归（端口 4183） | 改动 `packages/narrata/kernel/js/**` 或 `narrata-storage-host` |
 | `task bench:g2` | 持久化与内核基准 | 改动存储或快照路径时对比 |
+| `task bench:nodes` | 合成 10 万选择点作品、首屏按块加载、选择耗时与有界缓存分配计数 | 改动节点运行时或程序块加载时对比；结果与边界见[节点规模基准](benchmarks/nodes-scale.md) |
 | `task docs:check` | Markdown 相对链接与标题锚点 | 任何文档改动 |
 | `task test:scripts` | `goalctl` 与文档检查的 Bun 测试 | 改动 `scripts/**` |
 
