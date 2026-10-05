@@ -284,6 +284,7 @@ mod tests {
             .resolve(&ResolveRequest {
                 context: ResolveContext {
                     languages: vec!["en".to_owned()],
+                    ..ResolveContext::default()
                 },
                 items: vec![ResolveItem {
                     content: Content::Segment(body),
