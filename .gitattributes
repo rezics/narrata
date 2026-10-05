@@ -13,6 +13,7 @@ fixtures/compat/browser-storage-v1/** -text
 
 # Packed node artifacts are binary envelopes.
 *.narpack binary
+products/**/*.cbor binary
 
 # Every Goal appends corpus entries here; keep both sides on merge.
 .gitattributes merge=union

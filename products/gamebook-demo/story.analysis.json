@@ -477,5 +477,36 @@
       ]
     }
   ],
-  "diagnostics": []
+  "diagnostics": [
+    {
+      "code": "structural_bottleneck",
+      "path": "packages.road.graphs.crossing.nodes.rocks",
+      "message": "Every finite structural entry-to-ending route passes through this node."
+    },
+    {
+      "code": "structural_bottleneck",
+      "path": "packages.road.graphs.crossing.nodes.crossed",
+      "message": "Every finite structural entry-to-ending route passes through this node."
+    },
+    {
+      "code": "structural_bottleneck",
+      "path": "packages.main.graphs.journey.nodes.station",
+      "message": "Every finite structural entry-to-ending route passes through this node."
+    },
+    {
+      "code": "structural_bottleneck",
+      "path": "packages.main.graphs.journey.nodes.road",
+      "message": "Every finite structural entry-to-ending route passes through this node."
+    },
+    {
+      "code": "structural_bottleneck",
+      "path": "packages.main.graphs.journey.nodes.gate",
+      "message": "Every finite structural entry-to-ending route passes through this node."
+    },
+    {
+      "code": "structural_cycle",
+      "path": "packages.main.graphs.journey.nodes.camp",
+      "message": "A structural cycle contains 12 node(s); conditions and call stacks are not solved."
+    }
+  ]
 }

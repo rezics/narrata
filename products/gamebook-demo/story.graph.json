@@ -1,0 +1,55 @@
+{
+  "format_version": 1,
+  "artifact_id": "artifact:705163c2d401e60115dce5bd457d8e31d77b275ff155205cbefd58a6cf68f7d9",
+  "index_object_id": "8cdf4d04768673615805bf06420e16d11e836aa7c83852f290d8cf30ae817be7",
+  "labels": [
+    {
+      "cluster": "cluster:0d9f12797b321c0284ca972801bd6306",
+      "object_id": "a51404319cf8d937cdcb6c749af426a269ad1c4a5ccc60678bcb927bb2fe03b4"
+    },
+    {
+      "cluster": "cluster:2b0d4344a2940470bda98c31e0806b23",
+      "object_id": "03e3ab39a8b69105fec3c2c6a22c301b2a36e0b8f7b9f0088df359939f68dd0f"
+    },
+    {
+      "cluster": "cluster:684071614467a2a5310d3736320a90e0",
+      "object_id": "f79f6c4aae256f69f13b768ece2348a494948f145e01aadbc05c3a14437b208d"
+    },
+    {
+      "cluster": "cluster:72687ae74ec9ed33fbbdd74906b8a774",
+      "object_id": "2304c104db2dd3a7720777a5700321dccae8cdcea8f5180831bbdb5eb1f8bc21"
+    },
+    {
+      "cluster": "cluster:848b982918ded24849bf4842c78a6efb",
+      "object_id": "c2a1683474e8cfab8c0f0cf263bbee04154f1d073a4d854017f53786fd92d901"
+    },
+    {
+      "cluster": "cluster:8a3c618d930a5bee09b5a895aa89dd75",
+      "object_id": "5132bbd3c055790e775272527555743150c6feba2ea776b198c36a80ebf91e70"
+    },
+    {
+      "cluster": "cluster:b3b73703416b24b40995a9329d4fbdaa",
+      "object_id": "9d1f45bc145148e25a0b8ac49f26f7e22998de8f8f1108388fa29f649ebe76fd"
+    },
+    {
+      "cluster": "cluster:c385ca38682ec4e9e4054375bed0ae86",
+      "object_id": "a7d7dee26c45fe8fe0b47c7183ced7bbe50dc1405cc3346e39aee9396637214c"
+    },
+    {
+      "cluster": "cluster:cc8ee7f961b1adc8739abf2971ee6c5b",
+      "object_id": "357f0ad7e2cadd438996d1e20fc57ea1d3ce89945612d402a6afa81f49d7d340"
+    },
+    {
+      "cluster": "cluster:edd0f7da6d4493ae218a33c72109e787",
+      "object_id": "db6f9b5c816473d1f56e777400ff72a9e6b8792b918cceae43f3373498ac86e1"
+    },
+    {
+      "cluster": "cluster:f41f05710d41f3931cc14a4c34aa4f4f",
+      "object_id": "3d136de98784e5679e5ecb661e28edde6a08823d3097d0ccfe1b8d6c9f704d46"
+    },
+    {
+      "cluster": "cluster:fc018ddf98a0502fe9b6baba1cf26c1d",
+      "object_id": "8b33f8d36540b08f8cf5b35e595be8d4bf01d8198f7dd7ac80afe79c46966fcd"
+    }
+  ]
+}
