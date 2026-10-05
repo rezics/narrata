@@ -9,7 +9,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use narrata_storage::{
@@ -83,20 +83,29 @@ impl SqliteBackend {
     pub fn open_with(path: impl AsRef<Path>, options: SqliteOptions) -> Result<Self, StorageError> {
         let path = path.as_ref().to_path_buf();
         let mut connection = Connection::open(&path).map_err(map_error)?;
-        connection
-            .busy_timeout(options.busy_timeout)
-            .map_err(map_error)?;
-        prepare_schema(&mut connection)?;
+        // Own the wait during setup: lock promotion during the WAL switch can skip
+        // SQLite's busy handler. Disabling it also prevents nested waits from renewing
+        // the timeout. Restore the caller's handler for ordinary operations below.
+        connection.busy_timeout(Duration::ZERO).map_err(map_error)?;
+        let started = Instant::now();
+        retry_open_busy(started, options.busy_timeout, || {
+            prepare_schema(&mut connection)
+        })?;
         // Set only after the format check, so that a foreign file is never modified. WAL lets
         // readers proceed during a write; filesystems without WAL support keep their journal
         // mode, which is slower but equally atomic and durable.
-        connection
-            .query_row("PRAGMA journal_mode = WAL", [], |row| {
-                row.get::<_, String>(0)
-            })
-            .map_err(map_error)?;
+        retry_open_busy(started, options.busy_timeout, || {
+            connection
+                .query_row("PRAGMA journal_mode = WAL", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(map_error)
+        })?;
         connection
             .pragma_update(None, "synchronous", "FULL")
+            .map_err(map_error)?;
+        connection
+            .busy_timeout(options.busy_timeout)
             .map_err(map_error)?;
         Ok(Self {
             connection,
@@ -107,6 +116,30 @@ impl SqliteBackend {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+// Each attempt must release its statement/transaction before sleeping, so another opener
+// or writer can progress. Only Busy is retryable here; preserve every other error verbatim.
+fn retry_open_busy<T>(
+    started: Instant,
+    timeout: Duration,
+    mut operation: impl FnMut() -> Result<T, StorageError>,
+) -> Result<T, StorageError> {
+    loop {
+        match operation() {
+            Err(StorageError::Busy) => {
+                let remaining = timeout.saturating_sub(started.elapsed());
+                if remaining.is_zero() {
+                    return Err(StorageError::Busy);
+                }
+                std::thread::sleep(remaining.min(Duration::from_millis(5)));
+                if started.elapsed() >= timeout {
+                    return Err(StorageError::Busy);
+                }
+            }
+            result => return result,
+        }
     }
 }
 
@@ -466,6 +499,122 @@ mod tests {
     use super::*;
 
     #[test]
+    fn wal_switch_can_skip_the_busy_handler_with_another_writer() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        static CALLED: AtomicBool = AtomicBool::new(false);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("store.sqlite");
+        let mut opening = Connection::open(&path).unwrap();
+        opening.busy_timeout(Duration::from_secs(2)).unwrap();
+        prepare_schema(&mut opening).unwrap();
+        let mut writer = Connection::open(&path).unwrap();
+        let lock = writer
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        // WAL setup first reads the header, then tries to promote its shared lock to a
+        // reserved lock. Waiting here could deadlock with the writer's eventual COMMIT.
+        opening
+            .busy_handler(Some(|_| {
+                CALLED.store(true, Ordering::Relaxed);
+                false
+            }))
+            .unwrap();
+        let error = opening
+            .query_row("PRAGMA journal_mode = WAL", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap_err();
+        assert_eq!(map_error(error), StorageError::Busy);
+        assert!(!CALLED.load(Ordering::Relaxed));
+
+        opening.busy_timeout(Duration::ZERO).unwrap();
+        let timeout = Duration::from_millis(80);
+        let started = Instant::now();
+        let error = retry_open_busy(started, timeout, || {
+            opening
+                .query_row("PRAGMA journal_mode = WAL", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(map_error)
+        })
+        .unwrap_err();
+        assert_eq!(error, StorageError::Busy);
+        assert!(started.elapsed() >= timeout);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        // A later setup phase receives the same start time, never a fresh wait budget.
+        let mut attempts = 0;
+        let error = retry_open_busy(started, timeout, || {
+            attempts += 1;
+            opening
+                .query_row("PRAGMA journal_mode = WAL", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(map_error)
+        })
+        .unwrap_err();
+        assert_eq!(error, StorageError::Busy);
+        assert_eq!(attempts, 1);
+        lock.rollback().unwrap();
+        let mode = retry_open_busy(Instant::now(), timeout, || {
+            opening
+                .query_row("PRAGMA journal_mode = WAL", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(map_error)
+        })
+        .unwrap();
+        assert_eq!(mode, "wal");
+    }
+
+    #[test]
+    fn wal_switch_retries_after_a_concurrent_writer_commits() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("store.sqlite");
+        let mut opening = Connection::open(&path).unwrap();
+        opening.busy_timeout(Duration::ZERO).unwrap();
+        prepare_schema(&mut opening).unwrap();
+        let mut writer = Connection::open(&path).unwrap();
+        let lock = writer
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        lock.execute("INSERT INTO objects VALUES (zeroblob(32), X'01')", [])
+            .unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let switch = scope.spawn(move || {
+                let mut notified = false;
+                retry_open_busy(Instant::now(), Duration::from_secs(2), || {
+                    let result = opening
+                        .query_row("PRAGMA journal_mode = WAL", [], |row| {
+                            row.get::<_, String>(0)
+                        })
+                        .map_err(map_error);
+                    if result == Err(StorageError::Busy) && !notified {
+                        send.send(()).unwrap();
+                        notified = true;
+                    }
+                    result
+                })
+                .unwrap()
+            });
+            // Release only after a real failed switch, rather than relying on scheduling
+            // a sleep long enough for the opening thread to reach the lock.
+            receive.recv_timeout(Duration::from_secs(2)).unwrap();
+            lock.commit().unwrap();
+            assert_eq!(switch.join().unwrap(), "wal");
+        });
+        let backend = SqliteBackend::open(&path).unwrap();
+        assert_eq!(
+            backend
+                .get_object(&ObjectDigest::from_bytes([0; 32]))
+                .unwrap()
+                .as_deref(),
+            Some([1].as_slice())
+        );
+    }
+
+    #[test]
     fn prefix_successor_skips_trailing_ff() {
         assert_eq!(prefix_successor(b""), None);
         assert_eq!(prefix_successor(&[0xFF, 0xFF]), None);
@@ -488,6 +637,10 @@ mod tests {
             rusqlite::types::Value::Text("wal".to_owned())
         );
         assert_eq!(pragma("synchronous"), rusqlite::types::Value::Integer(2));
+        assert_eq!(
+            pragma("busy_timeout"),
+            rusqlite::types::Value::Integer(5000)
+        );
         assert_eq!(
             pragma("application_id"),
             rusqlite::types::Value::Integer(i64::from(APPLICATION_ID))
