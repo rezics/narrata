@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use narrata_storage::{KeySpace, StorageBackend};
 
 use super::{Reader, kind_info};
-use crate::{Descriptor, HistoryError, KindInfo, Object, ObjectId, Registry};
+use crate::{Descriptor, HistoryError, KindInfo, Object, ObjectId, Reference, Registry, shallow};
 
 /// The objects a write can see: its own batch first, then the store.
 ///
@@ -98,6 +98,37 @@ impl<'a, B: StorageBackend, R: Registry> View<'a, B, R> {
         } else {
             Err(HistoryError::ObjectKind(id))
         }
+    }
+
+    pub(crate) fn require_truncated_parent(
+        &mut self,
+        parent: ObjectId,
+    ) -> Result<Object, HistoryError> {
+        let expected = shallow::truncated_parent(parent);
+        let object = self
+            .object(expected.id())?
+            .ok_or(HistoryError::MissingObject(parent))?;
+        if object != expected {
+            return Err(HistoryError::ObjectKind(object.id()));
+        }
+        Ok(object)
+    }
+
+    /// Substitute explicit truncation evidence only for a generic commit's missing parent.
+    pub(crate) fn references(&mut self, object: &Object) -> Result<Vec<Reference>, HistoryError> {
+        let mut references = super::references(self.registry, object)?;
+        if let Some(parent) = shallow::parent(self.registry, object)
+            && self.object(parent)?.is_none()
+        {
+            let marker = self.require_truncated_parent(parent)?;
+            for reference in &mut references {
+                if matches!(reference, Reference::Object { id, descriptor: false, .. } if *id == parent)
+                {
+                    *reference = Reference::object(marker.id(), shallow::TRUNCATED_PARENT_KIND);
+                }
+            }
+        }
+        Ok(references)
     }
 
     /// Finds the object of `kind` named `name`: in the batch, or through the registrant's index,

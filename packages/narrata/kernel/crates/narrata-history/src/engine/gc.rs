@@ -17,7 +17,7 @@ use super::{
     History, kind_info, references, unregistered,
     write::{Attempt, Op, Ops, Tag},
 };
-use crate::{HistoryError, Object, ObjectId, Reference, Registry, Root, layout};
+use crate::{HistoryError, Object, ObjectId, Reference, Registry, Root, layout, shallow};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RetentionPolicy {
@@ -58,6 +58,22 @@ pub struct IntegrityIssue {
 }
 
 impl<B: StorageBackend, R: Registry> History<B, R> {
+    fn graph_references(&self, object: &Object) -> Result<Vec<Reference>, HistoryError> {
+        let mut references = references(&self.registry, object)?;
+        if let Some(parent) = shallow::parent(&self.registry, object)
+            && self.reader().object(parent)?.is_none()
+            && let Some(marker) = self.reader().truncated_parent(parent)?
+        {
+            for reference in &mut references {
+                if matches!(reference, Reference::Object { id, descriptor: false, .. } if *id == parent)
+                {
+                    *reference = Reference::object(marker.id(), shallow::TRUNCATED_PARENT_KIND);
+                }
+            }
+        }
+        Ok(references)
+    }
+
     pub fn collect(&mut self, policy: RetentionPolicy) -> Result<GcReport, R::Error> {
         let mut report = GcReport {
             dry_run: policy.dry_run,
@@ -221,7 +237,7 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             }
             for (id, object) in read.iter().zip(self.reader().objects(&read)?) {
                 let object = object.ok_or(HistoryError::MissingObject(*id))?;
-                for reference in references(&self.registry, &object)? {
+                for reference in self.graph_references(&object)? {
                     frontier.push(match reference {
                         Reference::Object { id, kind, .. } => (id, kind),
                         Reference::Named { kind, name } => {
@@ -256,7 +272,7 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             .collect::<BTreeMap<_, _>>();
         for (id, object) in found {
             let mut targets = BTreeSet::new();
-            for reference in references(&self.registry, object)? {
+            for reference in self.graph_references(object)? {
                 let target = match reference {
                     Reference::Object { id, .. } => Some(id),
                     Reference::Named { kind, name } => {
@@ -307,6 +323,7 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
         )];
         if let Some(object) = object
             && object.kind() != crate::bundle::CHECKPOINT_MANIFEST_KIND
+            && object.kind() != shallow::TRUNCATED_PARENT_KIND
         {
             ops.extend(self.registry.unindex(object, &self.reader())?);
         }
@@ -341,8 +358,10 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
                                 object: id,
                                 diagnostic: unregistered(&object).to_string(),
                             }),
-                            Some(info) if info.leaf => {}
-                            Some(_) => match references(&self.registry, &object) {
+                            Some(info)
+                                if info.leaf && object.kind() != shallow::TRUNCATED_PARENT_KIND => {
+                            }
+                            Some(_) => match self.graph_references(&object) {
                                 Ok(references) => pending.push((id, references)),
                                 Err(error) => issues.push(IntegrityIssue {
                                     object: id,

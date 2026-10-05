@@ -6,9 +6,87 @@
 use std::fmt::Debug;
 
 use narrata_history::{
-    AdvanceError, DomainKinds, History, HistoryError, RefKey, RefName, Session,
+    AdvanceError, BundleLimits, DomainKinds, History, HistoryError, RefKey, RefName, Session,
     testing::{Counter, Overflow},
 };
+
+#[test]
+fn shallow_history_reopens_over_a_cold_host_cache_and_hydrates() {
+    let mut source = History::in_memory(DomainKinds::<Counter>::new());
+    let (mut session, _) = Session::create(&mut source, COUNTER, name("source"), &0, 1).unwrap();
+    let first = session
+        .advance(&mut source, session.head(), &1, step, 2)
+        .unwrap()
+        .commit;
+    let head = session
+        .advance(&mut source, first, &2, step, 3)
+        .unwrap()
+        .commit;
+    let shallow = source
+        .export_shallow(head, 0, &Default::default())
+        .unwrap()
+        .to_bytes()
+        .unwrap();
+    let complete = source
+        .export(head, &Default::default())
+        .unwrap()
+        .to_bytes()
+        .unwrap();
+    let host = MemoryHost::new(StoreId::from_bytes([8; 16]));
+    let cache = CacheBackend::new();
+    let mut history: Counters = run(&cache, &host, || {
+        History::open(cache.share(), DomainKinds::new())
+    })
+    .unwrap();
+    let slot = RefKey::save(name("restored"), name("slot"));
+    let (value, _) = run(&cache, &host, || {
+        history.import(
+            &COUNTER,
+            &shallow,
+            BundleLimits::default(),
+            slot.clone(),
+            None,
+            4,
+        )
+    })
+    .unwrap();
+    cache.forget();
+    host.take_reads();
+    assert_eq!(
+        run(&cache, &host, || history.load(&COUNTER, head))
+            .unwrap()
+            .state,
+        3
+    );
+    assert_eq!(
+        host.reads().object_entries,
+        0,
+        "restoring never scans the store"
+    );
+    assert!(
+        matches!(run(&cache, &host, || history.load(&COUNTER, first)), Err(RunError::Failed(HistoryError::HistoryTruncated(id))) if id == first)
+    );
+    run(&cache, &host, || history.collect(Default::default())).unwrap();
+    cache.forget();
+    run(&cache, &host, || {
+        history.import(
+            &COUNTER,
+            &complete,
+            BundleLimits::default(),
+            slot.clone(),
+            Some(value.revision),
+            5,
+        )
+    })
+    .unwrap();
+    run(&cache, &host, || history.verify_path(&COUNTER, head, step)).unwrap();
+    run(&cache, &host, || history.collect(Default::default())).unwrap();
+    assert!(
+        run(&cache, &host, || history.integrity_scan())
+            .unwrap()
+            .is_empty()
+    );
+}
 use narrata_storage_host::{
     CacheBackend, HostError, StoreId,
     testing::{HostReads, MemoryHost, RunError, load, run},

@@ -1,0 +1,70 @@
+{
+  "adr": "0017",
+  "artifacts": {
+    "conflict.cbor": {
+      "bytes": 21,
+      "sha256": "34bc1cea86b7b2b96a86898e9d36e5c9a0d5f15c44733da10ba1f6588873e3ee"
+    },
+    "flush.cbor": {
+      "bytes": 121,
+      "sha256": "454b0d4da4d33a1b00cdf520d5303974344985639a45ce51f713ec85806d81e9"
+    },
+    "loadRequest.cbor": {
+      "bytes": 58,
+      "sha256": "291b3b5e5ad8a3235ce69495526d613ef495f6dc595ecd1c4921567385b444e5"
+    },
+    "loaded.cbor": {
+      "bytes": 175,
+      "sha256": "c1ca5d65e8a5a6ddff2da3c66bcd70ecd78fccace6b170d079794f4cc19189b0"
+    },
+    "persisted.cbor": {
+      "bytes": 4,
+      "sha256": "01605cb890711b92410702c0014f52496534052d5e5a79986e8b8a436ef767f0"
+    },
+    "protocol-vectors.json": {
+      "sha256": "8c0b3a1ec614dc1ef236bf8079e7dea0561d0d4b36265f80c95565c9124626fc"
+    },
+    "store-export.cbor": {
+      "bytes": 135,
+      "sha256": "12d9d818d1d95c5b083f0edfa35831a5fd8809f10128ac5b7ec27ab5cc09bc75"
+    }
+  },
+  "build_provenance": {
+    "example": "emit_browser_storage_v1",
+    "object_bytes": "opaque storage-contract values, not history envelopes"
+  },
+  "corpus_version": 1,
+  "export": {
+    "keys": [
+      [
+        "00006c61796f7574",
+        "a10001",
+        1
+      ],
+      [
+        "0004616263",
+        "76",
+        9
+      ],
+      [
+        "0004616264",
+        "",
+        2
+      ]
+    ],
+    "objects": [
+      [
+        "1111111111111111111111111111111111111111111111111111111111111111",
+        "010203"
+      ],
+      [
+        "2222222222222222222222222222222222222222222222222222222222222222",
+        ""
+      ]
+    ],
+    "revision": 9
+  },
+  "export_version": 1,
+  "indexeddb_version": 1,
+  "protocol_version": 1
+}

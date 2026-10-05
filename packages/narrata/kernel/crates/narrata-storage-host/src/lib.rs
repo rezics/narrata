@@ -23,5 +23,5 @@ pub mod testing;
 pub use cache::{CacheBackend, HostError};
 pub use protocol::{
     Flush, FlushReply, LoadRequest, Loaded, PROTOCOL_VERSION, Persist, Range, RangeEntries,
-    StoreId, StoreState, split_storage_key, storage_key,
+    StoreExport, StoreId, StoreState, split_storage_key, storage_key,
 };

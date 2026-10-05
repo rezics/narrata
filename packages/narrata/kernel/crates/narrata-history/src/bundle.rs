@@ -13,6 +13,7 @@ use crate::{
     RefMutation, RefRevision, RefValue, Reference, Registry, Transaction, View,
     engine::{kind_info, references},
     layout::{expect_array, expect_map, key},
+    shallow::{self, ShallowManifest},
 };
 
 /// The manifest kind code, kept from Stage 2 and owned by the engine.
@@ -218,6 +219,26 @@ pub fn decode_list<'a, T>(
 }
 
 pub(crate) fn manifest_references(object: &Object) -> Result<Vec<Reference>, HistoryError> {
+    if object.schema() == shallow::SHALLOW_MANIFEST_SCHEMA {
+        let manifest = ShallowManifest::decode(object.payload())
+            .map_err(|error| HistoryError::Corrupt(object.id(), error.to_string()))?;
+        let mut values = vec![Reference::untyped(manifest.checkpoint.root)];
+        values.extend(
+            manifest
+                .checkpoint
+                .objects
+                .iter()
+                .map(|descriptor| Reference::descriptor(descriptor.id, descriptor.kind)),
+        );
+        values.extend(manifest.checkpoint.host_manifest.map(Reference::untyped));
+        values.extend(manifest.boundary_parents.into_iter().map(|parent| {
+            Reference::object(
+                shallow::truncated_parent(parent).id(),
+                shallow::TRUNCATED_PARENT_KIND,
+            )
+        }));
+        return Ok(values);
+    }
     let manifest = CheckpointManifest::decode(object.payload())
         .map_err(|error| HistoryError::Corrupt(object.id(), error.to_string()))?;
     let mut values = vec![Reference::untyped(manifest.root)];
@@ -236,11 +257,17 @@ pub(crate) fn validate_manifest<B: StorageBackend, R: Registry>(
     object: &Object,
 ) -> Result<(), HistoryError> {
     let id = object.id();
-    if object.schema() != CHECKPOINT_MANIFEST_SCHEMA {
+    if object.schema() != CHECKPOINT_MANIFEST_SCHEMA
+        && object.schema() != shallow::SHALLOW_MANIFEST_SCHEMA
+    {
         return Err(HistoryError::ObjectKind(id));
     }
-    let manifest = CheckpointManifest::decode(object.payload())
-        .map_err(|error| HistoryError::Corrupt(id, error.to_string()))?;
+    let manifest = if object.schema() == shallow::SHALLOW_MANIFEST_SCHEMA {
+        ShallowManifest::decode(object.payload()).map(|manifest| manifest.checkpoint)
+    } else {
+        CheckpointManifest::decode(object.payload())
+    }
+    .map_err(|error| HistoryError::Corrupt(id, error.to_string()))?;
     let root = view.require(manifest.root, None)?;
     if !view.kind(root.kind()).is_some_and(|info| info.commit) {
         return Err(HistoryError::ObjectKind(manifest.root));
@@ -457,7 +484,17 @@ pub fn stored_closure<S: ObjectSource, R: Registry>(
         }
         let found = source.objects(&wanted).map_err(BundleError::Store)?;
         for (id, object) in wanted.iter().zip(found) {
-            let object = object.ok_or(BundleError::MissingObject(*id))?;
+            let object = match object {
+                Some(object) => object,
+                None => {
+                    let marker = shallow::truncated_parent(*id);
+                    let stored = source.objects(&[marker.id()]).map_err(BundleError::Store)?;
+                    if stored.first().and_then(Option::as_ref) == Some(&marker) {
+                        return Err(BundleError::history(HistoryError::HistoryTruncated(*id)));
+                    }
+                    return Err(BundleError::MissingObject(*id));
+                }
+            };
             // The registrant's index is a hint: the object it names must carry the name.
             if let Some((kind, name)) = named.get(id)
                 && (object.kind() != *kind || registry.name(&object).as_ref() != Some(name))

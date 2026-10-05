@@ -13,6 +13,80 @@ use narrata_storage::{KeySpace, KeyValue, ObjectDigest, Revision};
 
 pub const PROTOCOL_VERSION: u64 = 1;
 
+/// The existing IndexedDB whole-store export (ADR 0017), also readable by native hosts. Object
+/// bytes stay opaque at this layer; the history engine verifies them when it reads them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoreExport {
+    pub revision: u64,
+    pub objects: Vec<(ObjectDigest, Arc<[u8]>)>,
+    pub keys: Vec<(Vec<u8>, KeyValue)>,
+}
+
+impl StoreExport {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut writer = CborWriter::new();
+        writer.array(5);
+        writer.text("narrata-store-export");
+        writer.unsigned(1);
+        writer.unsigned(self.revision);
+        list(&mut writer, &self.objects, |writer, (digest, bytes)| {
+            writer.array(2);
+            writer.bytes(digest.as_bytes());
+            writer.bytes(bytes);
+        });
+        list(&mut writer, &self.keys, |writer, (key, value)| {
+            writer.array(3);
+            writer.bytes(key);
+            writer.bytes(&value.value);
+            writer.unsigned(value.revision.get());
+        });
+        writer.into_bytes()
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        decode_checked(
+            bytes,
+            &LIMITS,
+            |reader| {
+                exact(reader, 5)?;
+                if reader.text(64)? != "narrata-store-export" || reader.unsigned()? != 1 {
+                    return Err(DecodeError::Schema("store export label/version"));
+                }
+                let revision = reader.unsigned()?;
+                // IndexedDB stores revisions as JavaScript numbers; native readers preserve that
+                // boundary rather than accepting exports the browser could not read back.
+                if revision > (1_u64 << 53) - 1 {
+                    return Err(DecodeError::Schema("store export revision"));
+                }
+                let objects = read_list(reader, |reader| {
+                    pair(reader)?;
+                    Ok((read_digest(reader)?, Arc::from(reader.bytes(u64::MAX)?)))
+                })?;
+                let keys = read_list(reader, |reader| {
+                    exact(reader, 3)?;
+                    let key = reader.bytes(u64::MAX)?.to_vec();
+                    let value = read_value(reader)?;
+                    if key.len() < 2 || value.revision.get() > revision {
+                        return Err(DecodeError::Schema("store export key/revision"));
+                    }
+                    Ok((key, value))
+                })?;
+                if !objects.windows(2).all(|pair| pair[0].0 < pair[1].0)
+                    || !keys.windows(2).all(|pair| pair[0].0 < pair[1].0)
+                {
+                    return Err(DecodeError::Schema("store export entries out of order"));
+                }
+                Ok(Self {
+                    revision,
+                    objects,
+                    keys,
+                })
+            },
+            Self::encode,
+        )
+    }
+}
+
 /// Bounds for decoding messages. Values are bounded by the cache's limits, not here.
 const LIMITS: DecodeLimits = DecodeLimits {
     max_payload_bytes: 1 << 34,

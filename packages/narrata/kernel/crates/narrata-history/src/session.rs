@@ -15,7 +15,7 @@ use thiserror::Error;
 use crate::{
     BranchId, BundleError, BundleLimits, CheckpointBundle, Commit, Domain, History, HistoryError,
     Object, ObjectId, RefKey, RefMutation, RefName, RefNamespace, RefRevision, RefScope, RefValue,
-    Registry, Transaction, bundle, object_id, scan_all,
+    Registry, SHALLOW_MAGIC, ShallowBundle, Transaction, bundle, object_id, scan_all,
 };
 
 /// A commit read back and checked, with its decoded state.
@@ -246,6 +246,16 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
         CheckpointBundle::export(self, self.registry(), root, receiver_has)
     }
 
+    /// A checkpoint of `root`, its state/input, and at most `ancestors` parents (ADR 0019).
+    pub fn export_shallow(
+        &self,
+        root: ObjectId,
+        ancestors: u64,
+        receiver_has: &BTreeSet<ObjectId>,
+    ) -> Result<ShallowBundle, BundleError<R::Error>> {
+        ShallowBundle::export(self, self.registry(), root, ancestors, receiver_has)
+    }
+
     /// Imports checkpoint bytes whose root is a commit of domain `D`, pointing `target` at it.
     /// Tampered bytes fail their digests; the root's artifact and state are checked against
     /// `domain` before anything is written, and the engine validates every carried object.
@@ -258,6 +268,29 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
         expected: Option<RefRevision>,
         observed_at: u64,
     ) -> Result<Imported<D::State>, BundleError<R::Error>> {
+        if bytes.starts_with(SHALLOW_MAGIC) {
+            let bundle =
+                ShallowBundle::from_bytes(bytes, limits, |kind| bundle::registered(self, kind))?;
+            let available = bundle.check_closure(self, self.registry())?;
+            let root = bundle.manifest.checkpoint.root;
+            let checked = |id| {
+                available
+                    .get(&id)
+                    .ok_or(BundleError::<R::Error>::MissingObject(id))
+            };
+            let history = |error: HistoryError| BundleError::Store(error.into());
+            let header = header(domain, checked(root)?).map_err(history)?;
+            let state = decode_state(domain, checked(header.state)?).map_err(history)?;
+            let value = bundle.write(self, target, expected, observed_at)?;
+            return Ok((
+                value,
+                Loaded {
+                    commit: root,
+                    header,
+                    state,
+                },
+            ));
+        }
         let bundle =
             CheckpointBundle::from_bytes(bytes, limits, |kind| bundle::registered(self, kind))?;
         let available = bundle.check_closure(self, self.registry())?;

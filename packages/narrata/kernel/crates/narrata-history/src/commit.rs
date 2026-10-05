@@ -175,19 +175,21 @@ pub fn validate<D: Domain, B: StorageBackend, R: Registry>(
     let (Some(parent_id), Some(input)) = (commit.parent, commit.input) else {
         return Ok(Vec::new());
     };
-    let parent = Commit::from_object(
-        &view.require(parent_id, Some(D::COMMIT_KIND))?,
-        D::COMMIT_KIND,
-    )?;
-    if parent.artifact != commit.artifact {
-        return Err(HistoryError::InvalidGraph(
-            "commit names another artifact than its parent",
-        ));
-    }
-    if parent.depth.checked_add(1) != Some(commit.depth) {
-        return Err(HistoryError::InvalidGraph(
-            "commit depth is not its parent's plus one",
-        ));
+    let parent = view.object(parent_id)?;
+    if let Some(parent) = parent {
+        let parent = Commit::from_object(&parent, D::COMMIT_KIND)?;
+        if parent.artifact != commit.artifact {
+            return Err(HistoryError::InvalidGraph(
+                "commit names another artifact than its parent",
+            ));
+        }
+        if parent.depth.checked_add(1) != Some(commit.depth) {
+            return Err(HistoryError::InvalidGraph(
+                "commit depth is not its parent's plus one",
+            ));
+        }
+    } else {
+        view.require_truncated_parent(parent_id)?;
     }
     let mut index = vec![Op::put(
         layout::CHILDREN,

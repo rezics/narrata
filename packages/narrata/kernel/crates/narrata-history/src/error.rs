@@ -7,6 +7,8 @@ use crate::{ArtifactId, ObjectId, RefKey, RefRevision, RefValue};
 pub enum HistoryError {
     #[error("object {0} was not found")]
     MissingObject(ObjectId),
+    #[error("history was truncated before parent commit {0}")]
+    HistoryTruncated(ObjectId),
     #[error("object {0} is corrupt: {1}")]
     Corrupt(ObjectId, String),
     #[error("object kind or schema mismatch for {0}")]

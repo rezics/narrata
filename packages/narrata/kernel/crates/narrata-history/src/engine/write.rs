@@ -15,7 +15,7 @@ use narrata_storage::{
 use super::{History, RETRIES, View, digest, kind_info, references, unregistered};
 use crate::{
     HistoryError, Object, ObjectId, Pin, RefConflict, RefKey, RefRevision, RefValue, Reference,
-    Registry, bundle, layout,
+    Registry, bundle, layout, shallow,
 };
 
 /// What a key operation's precondition failure means.
@@ -301,13 +301,13 @@ struct Plan<T> {
 
 /// Orders `staged` so that every object follows the staged objects it refers to.
 fn referents_first<B: StorageBackend, R: Registry>(
-    view: &View<'_, B, R>,
+    view: &mut View<'_, B, R>,
 ) -> Result<Vec<ObjectId>, R::Error> {
     let staged = view.staged();
     let mut targets = BTreeMap::new();
     for (id, object) in staged {
         let mut values = Vec::new();
-        for reference in references(view.registry(), object)? {
+        for reference in view.references(object)? {
             let target = match reference {
                 Reference::Object { id, .. } => Some(id),
                 Reference::Named { kind, name } => view.staged_named(kind, &name),
@@ -350,7 +350,7 @@ fn validate<B: StorageBackend, R: Registry>(
     view: &mut View<'_, B, R>,
     object: &Object,
 ) -> Result<Vec<Op<R::Tag>>, R::Error> {
-    for reference in references(view.registry(), object)? {
+    for reference in view.references(object)? {
         match reference {
             Reference::Object {
                 id,
@@ -366,6 +366,10 @@ fn validate<B: StorageBackend, R: Registry>(
                 }
             }
         }
+    }
+    if object.kind() == shallow::TRUNCATED_PARENT_KIND {
+        shallow::validate_truncated_parent(object)?;
+        return Ok(Vec::new());
     }
     if object.kind() == bundle::CHECKPOINT_MANIFEST_KIND {
         bundle::validate_manifest(view, object)?;
@@ -424,7 +428,6 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             staged.entry(object.id()).or_insert_with(|| object.clone());
         }
         let mut view = View::new(self.reader(), &self.registry, &staged);
-        let order = referents_first(&view)?;
 
         let mut wanted = Vec::new();
         for object in staged.values() {
@@ -438,6 +441,7 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
         wanted.extend(transaction.pins.iter().map(|pin| pin.object));
         wanted.extend(transaction.prefetch.iter().copied());
         view.prefetch(wanted)?;
+        let order = referents_first(&mut view)?;
 
         let mut objects = Vec::with_capacity(order.len());
         for id in order {

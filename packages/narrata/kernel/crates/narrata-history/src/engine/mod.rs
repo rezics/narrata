@@ -24,7 +24,7 @@ pub use write::{
 
 use crate::{
     HistoryError, KindInfo, Object, ObjectId, Page, Pin, RefKey, RefRevision, RefScope, RefValue,
-    Reference, Registry, bundle, layout,
+    Reference, Registry, bundle, layout, shallow,
 };
 
 /// Attempts of one operation before it reports [`HistoryError::Busy`].
@@ -350,11 +350,29 @@ impl<'a, B: StorageBackend> Reader<'a, B> {
     /// Reads a stored object of the given kind; the error names the missing or mismatched
     /// object.
     pub fn require(&self, id: ObjectId, kind: Option<u16>) -> Result<Object, HistoryError> {
-        let object = self.object(id)?.ok_or(HistoryError::MissingObject(id))?;
+        let object = match self.object(id)? {
+            Some(object) => object,
+            None if self.truncated_parent(id)?.is_some() => {
+                return Err(HistoryError::HistoryTruncated(id));
+            }
+            None => return Err(HistoryError::MissingObject(id)),
+        };
         if kind.is_none_or(|kind| object.kind() == kind) {
             Ok(object)
         } else {
             Err(HistoryError::ObjectKind(id))
+        }
+    }
+
+    pub(crate) fn truncated_parent(
+        &self,
+        parent: ObjectId,
+    ) -> Result<Option<Object>, HistoryError> {
+        let expected = shallow::truncated_parent(parent);
+        match self.object(expected.id())? {
+            Some(object) if object == expected => Ok(Some(object)),
+            Some(object) => Err(HistoryError::ObjectKind(object.id())),
+            None => Ok(None),
         }
     }
 
@@ -383,6 +401,8 @@ pub(crate) const fn digest(id: ObjectId) -> ObjectDigest {
 pub(crate) fn kind_info<R: Registry>(registry: &R, code: u16) -> Option<KindInfo> {
     if code == bundle::CHECKPOINT_MANIFEST_KIND {
         Some(bundle::CHECKPOINT_MANIFEST_INFO)
+    } else if code == shallow::TRUNCATED_PARENT_KIND {
+        Some(shallow::TRUNCATED_PARENT_INFO)
     } else {
         registry.kind(code)
     }
@@ -393,7 +413,10 @@ pub(crate) fn references<R: Registry>(
     registry: &R,
     object: &Object,
 ) -> Result<Vec<Reference>, HistoryError> {
-    let mut values = if object.kind() == bundle::CHECKPOINT_MANIFEST_KIND {
+    let mut values = if object.kind() == shallow::TRUNCATED_PARENT_KIND {
+        shallow::validate_truncated_parent(object)?;
+        Vec::new()
+    } else if object.kind() == bundle::CHECKPOINT_MANIFEST_KIND {
         bundle::manifest_references(object)?
     } else if registry.kind(object.kind()).is_some() {
         registry.references(object)?

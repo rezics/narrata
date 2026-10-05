@@ -22,6 +22,7 @@ mod names;
 mod object;
 mod registry;
 mod session;
+mod shallow;
 #[cfg(feature = "testing")]
 pub mod testing;
 
@@ -46,6 +47,9 @@ pub use names::{
 pub use object::{Descriptor, Object, ObjectError};
 pub use registry::{KindInfo, Reference, Registry, Root};
 pub use session::{AdvanceError, Advanced, AuditError, Imported, Loaded, Session};
+pub use shallow::{
+    SHALLOW_MAGIC, SHALLOW_MANIFEST_SCHEMA, ShallowBundle, ShallowManifest, TRUNCATED_PARENT_KIND,
+};
 
 /// Functions a registry that stores a domain's sessions alongside other kinds composes.
 pub mod domain_kinds {

@@ -1,5 +1,38 @@
 # 存储历史增长基准
 
+## ADR 0019 通用 Commit 的浅存档
+
+2026-10-05（UTC+08:00），Rust 1.98.0、release profile，在同一存储上比较
+`History::export_shallow`（N=0、N=100）与 `History::export`，均包含 `to_bytes`，
+`receiver_has` 为空。前两次预热，随后十次单独计时取中位数；SQLite 是系统临时目录中的文件库，
+WAL、synchronous=FULL。主机同下方基线。
+
+用通用计数器领域（ceiling 1,000,000）从状态 0 连续推进 10,000 次，每次输入 1；输入对象去重，
+状态与提交保持各自身份。两个后端的目标提交都是
+`object:f9ab6fa015dae9c132dfb4b5a7892479af9da54c6d908234a2e7e9306a2965ff`。
+本次完整 bundle 4.30 MB，与下方 Stage 1–5 的 11.01 MB 使用不同的领域载荷，不能直接比较大小；
+浅与完整的比较使用同一个目标和同一个库。
+
+| 后端 | 祖先预算 N | bundle（B） | 导出中位数（ms） |
+| --- | ---: | ---: | ---: |
+| 内存 | 0 | 730 | 0.014700 |
+| 内存 | 100 | 43731 | 1.197700 |
+| 内存 | 完整 | 4300070 | 63.185050 |
+| SQLite | 0 | 730 | 0.039750 |
+| SQLite | 100 | 43731 | 3.813700 |
+| SQLite | 完整 | 4300070 | 201.971750 |
+
+单次构建 10K 历史：内存 0.328592 s，SQLite 11.544687 s，均不计入导出时间。
+N=0 携带一个提交及其状态、输入；N=100 携带 101 个提交及其依赖。原始 parent 与 depth 保留，
+边界记录随导入落盘；完整历史之后可补齐。格式与信任边界见
+[ADR 0019](../../adr/0019-shallow-history-bundles.md)，边界行为由内存、SQLite 和冷宿主缓存测试证明。
+
+复现（输出每个后端的字节数、延迟、构建耗时与目标摘要）：
+
+```powershell
+task goal -- slot --heavy -- cargo run --release -p narrata-history --example measure_shallow_history
+```
+
 ## ADR 0015 历史层
 
 | 运行条件 | 值 |
