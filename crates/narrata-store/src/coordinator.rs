@@ -2,17 +2,17 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use narrata_core::{
     CapabilityId, CheckedProgram, CommitId, DiagnosticId, EffectId, EffectResponseV0, ExecutionId,
-    HostCapabilities, InputId, NegotiatedCapabilities, ObjectId, ReceiptId, ReconcileScene,
-    SnapshotId, TimelineArchiveManifestId, TimelineCatalogEventId,
+    HostCapabilities, InputId, InputPayloadDigest, NegotiatedCapabilities, ObjectId, ReceiptId,
+    ReconcileScene, SnapshotId, TimelineArchiveManifestId, TimelineCatalogEventId,
     codec::ObjectKind,
     limits::{MacrostepLimits, SnapshotLoadLimits},
     negotiate_capabilities,
     program::encode_program_artifact,
     runtime::{
         CheckedRuntimeInput, DraftResult, RuntimeFault, RuntimeStateV0, SliceBudget, SliceOutcome,
-        TransitionStartError, begin_transition_with_parent_commit, new_execution,
+        TransitionDraft, TransitionStartError, begin_transition_with_parent_commit, new_execution,
     },
-    snapshot::{export_snapshot, restore_snapshot},
+    snapshot::{export_snapshot, restore_snapshot, state_digest},
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -677,8 +677,34 @@ impl<S: SaveStore> SessionCoordinator<S> {
         observed_at: u64,
     ) -> Result<CommittedRunResult, CoordinatorError> {
         self.validate_effect_dispatch(&input)?;
-        let input_id = input.request_id();
-        let payload = input.payload_digest();
+        if let Some(reused) = self.reuse_input(&input)? {
+            return Ok(reused);
+        }
+        let parent = self.timeline.cursor;
+        let draft = run_transition(
+            self.program.clone(),
+            self.state.clone(),
+            parent,
+            input,
+            limits,
+        )?;
+        self.commit_draft(parent, draft, observed_at)
+    }
+
+    /// Reuses an input only at its original parent and with its original payload. Pull
+    /// transports use this before running slices; `dispatch` also checks the Effect ledger.
+    pub fn reuse_input(
+        &mut self,
+        input: &CheckedRuntimeInput,
+    ) -> Result<Option<CommittedRunResult>, CoordinatorError> {
+        self.reuse_input_record(input.request_id(), input.payload_digest())
+    }
+
+    fn reuse_input_record(
+        &mut self,
+        input_id: InputId,
+        payload: InputPayloadDigest,
+    ) -> Result<Option<CommittedRunResult>, CoordinatorError> {
         if let Some(existing) = self.store.read_input(self.execution, input_id)? {
             let proposed = InputRecord {
                 execution: self.execution,
@@ -735,7 +761,7 @@ impl<S: SaveStore> SessionCoordinator<S> {
             {
                 self.branch_revision = branch.revision;
             }
-            return Ok(CommittedRunResult {
+            return Ok(Some(CommittedRunResult {
                 commit: existing.commit,
                 receipt: receipt_id,
                 branch: self.timeline.selected_branch,
@@ -745,16 +771,33 @@ impl<S: SaveStore> SessionCoordinator<S> {
                 reconcile_scene: ReconcileScene {
                     target: self.state.scene.clone(),
                 },
-            });
+            }));
         }
+        Ok(None)
+    }
 
-        let draft = run_transition(
-            self.program.clone(),
-            self.state.clone(),
-            self.timeline.cursor,
-            input,
-            limits,
-        )?;
+    /// Persists a completed kernel draft through the same atomic path as `dispatch`.
+    /// Sliced callers must start the runner with `parent` as its parent Commit. Direct
+    /// host Effect responses retain the pull protocol's semantics; hosts using the durable
+    /// Effect ledger validate and record the response before starting their runner.
+    pub fn commit_draft(
+        &mut self,
+        parent: CommitId,
+        draft: TransitionDraft,
+        observed_at: u64,
+    ) -> Result<CommittedRunResult, CoordinatorError> {
+        if parent != self.timeline.cursor
+            || draft.parent() != state_digest(&self.state)
+            || draft.next_state().execution_id != self.execution
+            || draft.next_state().program_artifact_id != self.program.artifact_id()
+        {
+            return Err(CoordinatorError::IncompatibleCommit);
+        }
+        let input_id = draft.input_id();
+        let payload = draft.input_payload_digest();
+        if let Some(reused) = self.reuse_input_record(input_id, payload)? {
+            return Ok(reused);
+        }
         if let DraftResult::AwaitEffect(request) = draft.result()
             && !self.capabilities.contains(&request.capability)
         {

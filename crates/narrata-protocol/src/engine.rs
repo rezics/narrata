@@ -4,31 +4,28 @@ use std::{
 };
 
 use narrata_core::{
-    CapabilityId, CapabilityVersion, CheckedProgram, ChoiceId, CommitId, EffectId,
-    EffectRequestDigest, EventTypeId, ExecutionId, InputId, InteractionId, ObjectId,
-    ProgramArtifactId, ReceiptId, SnapshotId, StateDigest, Value, builtin_host_capabilities,
+    CapabilityId, CapabilityVersion, CheckedProgram, ChoiceId, EffectId, EffectRequestDigest,
+    EventTypeId, ExecutionId, InputId, InteractionId, ObjectId, ProgramArtifactId,
+    builtin_host_capabilities,
     codec::{ObjectKind, decode_canonical_value, encode_canonical_value},
     effect::{EffectResponseV0, HostCapabilities, negotiate_capabilities},
     limits::{DecodeLimits, MacrostepLimits, ProgramLoadLimits, SnapshotLoadLimits},
     program::load_program,
     runtime::{
-        CheckedRuntimeInput, ChoiceView, ChoiceViewItem, DraftResult, PendingInteractionV0,
-        RuntimeStateV0, RuntimeStatusV0, SayView, SliceBudget, SliceOutcome, TransitionDraft,
+        CheckedRuntimeInput, DraftResult, RuntimeStateV0, SliceBudget, SliceOutcome,
         TransitionRunner, begin_transition_with_parent_commit, new_execution,
     },
     snapshot::{export_snapshot, state_digest},
     version::PROTOCOL_V1,
 };
+use narrata_storage::{MemoryBackend, StorageBackend, StorageError};
 use narrata_store::{
-    ArchivedBranchRef, ArchivedRefSnapshot, BranchId, BundleLimits, CatalogMutation, CatalogRefKey,
-    CheckedObject, CheckpointBundle, CommitCauseV1, CommitOutcome, CommitTransaction, CommitV1,
-    InputRecord, MemoryStore, RefKey, RefMutation, RefName, RefRevision, STORED_RECEIPT_SCHEMA_V1,
-    SaveStore, TimelineArchiveBundle, TimelineCatalogEventKind, TimelineCatalogEventV1,
-    TimelineCoverage, TimelineImportMapping, TimelineOperationId, TimelineSession,
-    TransitionReceiptV1, load_commit, timeline_branch,
+    BranchId, BundleLimits, CheckpointBundle, CommitTransaction, CommitV1, CommittedRunResult,
+    CoordinatorError, InitialRecordingMode, RefKey, RefMutation, RefName, SaveStore,
+    SessionCoordinator, Store, TimelineArchiveBundle, TimelineImportMapping, TimelineOperationId,
+    timeline_branch,
 };
 use prost::Message;
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::dto::{self, request, response, runtime_input};
@@ -70,27 +67,18 @@ pub enum ProtocolBoundaryError {
     ResponseOversize,
 }
 
-struct Session {
+struct Session<B> {
     program: Arc<CheckedProgram>,
-    execution: ExecutionId,
-    store: MemoryStore,
-    commit: CommitId,
-    state: Arc<RuntimeStateV0>,
+    coordinator: SessionCoordinator<Store<B>>,
     pending: Option<TransitionRunner>,
-    branch: BranchId,
-    branch_key: RefKey,
-    active_key: RefKey,
-    branch_revision: RefRevision,
-    active_revision: RefRevision,
-    catalog_revision: RefRevision,
-    coverage: TimelineCoverage,
 }
 
-pub struct ProtocolEngine {
+pub struct ProtocolEngine<B = MemoryBackend> {
     limits: ProtocolLimits,
     programs: BTreeMap<ProgramArtifactId, Arc<CheckedProgram>>,
-    sessions: BTreeMap<u64, Session>,
+    sessions: BTreeMap<u64, Session<B>>,
     next_session: u64,
+    backend_factory: Box<dyn FnMut(ExecutionId) -> Result<B, StorageError> + Send>,
 }
 
 impl Default for ProtocolEngine {
@@ -101,12 +89,95 @@ impl Default for ProtocolEngine {
 
 impl ProtocolEngine {
     pub fn new(limits: ProtocolLimits) -> Self {
+        Self::with_backend_factory(limits, |_| Ok(MemoryBackend::default()))
+    }
+}
+
+impl<B: StorageBackend> ProtocolEngine<B> {
+    /// Opens a backend for each created, imported or reopened session. The host chooses
+    /// the storage namespace from the Execution ID. Imports need a fresh namespace;
+    /// `reopen_session` opens existing refs. Native and Wasm bindings use memory by default.
+    pub fn with_backend_factory(
+        limits: ProtocolLimits,
+        factory: impl FnMut(ExecutionId) -> Result<B, StorageError> + Send + 'static,
+    ) -> Self {
         Self {
             limits,
             programs: BTreeMap::new(),
             sessions: BTreeMap::new(),
             next_session: 1,
+            backend_factory: Box::new(factory),
         }
+    }
+
+    /// Reopens a persisted session after its Program has been loaded. This Rust-only
+    /// entry point keeps storage handles and callbacks outside the protocol ABI.
+    pub fn reopen_session(
+        &mut self,
+        artifact: ProgramArtifactId,
+        execution: ExecutionId,
+        selected_branch: BranchId,
+    ) -> Result<dto::SessionCreated, dto::Diagnostic> {
+        self.open_session(artifact, execution, selected_branch)
+            .map_err(ProtocolDiagnostic::into_dto)
+    }
+
+    fn open_session(
+        &mut self,
+        artifact: ProgramArtifactId,
+        execution: ExecutionId,
+        selected_branch: BranchId,
+    ) -> Result<dto::SessionCreated, ProtocolDiagnostic> {
+        self.ensure_session_capacity()?;
+        let program = self.loaded_program(artifact)?;
+        let host = builtin_host_capabilities()
+            .map_err(|error| ProtocolDiagnostic::capability(error.to_string()))?;
+        let store = self.open_store(execution)?;
+        let coordinator = SessionCoordinator::open_with_capabilities(
+            store,
+            program.clone(),
+            execution,
+            protocol_session_name()?,
+            selected_branch,
+            &host,
+        )
+        .map_err(coordinator_diagnostic)?;
+        self.insert_coordinator(program, coordinator)
+    }
+
+    fn open_store(&mut self, execution: ExecutionId) -> Result<Store<B>, ProtocolDiagnostic> {
+        let backend =
+            (self.backend_factory)(execution).map_err(|error| store_diagnostic(error.into()))?;
+        Store::open(backend).map_err(store_diagnostic)
+    }
+
+    fn loaded_program(
+        &self,
+        artifact: ProgramArtifactId,
+    ) -> Result<Arc<CheckedProgram>, ProtocolDiagnostic> {
+        self.programs
+            .get(&artifact)
+            .cloned()
+            .ok_or_else(|| ProtocolDiagnostic::missing("Program Artifact is not loaded"))
+    }
+
+    fn insert_coordinator(
+        &mut self,
+        program: Arc<CheckedProgram>,
+        coordinator: SessionCoordinator<Store<B>>,
+    ) -> Result<dto::SessionCreated, ProtocolDiagnostic> {
+        let commit = coordinator.timeline().cursor;
+        let snapshot = protocol_snapshot(coordinator.state(), self.limits)?;
+        let session = self.allocate_session(Session {
+            program,
+            coordinator,
+            pending: None,
+        })?;
+        Ok(dto::SessionCreated {
+            session,
+            commit_id: commit.as_bytes().to_vec(),
+            snapshot,
+        })
     }
 
     pub const fn limits(&self) -> ProtocolLimits {
@@ -213,102 +284,28 @@ impl ProtocolEngine {
         self.ensure_session_capacity()?;
         let artifact = ProgramArtifactId::from_bytes(id32(&request.artifact_id, "Artifact ID")?);
         let execution = ExecutionId::from_bytes(id16(&request.execution_id, "Execution ID")?);
-        let program = self
-            .programs
-            .get(&artifact)
-            .cloned()
-            .ok_or_else(|| ProtocolDiagnostic::missing("Program Artifact is not loaded"))?;
+        let program = self.loaded_program(artifact)?;
+        // Enforce the boundary's Snapshot limit before a persistent backend can publish
+        // Genesis. The coordinator owns Genesis construction and its atomic transaction.
+        let initial_state = new_execution(&program, execution)
+            .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
+        protocol_snapshot(&initial_state, self.limits)?;
         let host = builtin_host_capabilities()
             .map_err(|error| ProtocolDiagnostic::capability(error.to_string()))?;
-        negotiate_capabilities(&program.artifact().capabilities, &host)
-            .map_err(|errors| ProtocolDiagnostic::capability(format!("{errors:?}")))?;
-        let state = Arc::new(
-            new_execution(&program, execution)
-                .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?,
-        );
-        let mut store = MemoryStore::new();
-        let program_object = checked_object(
-            &narrata_core::program::encode_program_artifact(program.artifact()),
-            ObjectKind::Program,
-            0,
-            self.limits.program.decode.max_envelope_bytes,
-        )?;
-        let snapshot_bytes = export_snapshot(&state)
-            .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-        let snapshot_object = checked_object(
-            &snapshot_bytes,
-            ObjectKind::Snapshot,
-            0,
-            self.limits.snapshot.decode.max_envelope_bytes,
-        )?;
-        let snapshot = SnapshotId::from_bytes(*snapshot_object.id().as_bytes());
-        let commit_object = CommitV1 {
-            parent: None,
-            execution,
-            program: artifact,
-            snapshot,
-            cause: CommitCauseV1::Genesis,
-            ledger_fence: 0,
-            turn: state.turn,
-        }
-        .to_object();
-        let commit = CommitId::from_bytes(*commit_object.id().as_bytes());
-        let branch = BranchId::from_bytes(*execution.as_bytes());
-        let branch_key = timeline_branch(execution, branch);
-        let active_key = protocol_active_key()?;
-        let coverage = TimelineCoverage::FromBaseline { baseline: commit };
-        let catalog_event = recording_started(execution, branch, commit)?;
-        let catalog_event_id =
-            narrata_core::TimelineCatalogEventId::from_bytes(*catalog_event.id().as_bytes());
-        let outcome = store
-            .commit(CommitTransaction {
-                objects: vec![
-                    program_object,
-                    snapshot_object,
-                    commit_object,
-                    catalog_event,
-                ],
-                refs: vec![
-                    RefMutation {
-                        key: branch_key.clone(),
-                        expected: None,
-                        next: Some(commit),
-                    },
-                    RefMutation {
-                        key: active_key.clone(),
-                        expected: None,
-                        next: Some(commit),
-                    },
-                ],
-                catalogs: vec![CatalogMutation {
-                    key: CatalogRefKey::new(execution),
-                    expected: None,
-                    next: Some(catalog_event_id),
-                    coverage,
-                }],
-                ..CommitTransaction::default()
-            })
-            .map_err(store_diagnostic)?;
-        let session = self.allocate_session(Session {
-            program,
-            execution,
+        let store = self.open_store(execution)?;
+        let coordinator = SessionCoordinator::create_with_capabilities(
             store,
-            commit,
-            state,
-            pending: None,
-            branch,
-            branch_revision: outcome_ref_revision(&outcome, &branch_key)?,
-            active_revision: outcome_ref_revision(&outcome, &active_key)?,
-            catalog_revision: outcome_catalog_revision(&outcome, execution)?,
-            branch_key,
-            active_key,
-            coverage,
-        })?;
-        Ok(response::Body::SessionCreated(dto::SessionCreated {
-            session,
-            commit_id: commit.as_bytes().to_vec(),
-            snapshot: snapshot_bytes,
-        }))
+            program.clone(),
+            execution,
+            protocol_session_name()?,
+            BranchId::from_bytes(*execution.as_bytes()),
+            InitialRecordingMode::Complete,
+            0,
+            &host,
+        )
+        .map_err(coordinator_diagnostic)?;
+        self.insert_coordinator(program, coordinator)
+            .map(response::Body::SessionCreated)
     }
 
     fn session_load(
@@ -318,71 +315,58 @@ impl ProtocolEngine {
     ) -> Result<response::Body, ProtocolDiagnostic> {
         self.ensure_session_capacity()?;
         let artifact = ProgramArtifactId::from_bytes(id32(&artifact_bytes, "Artifact ID")?);
-        let program = self
-            .programs
-            .get(&artifact)
-            .cloned()
-            .ok_or_else(|| ProtocolDiagnostic::missing("Program Artifact is not loaded"))?;
+        let program = self.loaded_program(artifact)?;
         let bundle = CheckpointBundle::from_bytes(&bundle_bytes, self.limits.bundle)
             .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
         let root = bundle.manifest.root;
-        let mut store = MemoryStore::new();
-        let target = protocol_active_key()?;
-        let active = bundle
-            .import(&mut store, target.clone(), None, 0)
+        let commit_object = bundle
+            .objects
+            .iter()
+            .find(|object| object.id() == ObjectId::from_bytes(*root.as_bytes()))
+            .ok_or_else(|| ProtocolDiagnostic::missing("root Commit object is missing"))?;
+        let commit = CommitV1::decode(commit_object.payload())
             .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-        let loaded = load_commit(&store, root, &program)
+        if commit.program != artifact {
+            return Err(ProtocolDiagnostic::incompatible(
+                "Checkpoint belongs to another Program",
+            ));
+        }
+        let execution = commit.execution;
+        let mut store = self.open_store(execution)?;
+        let target = RefKey::active(protocol_session_name()?)
             .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-        let execution = loaded.commit.execution;
-        let snapshot = store
-            .get_object(ObjectId::from_bytes(*loaded.commit.snapshot.as_bytes()))
-            .map_err(store_diagnostic)?
-            .ok_or_else(|| ProtocolDiagnostic::missing("Snapshot object is missing"))?
-            .bytes()
-            .to_vec();
+        bundle
+            .import(&mut store, target, None, 0)
+            .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
         let branch = BranchId::from_bytes(*execution.as_bytes());
-        let branch_key = timeline_branch(execution, branch);
-        let coverage = TimelineCoverage::FromBaseline { baseline: root };
-        let catalog_event = recording_started(execution, branch, root)?;
-        let catalog_event_id =
-            narrata_core::TimelineCatalogEventId::from_bytes(*catalog_event.id().as_bytes());
-        let outcome = store
+        // Checkpoints omit timeline refs. Seed the selected branch, then let the
+        // coordinator establish complete recording at the imported baseline.
+        store
             .commit(CommitTransaction {
-                objects: vec![catalog_event],
                 refs: vec![RefMutation {
-                    key: branch_key.clone(),
+                    key: timeline_branch(execution, branch),
                     expected: None,
                     next: Some(root),
-                }],
-                catalogs: vec![CatalogMutation {
-                    key: CatalogRefKey::new(execution),
-                    expected: None,
-                    next: Some(catalog_event_id),
-                    coverage,
                 }],
                 ..CommitTransaction::default()
             })
             .map_err(store_diagnostic)?;
-        let session = self.allocate_session(Session {
-            program,
-            execution,
+        let host = builtin_host_capabilities()
+            .map_err(|error| ProtocolDiagnostic::capability(error.to_string()))?;
+        let mut coordinator = SessionCoordinator::open_with_capabilities(
             store,
-            commit: root,
-            state: Arc::new(loaded.state),
-            pending: None,
+            program.clone(),
+            execution,
+            protocol_session_name()?,
             branch,
-            branch_revision: outcome_ref_revision(&outcome, &branch_key)?,
-            branch_key,
-            active_key: target,
-            active_revision: active.revision,
-            catalog_revision: outcome_catalog_revision(&outcome, execution)?,
-            coverage,
-        })?;
-        Ok(response::Body::SessionCreated(dto::SessionCreated {
-            session,
-            commit_id: root.as_bytes().to_vec(),
-            snapshot,
-        }))
+            &host,
+        )
+        .map_err(coordinator_diagnostic)?;
+        coordinator
+            .enable_complete_recording(TimelineOperationId::from_bytes(*execution.as_bytes()), 0)
+            .map_err(coordinator_diagnostic)?;
+        self.insert_coordinator(program, coordinator)
+            .map(response::Body::SessionCreated)
     }
 
     fn dispatch(&mut self, request: dto::Dispatch) -> Result<response::Body, ProtocolDiagnostic> {
@@ -396,41 +380,31 @@ impl ProtocolEngine {
                 "a transition slice is already in progress",
             ));
         }
+        let budget = bounded_slice(request.slice_work, limits.max_slice_work)?;
         let input = parse_input(
             request
                 .input
                 .ok_or_else(|| ProtocolDiagnostic::invalid("Runtime input is missing"))?,
-            &session.state,
+            session.coordinator.state(),
             &session.program,
             &limits.snapshot.decode,
         )?;
-        if let Some(existing) = session
-            .store
-            .read_input(session.execution, input.request_id())
-            .map_err(store_diagnostic)?
+        if let Some(reused) = session
+            .coordinator
+            .reuse_input(&input)
+            .map_err(coordinator_diagnostic)?
         {
-            if existing.parent != session.commit || existing.payload != input.payload_digest() {
-                return Err(ProtocolDiagnostic::conflict(
-                    "InputId was committed with another parent or payload",
-                ));
-            }
-            return reuse_committed(request.session, session, existing.commit);
+            return committed_response(request.session, reused, limits);
         }
         let runner = begin_transition_with_parent_commit(
             session.program.clone(),
-            session.state.clone(),
-            session.commit,
+            session.coordinator.state().clone(),
+            session.coordinator.timeline().cursor,
             input,
             limits.macrostep,
         )
         .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-        run_slice(
-            request.session,
-            session,
-            runner,
-            bounded_slice(request.slice_work, limits.max_slice_work)?,
-            limits,
-        )
+        run_slice(request.session, session, runner, budget, limits)
     }
 
     fn continue_slice(
@@ -438,6 +412,7 @@ impl ProtocolEngine {
         request: dto::ContinueSlice,
     ) -> Result<response::Body, ProtocolDiagnostic> {
         let limits = self.limits;
+        let budget = bounded_slice(request.slice_work, limits.max_slice_work)?;
         let session = self
             .sessions
             .get_mut(&request.session)
@@ -446,13 +421,7 @@ impl ProtocolEngine {
             .pending
             .take()
             .ok_or_else(|| ProtocolDiagnostic::invalid("no transition slice is pending"))?;
-        run_slice(
-            request.session,
-            session,
-            runner,
-            bounded_slice(request.slice_work, limits.max_slice_work)?,
-            limits,
-        )
+        run_slice(request.session, session, runner, budget, limits)
     }
 
     fn checkpoint_export(
@@ -468,9 +437,13 @@ impl ProtocolEngine {
                 "cannot export while a transition slice is in progress",
             ));
         }
-        let bytes = CheckpointBundle::export(&session.store, session.commit, &BTreeSet::new())
-            .and_then(|bundle| bundle.to_bytes())
-            .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
+        let bytes = CheckpointBundle::export(
+            session.coordinator.store(),
+            session.coordinator.timeline().cursor,
+            &BTreeSet::new(),
+        )
+        .and_then(|bundle| bundle.to_bytes())
+        .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
         if bytes.len() as u64 > self.limits.max_message_bytes {
             return Err(ProtocolDiagnostic::limit(
                 "Checkpoint Bundle response bytes",
@@ -496,12 +469,9 @@ impl ProtocolEngine {
             ));
         }
         let bytes = TimelineArchiveBundle::export(
-            &session.store,
-            session.execution,
-            Some(TimelineSession {
-                selected_branch: session.branch,
-                cursor: session.commit,
-            }),
+            session.coordinator.store(),
+            session.coordinator.state().execution_id,
+            Some(session.coordinator.timeline()),
             &BTreeSet::new(),
         )
         .and_then(|bundle| bundle.to_bytes())
@@ -568,7 +538,7 @@ impl ProtocolEngine {
             .iter()
             .map(|value| (value.name.clone(), value.name.clone()))
             .collect();
-        let active_key = protocol_active_key()?;
+        let session_name = protocol_session_name()?;
         let mapping = TimelineImportMapping {
             archive_name: RefName::new("protocol-import")
                 .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?,
@@ -579,47 +549,25 @@ impl ProtocolEngine {
             branch_ids,
             save_names,
             bookmark_names,
-            session_name: Some(active_key.owner().clone()),
+            session_name: Some(session_name.clone()),
         };
-        let mut store = MemoryStore::new();
+        let mut store = self.open_store(execution)?;
         bundle
             .import(&mut store, mapping, 0)
             .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-        let loaded = load_commit(&store, active.cursor, &program)
-            .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-        let snapshot = store
-            .get_object(ObjectId::from_bytes(*loaded.commit.snapshot.as_bytes()))
-            .map_err(store_diagnostic)?
-            .ok_or_else(|| ProtocolDiagnostic::missing("Snapshot object is missing"))?
-            .bytes()
-            .to_vec();
-        let branch_key = timeline_branch(execution, active.selected_branch);
-        let branch_revision = required_ref_revision(&store, &branch_key)?;
-        let active_revision = required_ref_revision(&store, &active_key)?;
-        let catalog = store
-            .read_catalog_head(&CatalogRefKey::new(execution))
-            .map_err(store_diagnostic)?
-            .ok_or_else(|| ProtocolDiagnostic::missing("Catalog head is missing"))?;
-        let session = self.allocate_session(Session {
-            program,
-            execution,
+        let host = builtin_host_capabilities()
+            .map_err(|error| ProtocolDiagnostic::capability(error.to_string()))?;
+        let coordinator = SessionCoordinator::open_with_capabilities(
             store,
-            commit: active.cursor,
-            state: Arc::new(loaded.state),
-            pending: None,
-            branch: active.selected_branch,
-            branch_key,
-            active_key,
-            branch_revision,
-            active_revision,
-            catalog_revision: catalog.revision,
-            coverage: catalog.coverage,
-        })?;
-        Ok(response::Body::SessionCreated(dto::SessionCreated {
-            session,
-            commit_id: active.cursor.as_bytes().to_vec(),
-            snapshot,
-        }))
+            program.clone(),
+            execution,
+            session_name,
+            active.selected_branch,
+            &host,
+        )
+        .map_err(coordinator_diagnostic)?;
+        self.insert_coordinator(program, coordinator)
+            .map(response::Body::SessionCreated)
     }
 
     fn capability_negotiation(
@@ -674,7 +622,7 @@ impl ProtocolEngine {
         }
     }
 
-    fn allocate_session(&mut self, session: Session) -> Result<u64, ProtocolDiagnostic> {
+    fn allocate_session(&mut self, session: Session<B>) -> Result<u64, ProtocolDiagnostic> {
         let id = self.next_session;
         self.next_session = self
             .next_session
@@ -685,9 +633,9 @@ impl ProtocolEngine {
     }
 }
 
-fn run_slice(
+fn run_slice<B: StorageBackend>(
     session_id: u64,
-    session: &mut Session,
+    session: &mut Session<B>,
     runner: TransitionRunner,
     budget: SliceBudget,
     limits: ProtocolLimits,
@@ -704,182 +652,46 @@ fn run_slice(
                 internal_event_count: progress.internal_event_count,
             }))
         }
-        SliceOutcome::Completed(draft) => commit_draft(session_id, session, draft, limits),
+        SliceOutcome::Completed(draft) => {
+            // Reject an oversized Snapshot before publishing any refs.
+            protocol_snapshot(draft.next_state(), limits)?;
+            let parent = session.coordinator.timeline().cursor;
+            let committed = session
+                .coordinator
+                .commit_draft(parent, draft, 0)
+                .map_err(coordinator_diagnostic)?;
+            committed_response(session_id, committed, limits)
+        }
         SliceOutcome::Faulted(error) => Err(ProtocolDiagnostic::runtime(error.to_string())),
     }
 }
 
-fn commit_draft(
-    session_id: u64,
-    session: &mut Session,
-    draft: TransitionDraft,
+fn committed_response(
+    session: u64,
+    committed: CommittedRunResult,
     limits: ProtocolLimits,
 ) -> Result<response::Body, ProtocolDiagnostic> {
-    let snapshot_bytes = export_snapshot(draft.next_state())
-        .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-    let snapshot_object = checked_object(
-        &snapshot_bytes,
-        ObjectKind::Snapshot,
-        0,
-        limits.snapshot.decode.max_envelope_bytes,
-    )?;
-    let snapshot = SnapshotId::from_bytes(*snapshot_object.id().as_bytes());
-    let receipt = TransitionReceiptV1::from_draft(
-        session.execution,
-        session.program.artifact_id(),
-        session.commit,
-        snapshot,
-        &draft,
-    );
-    let receipt_object = receipt.to_object();
-    if receipt_object.schema() != STORED_RECEIPT_SCHEMA_V1 {
-        return Err(ProtocolDiagnostic::runtime("Receipt schema mismatch"));
-    }
-    let receipt_id = ReceiptId::from_bytes(*receipt_object.id().as_bytes());
-    let commit_object = CommitV1 {
-        parent: Some(session.commit),
-        execution: session.execution,
-        program: session.program.artifact_id(),
-        snapshot,
-        cause: CommitCauseV1::RuntimeTransition(receipt_id),
-        ledger_fence: session
-            .store
-            .current_ledger_fence(session.execution)
-            .map_err(store_diagnostic)?
-            .get(),
-        turn: draft.next_state().turn,
-    }
-    .to_object();
-    let commit = CommitId::from_bytes(*commit_object.id().as_bytes());
-    let catalog = session
-        .store
-        .read_catalog_head(&CatalogRefKey::new(session.execution))
-        .map_err(store_diagnostic)?
-        .ok_or_else(|| ProtocolDiagnostic::missing("Catalog head is missing"))?;
-    if catalog.revision != session.catalog_revision || catalog.coverage != session.coverage {
-        return Err(ProtocolDiagnostic::conflict(
-            "Timeline Catalog changed outside this protocol session",
-        ));
-    }
-    let catalog_event = TimelineCatalogEventV1 {
-        execution: session.execution,
-        previous: Some(catalog.event),
-        operation: TimelineOperationId::from_bytes(*draft.input_id().as_bytes()),
-        kind: TimelineCatalogEventKind::BranchAdvanced {
-            branch: session.branch,
-            previous_head: session.commit,
-            next_head: commit,
-        },
-    }
-    .to_object()
-    .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-    let catalog_event_id =
-        narrata_core::TimelineCatalogEventId::from_bytes(*catalog_event.id().as_bytes());
-    let outcome = session
-        .store
-        .commit(CommitTransaction {
-            objects: vec![
-                snapshot_object,
-                receipt_object,
-                commit_object,
-                catalog_event,
-            ],
-            refs: vec![
-                RefMutation {
-                    key: session.branch_key.clone(),
-                    expected: Some(session.branch_revision),
-                    next: Some(commit),
-                },
-                RefMutation {
-                    key: session.active_key.clone(),
-                    expected: Some(session.active_revision),
-                    next: Some(commit),
-                },
-            ],
-            catalogs: vec![CatalogMutation {
-                key: CatalogRefKey::new(session.execution),
-                expected: Some(session.catalog_revision),
-                next: Some(catalog_event_id),
-                coverage: session.coverage,
-            }],
-            inputs: vec![InputRecord {
-                execution: session.execution,
-                input: draft.input_id(),
-                parent: session.commit,
-                payload: draft.input_payload_digest(),
-                commit,
-            }],
-            ..CommitTransaction::default()
-        })
-        .map_err(store_diagnostic)?;
-    session.branch_revision = outcome
-        .refs
-        .get(&session.branch_key)
-        .and_then(|value| *value)
-        .map(|value| value.revision)
-        .ok_or_else(|| ProtocolDiagnostic::missing("Branch Ref outcome is missing"))?;
-    session.active_revision = outcome
-        .refs
-        .get(&session.active_key)
-        .and_then(|value| *value)
-        .map(|value| value.revision)
-        .ok_or_else(|| ProtocolDiagnostic::missing("Active Ref outcome is missing"))?;
-    session.catalog_revision = outcome
-        .catalogs
-        .get(&CatalogRefKey::new(session.execution))
-        .and_then(|value| *value)
-        .map(|value| value.revision)
-        .ok_or_else(|| ProtocolDiagnostic::missing("Catalog outcome is missing"))?;
-    let result = result_dto(draft.result());
-    let digest = draft.next_state_digest();
-    session.commit = commit;
-    session.state = Arc::new(draft.into_next_state());
     Ok(response::Body::Committed(dto::CommittedRunResult {
-        session: session_id,
-        commit_id: commit.as_bytes().to_vec(),
-        receipt_id: receipt_id.as_bytes().to_vec(),
-        snapshot: snapshot_bytes,
-        state_digest: digest.as_bytes().to_vec(),
-        reused: false,
-        result: Some(result),
+        session,
+        commit_id: committed.commit.as_bytes().to_vec(),
+        receipt_id: committed.receipt.as_bytes().to_vec(),
+        snapshot: protocol_snapshot(&committed.state, limits)?,
+        state_digest: state_digest(&committed.state).as_bytes().to_vec(),
+        reused: committed.reused,
+        result: Some(result_dto(&committed.result)),
     }))
 }
 
-fn reuse_committed(
-    session_id: u64,
-    session: &mut Session,
-    commit: CommitId,
-) -> Result<response::Body, ProtocolDiagnostic> {
-    let loaded = load_commit(&session.store, commit, &session.program)
-        .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-    let receipt = match loaded.commit.cause {
-        CommitCauseV1::RuntimeTransition(receipt) => receipt,
-        CommitCauseV1::Genesis | CommitCauseV1::Migration(_) => {
-            return Err(ProtocolDiagnostic::runtime(
-                "Input index points to a non-transition Commit",
-            ));
-        }
-    };
-    let snapshot = session
-        .store
-        .get_object(ObjectId::from_bytes(*loaded.commit.snapshot.as_bytes()))
-        .map_err(store_diagnostic)?
-        .ok_or_else(|| ProtocolDiagnostic::missing("Snapshot object is missing"))?
-        .bytes()
-        .to_vec();
-    let result = result_from_state(&loaded.state)?;
-    let digest = state_digest(&loaded.state);
-    session.commit = commit;
-    session.state = Arc::new(loaded.state);
-    Ok(response::Body::Committed(dto::CommittedRunResult {
-        session: session_id,
-        commit_id: commit.as_bytes().to_vec(),
-        receipt_id: receipt.as_bytes().to_vec(),
-        snapshot,
-        state_digest: digest.as_bytes().to_vec(),
-        reused: true,
-        result: Some(result_dto(&result)),
-    }))
+fn protocol_snapshot(
+    state: &RuntimeStateV0,
+    limits: ProtocolLimits,
+) -> Result<Vec<u8>, ProtocolDiagnostic> {
+    let snapshot =
+        export_snapshot(state).map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
+    if snapshot.len() as u64 > limits.snapshot.decode.max_envelope_bytes {
+        return Err(ProtocolDiagnostic::limit("Snapshot bytes"));
+    }
+    Ok(snapshot)
 }
 
 fn parse_input(
@@ -934,53 +746,6 @@ fn parse_input(
             .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))
         }
         None => Err(ProtocolDiagnostic::invalid("Runtime input kind is missing")),
-    }
-}
-
-fn result_from_state(state: &RuntimeStateV0) -> Result<DraftResult, ProtocolDiagnostic> {
-    match &state.status {
-        RuntimeStatusV0::Awaiting { pending, .. } => match pending {
-            PendingInteractionV0::Say {
-                interaction_id,
-                speaker,
-                text,
-                ..
-            } => Ok(DraftResult::AwaitSay(SayView {
-                interaction_id: *interaction_id,
-                speaker: speaker.clone(),
-                text: text.clone(),
-            })),
-            PendingInteractionV0::Choice {
-                interaction_id,
-                prompt,
-                offered,
-                ..
-            } => Ok(DraftResult::AwaitChoice(ChoiceView {
-                interaction_id: *interaction_id,
-                prompt: prompt.clone(),
-                choices: offered
-                    .iter()
-                    .map(|choice| ChoiceViewItem {
-                        id: choice.id,
-                        label: choice.label.clone(),
-                    })
-                    .collect(),
-            })),
-        },
-        RuntimeStatusV0::AwaitingEffect { pending, .. }
-        | RuntimeStatusV0::AwaitingStatechartEffect { pending } => {
-            Ok(DraftResult::AwaitEffect(pending.request.clone()))
-        }
-        RuntimeStatusV0::Finished { result, .. } => Ok(DraftResult::Finished(result.clone())),
-        RuntimeStatusV0::StatechartStable => state
-            .statechart
-            .as_ref()
-            .map(|chart| DraftResult::StatechartStable(chart.into()))
-            .ok_or_else(|| ProtocolDiagnostic::runtime("stable Statechart state is missing")),
-        RuntimeStatusV0::StatechartFinished => Ok(DraftResult::Finished(Value::Null)),
-        RuntimeStatusV0::Ready { .. } => Err(ProtocolDiagnostic::runtime(
-            "transition ended outside a safe point",
-        )),
     }
 }
 
@@ -1040,89 +805,26 @@ fn result_dto(result: &DraftResult) -> dto::RunResult {
     }
 }
 
-fn checked_object(
-    bytes: &[u8],
-    kind: ObjectKind,
-    schema: u16,
-    max_bytes: u64,
-) -> Result<CheckedObject, ProtocolDiagnostic> {
-    CheckedObject::from_bytes(bytes, kind, schema, max_bytes)
-        .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))
+fn protocol_session_name() -> Result<RefName, ProtocolDiagnostic> {
+    RefName::new("protocol").map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))
 }
 
-fn protocol_active_key() -> Result<RefKey, ProtocolDiagnostic> {
-    let name =
-        RefName::new("protocol").map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))?;
-    RefKey::active(name).map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))
-}
-
-fn outcome_ref_revision(
-    outcome: &CommitOutcome,
-    key: &RefKey,
-) -> Result<RefRevision, ProtocolDiagnostic> {
-    outcome
-        .refs
-        .get(key)
-        .and_then(|value| *value)
-        .map(|value| value.revision)
-        .ok_or_else(|| {
-            ProtocolDiagnostic::missing(format!("Ref {} outcome is missing", key.storage_key()))
-        })
-}
-
-fn outcome_catalog_revision(
-    outcome: &CommitOutcome,
-    execution: ExecutionId,
-) -> Result<RefRevision, ProtocolDiagnostic> {
-    outcome
-        .catalogs
-        .get(&CatalogRefKey::new(execution))
-        .and_then(|value| *value)
-        .map(|value| value.revision)
-        .ok_or_else(|| ProtocolDiagnostic::missing("Catalog outcome is missing"))
-}
-
-fn required_ref_revision(
-    store: &MemoryStore,
-    key: &RefKey,
-) -> Result<RefRevision, ProtocolDiagnostic> {
-    store
-        .read_ref(key)
-        .map_err(store_diagnostic)?
-        .map(|value| value.revision)
-        .ok_or_else(|| ProtocolDiagnostic::missing(format!("Ref {} is missing", key.storage_key())))
-}
-
-fn recording_started(
-    execution: ExecutionId,
-    branch: BranchId,
-    baseline: CommitId,
-) -> Result<CheckedObject, ProtocolDiagnostic> {
-    TimelineCatalogEventV1 {
-        execution,
-        previous: None,
-        operation: deterministic_operation(b"protocol-recording-started", baseline.as_bytes()),
-        kind: TimelineCatalogEventKind::RecordingStarted {
-            baseline,
-            initial_refs: vec![ArchivedRefSnapshot::Branch(ArchivedBranchRef {
-                branch,
-                head: baseline,
-            })],
+fn coordinator_diagnostic(error: CoordinatorError) -> ProtocolDiagnostic {
+    match error {
+        CoordinatorError::Store(error) => match error {
+            narrata_store::StoreError::InputConflict(_)
+            | narrata_store::StoreError::RefConflict(_)
+            | narrata_store::StoreError::CatalogConflict(_) => {
+                ProtocolDiagnostic::conflict(error.to_string())
+            }
+            error => store_diagnostic(error),
         },
+        CoordinatorError::CapabilityNegotiation(_) | CoordinatorError::CapabilityUnavailable(_) => {
+            ProtocolDiagnostic::capability(error.to_string())
+        }
+        CoordinatorError::Runtime(_) => ProtocolDiagnostic::runtime(error.to_string()),
+        error => ProtocolDiagnostic::invalid(error.to_string()),
     }
-    .to_object()
-    .map_err(|error| ProtocolDiagnostic::invalid(error.to_string()))
-}
-
-fn deterministic_operation(domain: &[u8], source: &[u8]) -> TimelineOperationId {
-    let mut hasher = Sha256::new();
-    hasher.update(b"NARRATA-PROTOCOL-TIMELINE-OP\0");
-    hasher.update(domain);
-    hasher.update(source);
-    let digest: [u8; 32] = hasher.finalize().into();
-    let mut bytes = [0_u8; 16];
-    bytes.copy_from_slice(&digest[..16]);
-    TimelineOperationId::from_bytes(bytes)
 }
 
 fn bounded_slice(requested: u64, maximum: u64) -> Result<SliceBudget, ProtocolDiagnostic> {
@@ -1165,6 +867,14 @@ struct ProtocolDiagnostic {
 }
 
 impl ProtocolDiagnostic {
+    fn into_dto(self) -> dto::Diagnostic {
+        dto::Diagnostic {
+            code: self.code.to_owned(),
+            class: self.class.to_owned(),
+            message: self.message,
+            retryable: self.retryable,
+        }
+    }
     fn invalid(message: impl Into<String>) -> Self {
         Self::new("NAR-P0001", "invalid-request", message)
     }
@@ -1207,13 +917,6 @@ fn diagnostic_response(request_id: u64, error: ProtocolDiagnostic) -> dto::Respo
     dto::Response {
         protocol_version: u32::from(PROTOCOL_V1.get()),
         request_id,
-        body: Some(response::Body::Diagnostic(dto::Diagnostic {
-            code: error.code.to_owned(),
-            class: error.class.to_owned(),
-            message: error.message,
-            retryable: error.retryable,
-        })),
+        body: Some(response::Body::Diagnostic(error.into_dto())),
     }
 }
-
-fn _ids_are_transport_only(_: (StateDigest, ReceiptId, EffectRequestDigest)) {}

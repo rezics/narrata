@@ -209,9 +209,9 @@ name = "narrata-protocol"
 version = "0.1.0-alpha.1"
 dependencies = [
  "narrata-core",
+ "narrata-storage",
  "narrata-store",
  "prost",
- "sha2",
  "thiserror",
 ]
 

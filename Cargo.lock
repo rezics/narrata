@@ -588,10 +588,12 @@ name = "narrata-protocol"
 version = "0.1.0-alpha.1"
 dependencies = [
  "narrata-core",
+ "narrata-storage",
+ "narrata-storage-sqlite",
  "narrata-store",
  "narrata-testkit",
  "prost",
- "sha2",
+ "tempfile",
  "thiserror",
 ]
 
