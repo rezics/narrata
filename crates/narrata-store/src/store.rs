@@ -203,8 +203,9 @@ impl From<HistoryError> for StoreError {
                     .map(|commit| CommitId::from_bytes(*commit.as_bytes())),
             }
             .into(),
-            // Sessions of registered domains; this store registers none.
+            // Generic sessions and shallow checkpoints; this store registers no generic domain.
             HistoryError::ArtifactMismatch { .. }
+            | HistoryError::HistoryTruncated(_)
             | HistoryError::MissingRef(_)
             | HistoryError::Nondeterministic(_)
             | HistoryError::HeadMoved { .. } => {
