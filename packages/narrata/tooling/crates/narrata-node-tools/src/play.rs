@@ -73,6 +73,7 @@ impl Resolver<'_> {
         let request = ResolveRequest {
             context: ResolveContext {
                 languages: self.languages.clone(),
+                ..ResolveContext::default()
             },
             items: vec![ResolveItem {
                 content: content.clone(),
