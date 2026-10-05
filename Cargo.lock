@@ -633,6 +633,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-storage-host"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "hex",
+ "narrata-kernel",
+ "narrata-storage",
+ "narrata-storage-host",
+ "proptest",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "narrata-storage-sqlite"
 version = "0.1.0-alpha.1"
 dependencies = [

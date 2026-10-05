@@ -1,0 +1,27 @@
+[package]
+name = "narrata-storage-host"
+description = "Storage cache for asynchronous hosts such as IndexedDB: loads on demand, persists confirmed batches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# An in-memory host and drivers that answer the cache synchronously, for tests.
+testing = []
+
+[dependencies]
+narrata-kernel = { path = "../narrata-kernel", version = "=0.1.0-alpha.1" }
+narrata-storage = { path = "../narrata-storage", version = "=0.1.0-alpha.1" }
+thiserror.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
+narrata-storage = { path = "../narrata-storage", version = "=0.1.0-alpha.1", features = ["testing"] }
+narrata-storage-host = { path = ".", features = ["testing"] }
+proptest.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
