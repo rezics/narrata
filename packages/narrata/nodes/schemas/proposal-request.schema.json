@@ -1,158 +1,31 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "SourcePlan",
-  "description": "What an authoring node type lowers to; every variant is then checked in its graph.",
-  "oneOf": [
-    {
-      "type": "object",
-      "properties": {
-        "args": {
-          "description": "Named arguments the content provider formats text with.",
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/Expr"
-          }
-        },
-        "body": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Segment"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "choice_points": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ChoicePointSource"
-          }
-        },
-        "kind": {
-          "type": "string",
-          "const": "passage"
-        },
-        "next": {
-          "description": "Alias of the node that follows when the passage runs to its end.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "title": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ContentRef"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "kind"
-      ]
+  "title": "ProposalRequest",
+  "description": "What a host proposes at the choice point the session waits at. It carries no IDs: existing\nnodes are named by `node:` ID and proposed ones by their key in this request.",
+  "type": "object",
+  "properties": {
+    "choice_point": {
+      "description": "The current choice point; it must accept proposals.",
+      "$ref": "#/$defs/ChoicePointId"
     },
-    {
-      "type": "object",
-      "properties": {
-        "condition": {
-          "$ref": "#/$defs/Expr"
-        },
-        "kind": {
-          "type": "string",
-          "const": "branch"
-        },
-        "when_false": {
-          "type": "string"
-        },
-        "when_true": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "condition",
-        "when_true",
-        "when_false"
-      ]
+    "nodes": {
+      "description": "Passages added to the current frame; they vanish when the frame returns.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NodeProposal"
+      }
     },
-    {
-      "type": "object",
-      "properties": {
-        "assignments": {
-          "type": "array",
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/Assignment"
-          }
-        },
-        "kind": {
-          "type": "string",
-          "const": "mutate"
-        },
-        "next": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "next"
-      ]
-    },
-    {
-      "type": "object",
-      "properties": {
-        "arguments": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/Expr"
-          },
-          "default": {}
-        },
-        "kind": {
-          "type": "string",
-          "const": "call"
-        },
-        "on_return": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "target": {
-          "$ref": "#/$defs/CallTarget"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "target",
-        "on_return"
-      ]
-    },
-    {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "type": "string",
-          "const": "return"
-        },
-        "outcome": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "outcome"
-      ]
+    "options": {
+      "description": "Appended after the choice point's options, in this order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/OptionProposal"
+      }
     }
+  },
+  "additionalProperties": false,
+  "required": [
+    "choice_point"
   ],
   "$defs": {
     "AnchorId": {
@@ -190,66 +63,13 @@
         "or"
       ]
     },
-    "CallTarget": {
-      "oneOf": [
-        {
-          "description": "A graph of the same package instance.",
-          "type": "object",
-          "properties": {
-            "graph": {
-              "type": "string"
-            },
-            "kind": {
-              "type": "string",
-              "const": "local"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "graph"
-          ]
-        },
-        {
-          "description": "An import port of the calling graph, bound by the product.",
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "const": "import"
-            },
-            "port": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "port"
-          ]
-        }
-      ]
-    },
     "ChoicePointId": {
       "type": "string",
       "pattern": "^choice-point:[0-9a-f]{32}$"
     },
-    "ChoicePointSource": {
+    "ChoicePointProposal": {
       "type": "object",
       "properties": {
-        "id": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ChoicePointId"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "key": {
-          "type": "string"
-        },
         "max": {
           "type": "integer",
           "format": "uint16",
@@ -265,11 +85,10 @@
         "options": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/OptionSource"
+            "$ref": "#/$defs/OptionProposal"
           }
         },
         "placement": {
-          "description": "The body block after which the choice point appears; only the last one may omit it.",
           "anyOf": [
             {
               "$ref": "#/$defs/AnchorId"
@@ -280,13 +99,11 @@
           ]
         },
         "proposals": {
-          "description": "Whether the host may propose options and passages here at run time (ADR 0013 §5).",
           "type": "boolean"
         }
       },
       "additionalProperties": false,
       "required": [
-        "key",
         "options"
       ]
     },
@@ -396,11 +213,59 @@
         }
       ]
     },
-    "OptionId": {
-      "type": "string",
-      "pattern": "^option:[0-9a-f]{32}$"
+    "NodeProposal": {
+      "type": "object",
+      "properties": {
+        "args": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Expr"
+          }
+        },
+        "body": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Segment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "choice_points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChoicePointProposal"
+          }
+        },
+        "key": {
+          "description": "Names the node within this request only; it is never recorded.",
+          "type": "string"
+        },
+        "next": {
+          "description": "A `node:` ID or the key of a node in this request, as for branch targets.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key"
+      ]
     },
-    "OptionSource": {
+    "OptionProposal": {
       "type": "object",
       "properties": {
         "effects": {
@@ -419,19 +284,6 @@
             }
           ]
         },
-        "id": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/OptionId"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "key": {
-          "type": "string"
-        },
         "label": {
           "anyOf": [
             {
@@ -443,10 +295,10 @@
           ]
         },
         "outcome": {
+          "description": "A branch target is a `node:` ID of the graph or of the frame's earlier proposals, or\nthe key of a node in this request.",
           "$ref": "#/$defs/OutcomeSource"
         },
         "reason": {
-          "description": "Shown when the option is visible but disabled.",
           "anyOf": [
             {
               "$ref": "#/$defs/ContentRef"
@@ -469,7 +321,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "key",
         "outcome"
       ]
     },

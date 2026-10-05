@@ -286,11 +286,15 @@
               "$ref": "#/$defs/NodeId"
             },
             "options": {
-              "description": "Visible options in order; hidden ones are left out.",
+              "description": "Visible options in order, proposed ones after the choice point's own; hidden ones\nare left out.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/OptionView"
               }
+            },
+            "proposals": {
+              "description": "Whether the host may propose options and passages here.",
+              "type": "boolean"
             }
           },
           "additionalProperties": false,
