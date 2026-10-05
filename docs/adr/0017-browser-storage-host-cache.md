@@ -66,7 +66,7 @@
 
 字段与校验由 [protocol.rs](../../packages/narrata/kernel/crates/narrata-storage-host/src/protocol.rs)
 与 TypeScript 的 [protocol.ts](../../packages/narrata/kernel/js/src/protocol.ts) 共同固定；两边都
-对照 [共享向量](../../packages/narrata/kernel/crates/narrata-storage-host/tests/protocol-vectors.json)
+对照 [冻结的共享向量](../../fixtures/compat/browser-storage-v1/protocol-vectors.json)
 测试。改变消息需要新的协议版本与 ADR。
 
 ### IndexedDB 布局与导出
@@ -103,7 +103,9 @@
   共两次，都不随历史深度增长（`narrata-history` 的 `host_cache` 测试计数）。
 - 缓存保留读过与写过的内容；没有未确认批次时 `forget()` 可以释放。
 - 一致性套件的"重开后保留状态"一例改为对 `Evictable` 后端也运行。
-- IndexedDB 布局与导出格式还没有冻结语料；阅读器开始写入用户存档之前应当建立。
+- 协议与导出格式已由 [ADR 0019](0019-shallow-history-bundles.md) 的
+  `fixtures/compat/browser-storage-v1/` 冻结；Rust 与 TypeScript 均读取这些字节，TypeScript
+  测试还检查导入后的 IndexedDB 布局 v1 与重开结果。
 
 ## 不做
 
