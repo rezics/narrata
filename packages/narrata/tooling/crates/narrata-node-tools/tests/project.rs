@@ -6,12 +6,13 @@ use std::{
     sync::Arc,
 };
 
-use narrata_content_local::{ContentPack, Entry, LocalContent};
+use narrata_content_local::{Block, ContentPack, Entry, LocalContent};
 use narrata_node_tools::{
     act, compose, ids::Minter, load_content, load_project, open_pack, r1, read_text, render,
     verify_lock, write_text,
 };
 use narrata_nodes::{AuthoredId, Program, Session, SessionExport, r1::migrate_save};
+use proptest::prelude::*;
 use serde_json::{Value, json};
 
 const R1_ARTIFACT: &str = "b73f74b82f33834c386134e1f5cd548d9ba304d2d299507d827c4fe7acad412b";
@@ -257,33 +258,78 @@ fn the_local_choice_and_the_multiple_selection_leave_the_original_routes_unchang
     );
 }
 
-#[test]
-fn switching_the_content_language_keeps_every_commit_and_state() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut english: ContentPack =
-        ContentPack::parse(&read_text(&demo().join("content/zh-Hans.json")).unwrap()).unwrap();
-    english.language = "en".into();
-    for entry in english.entries.values_mut() {
-        if let Entry::Text(text) = entry {
-            text.text = format!("EN {}", text.text);
-        }
-    }
-    let english_path = directory.path().join("en.json");
-    write_text(&english_path, &serde_json::to_string(&english).unwrap()).unwrap();
-    let mut content = LocalContent::new();
-    content
-        .add(ContentPack::parse(&read_text(&demo().join("content/zh-Hans.json")).unwrap()).unwrap())
-        .unwrap();
-    content.add(english).unwrap();
+/// The artifact, every commit with its state and every rendered page of the linear route,
+/// resolving each page in `language` before acting as a reader would.
+fn read_through(content: &LocalContent, language: &str) -> (String, Vec<String>, String) {
     let (program, names) = open_pack(&demo().join("story.narpack")).unwrap();
+    let artifact = program.artifact_id().to_string();
     let mut session = Session::new(program, EXECUTION.parse().unwrap()).unwrap();
-    act(&mut session, names.as_ref(), "camp,letter").unwrap();
-    let chinese = render(&session, names.as_ref(), &content, vec!["zh-Hans".into()]).unwrap();
-    let english = render(&session, names.as_ref(), &content, vec!["en".into()]).unwrap();
-    assert_ne!(chinese, english);
-    let header = |text: &str| text.lines().take(2).collect::<Vec<_>>().join("\n");
-    assert_eq!(header(&chinese), header(&english));
-    assert!(english.contains("EN 收好信"), "{english}");
+    let mut pages = String::new();
+    for step in LINEAR.split(',') {
+        pages += &render(&session, names.as_ref(), content, vec![language.into()]).unwrap();
+        act(&mut session, names.as_ref(), step).unwrap();
+    }
+    let commits = session
+        .commits()
+        .map(|(id, commit)| format!("{id} {}", commit.state))
+        .collect();
+    (artifact, commits, pages)
+}
+
+fn migrated_linear_save(content: &LocalContent) -> String {
+    let (program, names) = open_pack(&demo().join("story.narpack")).unwrap();
+    let save = read_text(&r1_corpus().join("linear.save.json")).unwrap();
+    let ref_text = |reference: &narrata_kernel::content::ContentRef| content.text(reference, &[]);
+    migrate_save(
+        program,
+        &names.unwrap(),
+        &save,
+        EXECUTION.parse().unwrap(),
+        &ref_text,
+    )
+    .unwrap()
+    .export()
+    .unwrap()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(16))]
+
+    /// Text lives only in content packs: reading through a second language whose every text is
+    /// rewritten keeps the artifact, every commit and state, and the R1 save migration.
+    #[test]
+    fn rewritten_text_in_another_language_keeps_every_commit_and_state(
+        language in "(en|fr|de|ja)",
+        prefix in "[^{}\\p{C}]{1,12}",
+    ) {
+        let original =
+            ContentPack::parse(&read_text(&demo().join("content/zh-Hans.json")).unwrap()).unwrap();
+        let mut translated = original.clone();
+        translated.language = language.clone();
+        for entry in translated.entries.values_mut() {
+            match entry {
+                Entry::Text(entry) => entry.text = format!("{prefix}{}", entry.text),
+                Entry::Blocks(entry) => {
+                    for block in &mut entry.blocks {
+                        if let Block::Text { text, .. } = block {
+                            *text = format!("{prefix}{text}");
+                        }
+                    }
+                }
+            }
+        }
+        let mut only = LocalContent::new();
+        only.add(original.clone()).unwrap();
+        let mut both = LocalContent::new();
+        both.add(original).unwrap();
+        both.add(translated).unwrap();
+        let (artifact, commits, pages) = read_through(&only, "zh-Hans");
+        let (other_artifact, other_commits, other_pages) = read_through(&both, &language);
+        prop_assert_eq!(artifact, other_artifact);
+        prop_assert_eq!(commits, other_commits);
+        prop_assert_ne!(pages, other_pages);
+        prop_assert_eq!(migrated_linear_save(&only), migrated_linear_save(&both));
+    }
 }
 
 #[test]

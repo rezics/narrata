@@ -578,6 +578,7 @@ dependencies = [
  "narrata-content-local",
  "narrata-kernel",
  "narrata-nodes",
+ "proptest",
  "serde",
  "serde_json",
  "tempfile",
