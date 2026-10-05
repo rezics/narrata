@@ -1,0 +1,483 @@
+{
+  "goal": {
+    "slug": "kernel-and-saves",
+    "manager": "narrata-kernel-and-saves",
+    "startedAt": "2026-10-04T18:38:39.231Z",
+    "seenHead": "6d887ce5d5377db30cd37b4989fb5079c48a9d33"
+  },
+  "tasks": [
+    {
+      "id": "G-002",
+      "title": "窄存储后端契约、内存与按行 SQLite 后端、一致性套件",
+      "effort": "xhigh",
+      "engine": "claude",
+      "cases": [],
+      "paths": [
+        "packages/narrata/kernel/crates/narrata-storage/**",
+        "packages/narrata/kernel/crates/narrata-storage-sqlite/**",
+        "docs/adr/0012-*.md",
+        "docs/contracts/storage-and-saves.md"
+      ],
+      "shared": [
+        "adr:0012"
+      ],
+      "depends": [],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-002.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-002",
+      "branch": "goal/g-002",
+      "base": "266cfd7a2f34bca9eaf1f38359b184ed2725b50d",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 25636,
+          "pidMark": 1791139803558,
+          "session": "4b5f97de-f507-4699-b696-a0742d2fc7c9",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-002\\attempt-1.json",
+          "startedAt": "2026-10-04T18:50:03.563Z",
+          "endedAt": "2026-10-04T19:19:51.252Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "7a2169b1c7d5628b6fbea81a8772644ca33e336c",
+      "closedAt": "2026-10-04T19:23:39.327Z"
+    },
+    {
+      "id": "G-003",
+      "title": "把身份、摘要与规范 CBOR 抽取为 narrata-kernel",
+      "effort": "high",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/kernel/crates/narrata-kernel/**",
+        "crates/narrata-core/**",
+        "crates/narrata-store/src/codec.rs",
+        "crates/narrata-store/src/object.rs"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-003.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-003",
+      "branch": "goal/g-003",
+      "base": "266cfd7a2f34bca9eaf1f38359b184ed2725b50d",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 25564,
+          "pidMark": 1791139804244,
+          "session": "01a10840-7561-7581-9777-3f7fdec47507",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-003\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-003\\attempt-1.last.md",
+          "startedAt": "2026-10-04T18:50:04.252Z",
+          "endedAt": "2026-10-04T19:22:52.055Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "8c20b532426aab020689669c354ce6aed55bd602",
+      "closedAt": "2026-10-04T19:23:44.954Z"
+    },
+    {
+      "id": "G-001",
+      "title": "存储历史增长基准（基线）",
+      "effort": "high",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "crates/narrata-store/benches/**",
+        "crates/narrata-store-sqlite/benches/**",
+        "crates/narrata-store-sqlite/Cargo.toml",
+        "crates/narrata-store/Cargo.toml",
+        "scripts/benchmark-g2.ps1",
+        "docs/development/benchmarks/storage.md"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-001.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-001",
+      "branch": "goal/g-001",
+      "base": "266cfd7a2f34bca9eaf1f38359b184ed2725b50d",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 39500,
+          "pidMark": 1791139804979,
+          "session": "01a10840-782e-7912-92e1-cfe72d6f394b",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-001\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-001\\attempt-1.last.md",
+          "startedAt": "2026-10-04T18:50:04.985Z",
+          "endedAt": "2026-10-04T19:16:32.694Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "1392799ff71d9adf37a4aa21eaba6e12cb668c66",
+      "closedAt": "2026-10-04T19:23:37.560Z"
+    },
+    {
+      "id": "G-004",
+      "title": "在存储契约之上只实现一次的存档引擎与键布局",
+      "effort": "xhigh",
+      "engine": "claude",
+      "cases": [],
+      "paths": [
+        "crates/narrata-store/**",
+        "crates/narrata-store-sqlite/**",
+        "crates/narrata-protocol/src/**",
+        "crates/narrata-cli/src/**",
+        "fuzz/fuzz_targets/**",
+        "packages/narrata/kernel/crates/narrata-storage/**",
+        "packages/narrata/kernel/crates/narrata-storage-sqlite/**",
+        "fixtures/compat/store-sqlite-v2/**",
+        "fixtures/compat/store-layout-v1/**",
+        "docs/adr/0014-*.md",
+        "docs/contracts/storage-and-saves.md",
+        "docs/architecture/time-travel-and-save.md",
+        "docs/development/benchmarks/storage.md",
+        "scripts/check-g2.ps1",
+        "scripts/benchmark-g2.ps1"
+      ],
+      "shared": [
+        "adr:0014"
+      ],
+      "depends": [
+        "G-003"
+      ],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-004.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-004",
+      "branch": "goal/g-004",
+      "base": "d7f28111787fc75d825bc2acbee22a697401ca42",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 5528,
+          "pidMark": 1791141832470,
+          "session": "7250d5ab-5462-4bcf-924e-d207f2e7edab",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-004\\attempt-1.json",
+          "startedAt": "2026-10-04T19:23:52.480Z",
+          "endedAt": "2026-10-04T20:42:29.892Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "2ea9603ccd9cd6321d699f65e4ed7f0736af39e0",
+      "closedAt": "2026-10-04T20:47:12.734Z"
+    },
+    {
+      "id": "G-007",
+      "title": "kernel 历史层：通用存档引擎抽取与领域注册的提交/会话 API",
+      "effort": "xhigh",
+      "engine": "claude",
+      "cases": [],
+      "paths": [
+        "packages/narrata/kernel/crates/narrata-history/**",
+        "crates/narrata-store/**",
+        "crates/narrata-store-sqlite/**",
+        "crates/narrata-protocol/src/**",
+        "crates/narrata-cli/src/**",
+        "fuzz/**",
+        "fixtures/compat/kernel-history-v1/**",
+        "docs/adr/0015-*.md",
+        "docs/contracts/storage-and-saves.md",
+        "docs/architecture/time-travel-and-save.md",
+        "docs/development/benchmarks/storage.md"
+      ],
+      "shared": [
+        "adr:0015"
+      ],
+      "depends": [],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-007.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-007",
+      "branch": "goal/g-007",
+      "base": "403f8eb994269766718343e0a8a57076b2cae28c",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 35848,
+          "pidMark": 1791146834762,
+          "session": "47fa9df2-e9de-4476-af01-6e3c086b3ddf",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-007\\attempt-1.json",
+          "startedAt": "2026-10-04T20:47:14.771Z",
+          "endedAt": "2026-10-04T23:37:29.744Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 30992,
+          "pidMark": 1791157262981,
+          "session": "47fa9df2-e9de-4476-af01-6e3c086b3ddf",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-007\\attempt-2.json",
+          "startedAt": "2026-10-04T23:41:02.985Z",
+          "endedAt": "2026-10-05T00:26:15.319Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "0ac3ce58ed088be1b70c51d8d04b05682741c315",
+      "closedAt": "2026-10-05T00:28:01.639Z"
+    },
+    {
+      "id": "G-009",
+      "title": "浏览器存储：宿主缓存后端、批次确认协议与 IndexedDB 适配器",
+      "effort": "xhigh",
+      "engine": "claude",
+      "cases": [],
+      "paths": [
+        "packages/narrata/kernel/crates/narrata-storage/**",
+        "packages/narrata/kernel/crates/narrata-storage-host/**",
+        "packages/narrata/kernel/crates/narrata-history/**",
+        "packages/narrata/kernel/js/**",
+        "docs/adr/0017-*.md",
+        "docs/development/toolchain.md",
+        "scripts/check-g2.ps1"
+      ],
+      "shared": [
+        "adr:0017"
+      ],
+      "depends": [],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-009.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-009",
+      "branch": "goal/g-009",
+      "base": "6223ee875801af41c5c16b372f92508e67ebc151",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 34356,
+          "pidMark": 1791160083575,
+          "session": "94770f53-3afa-467a-9ae4-3bd15027c723",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-009\\attempt-1.json",
+          "startedAt": "2026-10-05T00:28:03.579Z",
+          "endedAt": "2026-10-05T01:17:46.535Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 20804,
+          "pidMark": 1791163075981,
+          "session": "94770f53-3afa-467a-9ae4-3bd15027c723",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-009\\attempt-2.json",
+          "startedAt": "2026-10-05T01:17:55.984Z",
+          "endedAt": "2026-10-05T01:36:11.353Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "d899b5041a24f7c5166a1d970eb4428ceac93e3c",
+      "closedAt": "2026-10-05T01:43:20.418Z"
+    },
+    {
+      "id": "G-010",
+      "title": "协议引擎改用 SessionCoordinator 与可注入存储后端",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "crates/narrata-protocol/**",
+        "crates/narrata-ffi/**",
+        "crates/narrata-wasm/**",
+        "crates/narrata-store/src/coordinator.rs",
+        "crates/narrata-cli/src/**"
+      ],
+      "shared": [],
+      "depends": [],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-010.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-010",
+      "branch": "goal/g-010",
+      "base": "fa29dcc1eb9d0f5f1b9f4719b45a8ffd02d969b8",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 6256,
+          "pidMark": 1791160108997,
+          "session": "01a10976-486e-7fe3-8797-2f73781fa829",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-010\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-010\\attempt-1.last.md",
+          "startedAt": "2026-10-05T00:28:29.000Z",
+          "endedAt": "2026-10-05T00:46:42.627Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "7a32d2ae6ae153a0de41e56c1ae529f68de8ba02",
+      "closedAt": "2026-10-05T00:50:58.878Z"
+    },
+    {
+      "id": "G-013",
+      "title": "旧栈去文本：Program/Snapshot v1 用内容引用、SceneState 可选、stage6-v0 与迁移",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "crates/narrata-core/**",
+        "crates/narrata-testkit/**",
+        "crates/narrata-store/**",
+        "crates/narrata-protocol/**",
+        "crates/narrata-ffi/**",
+        "crates/narrata-wasm/**",
+        "crates/narrata-cli/**",
+        "bindings/**",
+        "fuzz/**",
+        "fixtures/compat/stage6-v0/**",
+        "fixtures/codec/**",
+        "fixtures/program/**",
+        "fixtures/runtime/**",
+        "fixtures/conformance/**",
+        "fixtures/negative/**",
+        "docs/adr/0018-*.md",
+        "docs/architecture/**"
+      ],
+      "shared": [
+        "adr:0018"
+      ],
+      "depends": [],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-013.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-013",
+      "branch": "goal/g-013",
+      "base": "ccc6401b3af30f66f1934fbde67fa4eb88eb120a",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "claude",
+          "pid": 7108,
+          "pidMark": 1791163077571,
+          "session": "fb3a0741-fab9-48e1-8447-6572d82f8ac1",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-013\\attempt-1.json",
+          "startedAt": "2026-10-05T01:17:57.575Z",
+          "endedAt": "2026-10-05T02:11:25.719Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 35036,
+          "pidMark": 1791166295530,
+          "session": "01a109d4-afe8-71d3-958c-2c8deb3571f3",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-013\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-013\\attempt-2.last.md",
+          "startedAt": "2026-10-05T02:11:35.541Z",
+          "endedAt": "2026-10-05T02:20:48.316Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "582297ac274c68c079d2a45d287261a67db32499",
+      "closedAt": "2026-10-05T02:21:56.259Z"
+    },
+    {
+      "id": "G-015",
+      "title": "浅存档与浏览器存储格式的冻结语料",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/kernel/crates/narrata-history/**",
+        "packages/narrata/kernel/crates/narrata-storage-host/**",
+        "packages/narrata/kernel/js/**",
+        "fixtures/compat/kernel-history-v2/**",
+        "fixtures/compat/browser-storage-v1/**",
+        "docs/adr/0019-*.md",
+        "docs/development/benchmarks/storage.md"
+      ],
+      "shared": [
+        "adr:0019"
+      ],
+      "depends": [],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-015.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-015",
+      "branch": "goal/g-015",
+      "base": "2a4365fa6a38f8b32d30b34528c7ae4c2c85f09c",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 4832,
+          "pidMark": 1791164633502,
+          "session": "01a109bb-53d5-7a00-a47e-5089906291ba",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-015\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-015\\attempt-1.last.md",
+          "startedAt": "2026-10-05T01:43:53.510Z",
+          "endedAt": "2026-10-05T02:21:27.840Z"
+        },
+        {
+          "n": 2,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 35408,
+          "pidMark": 1791166917626,
+          "session": "01a109bb-53d5-7a00-a47e-5089906291ba",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-015\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-015\\attempt-2.last.md",
+          "startedAt": "2026-10-05T02:21:57.633Z",
+          "endedAt": "2026-10-05T02:46:31.772Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "41e12c2438010c9c3acba871f9f918342c72d320",
+      "closedAt": "2026-10-05T02:47:41.787Z"
+    },
+    {
+      "id": "G-016",
+      "title": "Effect 账本与迁移协调的通用部分进入 kernel 历史层",
+      "effort": "xhigh",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/kernel/crates/narrata-history/**",
+        "crates/narrata-store/**",
+        "crates/narrata-protocol/src/**",
+        "crates/narrata-cli/src/**",
+        "fixtures/compat/kernel-history-v3/**",
+        "docs/adr/0020-*.md",
+        "docs/architecture/effects-and-host-state.md",
+        "docs/architecture/program-versioning-and-migration.md"
+      ],
+      "shared": [
+        "adr:0020"
+      ],
+      "depends": [
+        "G-015"
+      ],
+      "brief": "docs/goals/kernel-and-saves/tasks/G-016.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-016",
+      "branch": "goal/g-016",
+      "base": "6d887ce5d5377db30cd37b4989fb5079c48a9d33",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "xhigh",
+          "engine": "codex",
+          "pid": 20780,
+          "pidMark": 1791168464633,
+          "session": "01a109f5-c85a-78e1-ad5f-ba4a929ce9d2",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-016\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-016\\attempt-1.last.md",
+          "startedAt": "2026-10-05T02:47:44.641Z",
+          "endedAt": "2026-10-05T03:38:57.827Z"
+        }
+      ],
+      "goal": "kernel-and-saves",
+      "mergedCommit": "c4c229c4ae39dcf8dbff3ead9efb871646749e34",
+      "closedAt": "2026-10-05T03:47:17.389Z"
+    }
+  ]
+}

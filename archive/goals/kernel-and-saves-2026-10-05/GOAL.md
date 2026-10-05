@@ -23,7 +23,7 @@ areas:
 - **Kernel 收敛（决定 11）。** 身份与摘要、确定性 CBOR、受检解码、提交/引用对象库、Effect
   账本、迁移协调抽取为 kernel，并能承载注册的领域状态（节点实例、Flow、Statechart）。
   Flow VM 与 Statechart 成为基于 kernel 的第一方领域包。
-- **窄存储契约（决定 8）。** 按 [存储与存档](../../contracts/storage-and-saves.md) 定义后端
+- **窄存储契约（决定 8）。** 按 [存储与存档](../../../docs/contracts/storage-and-saves.md) 定义后端
   契约与能力声明；领域逻辑在其上只实现一次；`tests/model.rs`、`tests/faults_gc.rs` 改造为
   对任意后端运行的一致性套件。
 - **后端。** 内存（参考）、按行读写的 SQLite、浏览器 IndexedDB（经 Wasm 绑定），以及
