@@ -1,6 +1,6 @@
 # 图、分析与摘要
 
-状态：发布时计算与受检分发格式已实现；宿主接入待实现。依据：[决定 7、12](../product/decisions.md) 与
+状态：发布时计算、R2 适配与受检分发格式已实现；compose CLI 与宿主接入待实现。依据：[决定 7、12](../product/decisions.md) 与
 [图渲染调研](../research/2026-10-05-choice-granularity-and-scale/graph_rendering.md)。
 
 叙事图归 Narrata，与宿主的章节结构无关。图视图是用户需求，但它是程序的一个投影，
@@ -21,7 +21,10 @@
 [wire 编解码器](../../packages/narrata/tooling/crates/narrata-graph/src/wire.rs) 固定索引与三层
 CBOR 瓦片；[摘要类型与 JSON Schema](../../packages/narrata/tooling/crates/narrata-graph/schema/summary-v1.schema.json)
 固定宿主交换形状。[兼容测试](../../packages/narrata/tooling/crates/narrata-graph/tests/distribution.rs)
-受检读取冻结语料，并与重新生成的字节比较。R2 产品到结构图的适配与标签表仍待接入。
+受检读取冻结语料，并与重新生成的字节比较。[R2 适配器](../../packages/narrata/tooling/crates/narrata-node-tools/src/publish.rs)
+与[发布文件 API](../../packages/narrata/tooling/crates/narrata-node-tools/src/compose.rs) 把程序、内容方导出的大纲
+和这些输出连起来，保留现有节点检查器的分析形状；CLI 入口仍须接入该 API。
+伴随文件的引用形状由 [Rust 类型生成的 schema](../../packages/narrata/tooling/crates/narrata-node-tools/schema/graph-files-v1.schema.json) 固定。
 
 ## 作者视图
 
@@ -45,5 +48,5 @@ CBOR 瓦片；[摘要类型与 JSON Schema](../../packages/narrata/tooling/crate
 近似，不证明分支条件可行，也不替代完整诊断。它不含选择边全集；瓶颈按连续作者簇压缩，避免
 把长 passage 链逐节点写入索引。任意图不能保证固定事实条数，不能静默截断。
 
-发布构件身份由未来的产品适配器附加。人物或实体首次出现需要实体模型，当前不推断这些事实；
+R2 适配器附加发布构件身份。人物或实体首次出现需要实体模型，当前不推断这些事实；
 未来接入也须保留宿主对读者剧透边界的控制。

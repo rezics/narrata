@@ -2,6 +2,7 @@
 //! IDs gain tombstones, tombstones never disappear and a live ID never changes owner.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use narrata_nodes::{
     AuthoredId, Compilation, CompositionLock, Error, NodeRegistry, Owner, Program, Result, compile,
@@ -9,6 +10,85 @@ use narrata_nodes::{
 };
 
 use crate::files::{ProjectFiles, pretty, read_text, write_text};
+
+/// The publication entry point for a filesystem project. Outlines are exported by content
+/// providers, for example `narrata-book outline`. Missing providers are explicitly skipped.
+/// Outline defects remain diagnostics and never alter the artifact or success status.
+pub fn compose_published(
+    path: &Path,
+    output: &Path,
+    locked: bool,
+    outline_paths: &[PathBuf],
+) -> Result<Composed> {
+    let mut project = crate::load_project(path)?;
+    let previous = if output.exists() {
+        Some(crate::read_bytes(output)?)
+    } else {
+        None
+    };
+    let mut composed = compose(&mut project, previous.as_deref(), locked)?;
+    let compilation = &mut composed.compilation;
+    if locked {
+        verify_lock(&compilation.lock, &project)?;
+    }
+    let publication = crate::publish::publish(&compilation.program, Some(&compilation.names))?;
+    // The publication projection accounts for cross-graph reachability; per-graph checks
+    // still supply the inspector's graph fields but must not duplicate unreachable reports.
+    compilation
+        .diagnostics
+        .retain(|diagnostic| diagnostic.code != "structurally_unreachable");
+    compilation
+        .diagnostics
+        .extend(publication.diagnostics.iter().cloned());
+    let mut providers = BTreeSet::new();
+    for path in outline_paths {
+        let outline: narrata_nodes::ContentOutline = parse_json(&read_text(path)?)?;
+        if !providers.insert(outline.provider.clone()) {
+            return Err(Error::new(
+                "outline_provider",
+                path.display().to_string(),
+                "supply one original-language outline per provider",
+            ));
+        }
+        compilation
+            .diagnostics
+            .extend(narrata_nodes::outline::diagnose_outline(
+                &compilation.program,
+                Some(&compilation.names),
+                &outline,
+            )?);
+    }
+    let mut required = BTreeSet::new();
+    for reference in compilation.program.manifest().graphs.keys() {
+        for plan in compilation.program.graph(reference)?.nodes.values() {
+            if let narrata_nodes::plan::Plan::Passage(passage) = plan
+                && let Some(body) = &passage.body
+            {
+                required.insert(body.unit.provider.clone());
+            }
+        }
+    }
+    for provider in required.difference(&providers) {
+        compilation.diagnostics.push(narrata_nodes::Diagnostic {
+            code: "outline_checks_skipped".into(),
+            path: format!("content.{provider}"),
+            message:
+                "No content outline was supplied; anchor, order and marker checks were skipped."
+                    .into(),
+        });
+    }
+    compilation.analysis.diagnostics = compilation.diagnostics.clone();
+    crate::write_bytes(output, &compilation.pack)?;
+    if !locked {
+        write_text(&project.lock_path(), &pretty(&compilation.lock)?)?;
+    }
+    crate::publish::write_publication(output, &publication)?;
+    write_text(
+        &output.with_extension("analysis.json"),
+        &pretty(&compilation.analysis)?,
+    )?;
+    Ok(composed)
+}
 
 #[derive(Debug)]
 pub struct Composed {

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GraphFiles",
+  "description": "Bootstrap references for object-id-named files in the companion `.graph/` directory.",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "index_object_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LabelObject"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "artifact_id",
+    "index_object_id",
+    "labels"
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ClusterId": {
+      "type": "string",
+      "pattern": "^cluster:[0-9a-f]{32}$"
+    },
+    "LabelObject": {
+      "type": "object",
+      "properties": {
+        "cluster": {
+          "$ref": "#/$defs/ClusterId"
+        },
+        "object_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cluster",
+        "object_id"
+      ]
+    }
+  }
+}

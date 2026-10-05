@@ -7,6 +7,7 @@ mod compose;
 mod files;
 pub mod ids;
 mod play;
+pub mod publish;
 pub mod r1;
 
 use std::{collections::BTreeMap, path::Path, sync::Arc};
@@ -16,6 +17,7 @@ use narrata_nodes::{
     AuthoredId, Error, NameTable, Program, Result, Session, analyze, plan::GraphRef,
 };
 
+pub use compose::compose_published;
 pub use compose::{Composed, compose, verify_lock};
 pub use files::{
     ProjectFiles, load_project, pretty, read_bytes, read_text, write_bytes, write_text,

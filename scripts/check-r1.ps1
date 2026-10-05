@@ -6,8 +6,8 @@ if ($IsWindows -and (Get-NetTCPConnection -State Listen -LocalPort 4173 -ErrorAc
 }
 
 cargo fmt --all --check
-cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local --all-targets --all-features -- -D warnings
-cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local
+cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph --all-targets --all-features -- -D warnings
+cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph
 cargo check -p narrata-nodes-wasm --target wasm32-unknown-unknown
 
 Push-Location examples/gamebook-web
@@ -21,6 +21,7 @@ try {
     Pop-Location
 }
 
+# The product directory includes analysis/summary JSON and object-id-named graph/label CBOR.
 # Generated files must be committed as generated: changed and new untracked files both count.
 $drift = git status --porcelain --untracked-files=all -- packages/narrata/nodes/schemas examples/gamebook-web/src/generated products/gamebook-demo
 if ($drift) {
