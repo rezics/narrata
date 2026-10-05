@@ -10,15 +10,36 @@ const r1Schema = z.object({
 const activeSchema = z.object({
   version: z.literal(2), revision: z.uuid(), artifact_id: z.string(), session: z.string().max(limits.save), saved_at: z.iso.datetime(),
 }).strict();
+const kernelSchema = z.object({
+  version: z.literal(3), revision: z.uuid(), artifact_id: z.string(),
+  execution: z.string().regex(/^execution:[0-9a-f]{32}$/), database: z.string(), saved_at: z.iso.datetime(),
+}).strict().refine(value => value.database === `narrata-nodes-${value.execution}`, "kernel database does not match its execution");
 const workSchema = z.object({
   version: z.literal(2), artifact_id: z.string(), pack: z.instanceof(Uint8Array).refine(value => value.byteLength <= limits.pack),
   content: z.array(z.string().max(limits.content)).min(1).max(8),
 }).strict();
-const anyActive = z.union([activeSchema, r1Schema]);
+const anyActive = z.union([activeSchema, r1Schema, kernelSchema]);
 export type R1Record = z.infer<typeof r1Schema>;
 export type ActiveRecord = z.infer<typeof activeSchema>;
 export type WorkRecord = z.infer<typeof workSchema>;
-export type Stored = { kind: "r2"; active: ActiveRecord; work: WorkRecord } | { kind: "r1"; record: R1Record };
+export type KernelRecord = z.infer<typeof kernelSchema>;
+export type Stored = { kind: "kernel"; active: KernelRecord; work: WorkRecord } | { kind: "r2"; active: ActiveRecord; work: WorkRecord } | { kind: "r1"; record: R1Record };
+
+/** The clock is descriptive metadata. Updating it must not change the work-selection CAS
+ * revision or replace a pointer another tab published for another execution. */
+export async function confirmedAt(execution: string, time: string): Promise<void> {
+  const db = await open();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("session", "readwrite"); const store = tx.objectStore("session");
+    const current = store.get("active");
+    current.onsuccess = () => {
+      const record = kernelSchema.safeParse(current.result);
+      if (record.success && record.data.execution === execution && record.data.saved_at < time)
+        store.put({ ...record.data, saved_at: time }, "active");
+    };
+    tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error); tx.onerror = () => reject(tx.error);
+  });
+}
 
 let database: Promise<IDBDatabase> | undefined;
 function open(): Promise<IDBDatabase> {
@@ -49,14 +70,15 @@ export async function readStored(): Promise<Stored | null> {
       if (record.data.version === 1) { resolve({ kind: "r1", record: record.data }); return; }
       const stored = workSchema.safeParse(work.result);
       if (!stored.success || stored.data.artifact_id !== record.data.artifact_id) { corrupt(); return; }
-      resolve({ kind: "r2", active: record.data, work: stored.data });
+      if (record.data.version === 3) resolve({ kind: "kernel", active: record.data, work: stored.data });
+      else resolve({ kind: "r2", active: record.data, work: stored.data });
     };
   });
 }
 
 /** Replaces the active record if it is still at `expectedRevision`, together with the work it
  * runs on and the R1 record it replaces, when given. A kept R1 backup is never overwritten. */
-export async function persist(record: ActiveRecord, expectedRevision: string | null, extra: { work?: WorkRecord; backup?: R1Record } = {}): Promise<void> {
+export async function persist(record: KernelRecord, expectedRevision: string | null, extra: { work?: WorkRecord; backup?: R1Record | ActiveRecord } = {}): Promise<void> {
   const db = await open();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("session", "readwrite");
@@ -73,8 +95,9 @@ export async function persist(record: ActiveRecord, expectedRevision: string | n
       if (extra.work) store.put(extra.work, "work");
       const backup = extra.backup;
       if (backup) {
-        const kept = store.get("r1-backup");
-        kept.onsuccess = () => { if (kept.result === undefined) store.put(backup, "r1-backup"); };
+        const key = backup.version === 1 ? "r1-backup" : "r2-backup";
+        const kept = store.get(key);
+        kept.onsuccess = () => { if (kept.result === undefined) store.put(backup, key); };
       }
     };
     tx.oncomplete = () => resolve();

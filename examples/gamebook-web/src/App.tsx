@@ -78,7 +78,7 @@ export function App() {
 
   async function loadSave(file: File | undefined) {
     if (!file) return;
-    if (file.size > limits.save) { setError("存档超过 8 MiB，无法载入。"); return; }
+    if (file.size > limits.save) { setError("存档超过 64 MiB，无法载入。"); return; }
     try { await execute({ kind: "restore", save: await file.text() }); } catch (error) { setError(errorMessage(error)); }
   }
 
@@ -97,7 +97,7 @@ export function App() {
     <header className="topbar"><a className="wordmark" href="/" aria-label="Narrata 首页">Narrata</a><span className="work-title">{productTitle ?? "Gamebook"}</span>
       <nav aria-label="作品与存档"><button disabled={busy} onClick={() => workFiles.current?.click()}>导入作品</button><button disabled={busy || !state} onClick={() => void execute({ kind: "export_save" })}>导出存档</button><button disabled={busy || !state} onClick={() => saveFile.current?.click()}>导入存档</button><button disabled={busy || !state} onClick={() => void execute({ kind: "restart" })}>重新开始</button></nav>
       <input ref={workFiles} data-testid="work-files" type="file" accept=".narpack,.json,application/json" multiple hidden onChange={event => { void loadWork([...event.target.files ?? []]); event.target.value = ""; }} />
-      <input ref={saveFile} data-testid="save-file" type="file" accept=".json,application/json" hidden onChange={event => { void loadSave(event.target.files?.[0]); event.target.value = ""; }} />
+      <input ref={saveFile} data-testid="save-file" type="file" accept=".hex,.json,text/plain,application/json" hidden onChange={event => { void loadSave(event.target.files?.[0]); event.target.value = ""; }} />
     </header>
     <div className="mobile-bar"><button aria-expanded={mobilePanel === "outline"} onClick={() => setMobilePanel(mobilePanel === "outline" ? null : "outline")}>目录 <span>⌄</span></button><button aria-expanded={mobilePanel === "inspector"} onClick={() => setMobilePanel(mobilePanel === "inspector" ? null : "inspector")}>旅程 <span>⌄</span></button></div>
     {error ? <div role="alert" className="message error"><span>{error}</span><button onClick={() => setError(null)} aria-label="关闭错误提示">×</button></div> : null}

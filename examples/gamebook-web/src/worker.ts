@@ -4,10 +4,11 @@ import defaultPackUrl from "./generated/story/story.narpack?url";
 import defaultContent from "./generated/story/zh-Hans.json?raw";
 import type { BookView, VariableView } from "./generated/book-view";
 import { contentKey, decodeBook, errorMessage, requestSchema, type Args, type Content, type Reply, type Request, type Resolved } from "./protocol";
-import { persist, readStored, type R1Record } from "./storage";
+import { persist, readStored, confirmedAt, type R1Record, type ActiveRecord, type KernelRecord } from "./storage";
+import { IndexedDbStore, StorageHost, StoreSuperseded } from "../../../packages/narrata/kernel/js/src/index";
 
 const initialized = initialize();
-type Work = { book: NodeBook; content: LocalContent; texts: string[] };
+type Work = { book: NodeBook; content: LocalContent; texts: string[]; execution: string; store?: IndexedDbStore; host?: StorageHost };
 let work: Work | undefined;
 let revision: string | null = null;
 let savedAt: string | null = null;
@@ -24,13 +25,13 @@ function executionId(): string {
   return `execution:${Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function openWork(pack: Uint8Array, texts: string[]): Work {
-  const book = new NodeBook(pack, executionId());
+function openWork(pack: Uint8Array, texts: string[], execution = executionId()): Work {
+  const book = new NodeBook(pack, execution);
   const content = new LocalContent();
   try { for (const text of texts) content.add(text); } catch (error) { book.free(); content.free(); throw error; }
-  return { book, content, texts };
+  return { book, content, texts, execution };
 }
-function freeWork(value: Work | undefined) { value?.book.free(); value?.content.free(); }
+function freeWork(value: Work | undefined) { value?.store?.close(); value?.book.free(); value?.content.free(); }
 async function defaultWork(): Promise<Work> {
   const response = await fetch(defaultPackUrl);
   if (!response.ok) throw new Error(`无法载入默认作品（HTTP ${response.status}）`);
@@ -83,67 +84,89 @@ function resolve(content: LocalContent, book: BookView): Record<string, Resolved
   return texts;
 }
 
-function view(id: number): Reply {
-  const { book, content } = current();
-  const value = decodeBook(book.inspect());
+async function view(id: number): Promise<Reply> {
+  const value = decodeBook(await run(current(), () => current().book.inspect()));
+  const { content } = current();
+  // Lookahead does not write storage or change the view. Failed hints leave normal checked
+  // loading in choose; a missing candidate must not prevent reading the current passage.
+  try { current().book.prefetch(); } catch { /* choose will check the selected route */ }
   return { id, kind: "view", book: value, texts: resolve(content, value), saved_at: savedAt, warning };
 }
 
-async function save(next: Work, extra: { work?: boolean; backup?: R1Record } = {}): Promise<void> {
+async function run<T>(value: Work, operation: () => T): Promise<T> {
+  if (value.host) return value.host.run(operation);
+  const result = operation(); value.book.confirm_memory(); return result;
+}
+
+async function attach(value: Work, database: string): Promise<void> {
+  const store = await IndexedDbStore.open(database);
+  value.store = store;
+  // A long history's view can visit many ancestors; the host still loads only missed keys.
+  value.host = new StorageHost(store, value.book, 100_000);
+  await run(value, () => value.book.open());
+}
+
+async function saveWork(next: Work, backup?: R1Record | ActiveRecord): Promise<void> {
   if (!storageAvailable) return;
   const artifact = next.book.artifact_id;
-  const record = { version: 2 as const, revision: crypto.randomUUID(), artifact_id: artifact, session: next.book.export(), saved_at: new Date().toISOString() };
-  await persist(record, revision, {
-    work: extra.work ? { version: 2, artifact_id: artifact, pack: new Uint8Array(next.book.pack()), content: next.texts } : undefined,
-    backup: extra.backup,
-  });
-  revision = record.revision;
-  savedAt = record.saved_at;
+  const record: KernelRecord = { version: 3, revision: crypto.randomUUID(), artifact_id: artifact,
+    execution: next.execution, database: `narrata-nodes-${next.execution}`, saved_at: new Date().toISOString() };
+  await persist(record, revision, { work: { version: 2, artifact_id: artifact, pack: new Uint8Array(next.book.pack()), content: next.texts }, backup });
+  revision = record.revision; savedAt = record.saved_at;
 }
 
 async function boot(id: number): Promise<Reply> {
   if (work) return view(id);
   await initialized;
+  let candidate: Work | undefined;
   try {
     const stored = await readStored();
-    if (stored?.kind === "r2") {
-      const candidate = openWork(stored.work.pack, stored.work.content);
-      try { candidate.book.restore(stored.active.session); } catch (error) { freeWork(candidate); throw error; }
-      work = candidate; revision = stored.active.revision; savedAt = stored.active.saved_at;
+    if (stored?.kind === "kernel") {
+      candidate = openWork(stored.work.pack, stored.work.content, stored.active.execution);
+      if (candidate.book.artifact_id !== stored.active.artifact_id) throw new Error("本机作品与存档不匹配；原记录已保留");
+      revision = stored.active.revision; savedAt = stored.active.saved_at;
+      await attach(candidate, stored.active.database);
+    } else if (stored?.kind === "r2") {
+      candidate = openWork(stored.work.pack, stored.work.content);
+      revision = stored.active.revision;
+      await attach(candidate, `narrata-nodes-${candidate.execution}`);
+      await run(candidate, () => candidate!.book.restore(stored.active.session));
+      await saveWork(candidate, stored.active);
     } else if (stored?.kind === "r1") {
-      // An R1 record is rebuilt on the default work, which was migrated from the R1 one. The
-      // R1 record is kept beside the new one; on failure nothing is written.
-      const candidate = await defaultWork();
-      try {
-        try { candidate.book.migrate_r1(stored.record.save, candidate.content, executionId()); }
-        catch (error) { throw new Error(`R1 存档无法迁移（${errorMessage(error)}），原记录已保留`); }
-        revision = stored.record.revision;
-        await save(candidate, { work: true, backup: stored.record });
-      } catch (error) { freeWork(candidate); revision = null; throw error; }
-      work = candidate;
+      candidate = await defaultWork(); revision = stored.record.revision;
+      await attach(candidate, `narrata-nodes-${candidate.execution}`);
+      await run(candidate, () => candidate!.book.migrate_r1(stored.record.save, candidate!.content, candidate!.execution));
+      await saveWork(candidate, stored.record);
     } else {
-      work = await defaultWork();
-      await save(work, { work: true });
+      candidate = await defaultWork();
+      await attach(candidate, `narrata-nodes-${candidate.execution}`);
+      await saveWork(candidate);
     }
+    work = candidate;
+    void IndexedDbStore.requestPersistence().catch(() => undefined);
   } catch (error) {
-    freeWork(work);
-    work = undefined;
+    freeWork(candidate);
     storageAvailable = false; savedAt = null;
     warning = `无法使用本机自动存档：${errorMessage(error)}。本次进度仅保留在此页面，请及时导出存档。`;
-    work = await defaultWork();
+    work = await defaultWork(); work.book.memory();
   }
   return view(id);
 }
 
 async function change(id: number, action: (book: NodeBook) => void): Promise<Reply> {
-  const { book } = current();
-  const before = book.export();
+  const value = current();
   try {
-    action(book);
-    // Persist first. No changed view is sent to the page before this transaction completes.
-    await save(current());
+    await run(value, () => action(value.book));
+    savedAt = storageAvailable ? new Date().toISOString() : null;
+    // The history batch is already confirmed. A failed clock update must not turn a durable
+    // choice into a reported failure; the in-page clock still records this confirmation.
+    if (savedAt) await confirmedAt(value.execution, savedAt).catch(() => undefined);
   } catch (error) {
-    book.restore(before);
+    if (value.host) {
+      value.book.reload();
+      await run(value, () => value.book.open());
+    }
+    if (error instanceof StoreSuperseded || errorMessage(error).includes("stale_input")) throw new Error("另一页面已更新这份旅程。当前操作未保存，请刷新后继续。");
     throw error;
   }
   return view(id);
@@ -164,18 +187,22 @@ async function handle(request: Request): Promise<Reply> {
     case "choose": return change(request.id, book => { book.choose(request.expected, request.choice_point, request.options); });
     case "checkout": return change(request.id, book => { book.checkout(request.commit); });
     case "restore": return change(request.id, book => { book.restore(request.save); });
-    case "restart": return change(request.id, book => {
-      const root = decodeBook(book.inspect()).view.history[0];
+    case "restart": {
+      const root = decodeBook(await run(current(), () => current().book.inspect())).view.history[0];
       if (!root) throw new Error("找不到故事起点");
-      book.checkout(root.id);
-    });
+      return change(request.id, book => book.checkout(root.id));
+    }
     case "open": {
       const candidate = openWork(request.pack, request.content);
-      try { decodeBook(candidate.book.inspect()); await save(candidate, { work: true }); } catch (error) { freeWork(candidate); throw error; }
+      try {
+        if (storageAvailable) await attach(candidate, `narrata-nodes-${candidate.execution}`);
+        else candidate.book.memory();
+        decodeBook(await run(candidate, () => candidate.book.inspect())); await saveWork(candidate);
+      } catch (error) { freeWork(candidate); throw error; }
       freeWork(work); work = candidate;
       return view(request.id);
     }
-    case "export_save": return { id: request.id, kind: "file", files: [{ data: current().book.export(), filename: "narrata-journey.save.json", type: "application/json" }] };
+    case "export_save": return { id: request.id, kind: "file", files: [{ data: await run(current(), () => current().book.export()), filename: "narrata-journey.checkpoint.hex", type: "text/plain" }] };
     case "export_pack": return { id: request.id, kind: "file", files: [{ data: new Uint8Array(current().book.pack()), filename: "story.narpack", type: "application/octet-stream" }] };
     case "export_content": return { id: request.id, kind: "file", files: current().texts.map((text, index) => ({ data: text, filename: `${language(text, index)}.json`, type: "application/json" })) };
   }

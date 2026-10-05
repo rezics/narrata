@@ -212,7 +212,10 @@ fn run_command(path: &Path, args: &[String]) -> std::result::Result<(), String> 
     )?;
     let (program, names) = open_pack(path).map_err(text)?;
     let mut session = match one(&flags, "--load") {
-        Some(load) => Session::restore(program, &read_text(Path::new(load)).map_err(text)?),
+        Some(load) => Session::restore(
+            program,
+            &files::read_session(Path::new(load)).map_err(text)?,
+        ),
         None => new_session(program, one(&flags, "--execution")),
     }
     .map_err(text)?;

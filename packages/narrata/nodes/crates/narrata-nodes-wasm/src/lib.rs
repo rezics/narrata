@@ -11,6 +11,7 @@ use narrata_nodes::{
     Analysis, BookView, Error, MAX_REQUEST_BYTES, NameTable, Program, ProposalRequest, Session,
     analyze, parse_json_limited, r1,
 };
+use narrata_storage_host::{CacheBackend, FlushReply, HostError, Loaded, StoreId, StoreState};
 use wasm_bindgen::prelude::*;
 
 fn js_error(error: Error) -> JsError {
@@ -37,7 +38,10 @@ pub struct NodeBook {
     pack: Vec<u8>,
     names: Option<NameTable>,
     analysis: Analysis,
-    session: Session,
+    program: Arc<Program>,
+    execution: narrata_nodes::ExecutionId,
+    cache: CacheBackend,
+    session: Option<Session<CacheBackend>>,
 }
 
 #[wasm_bindgen]
@@ -49,18 +53,98 @@ impl NodeBook {
         program.verify_artifact().map_err(js_error)?;
         let analysis = analyze(&program, names.as_ref()).map_err(js_error)?;
         let execution = parse(execution, "execution", "execution:<32 hex digits>")?;
-        let session = Session::new(Arc::new(program), execution).map_err(js_error)?;
+
         Ok(Self {
             pack: pack.to_vec(),
             names,
             analysis,
-            session,
+            program: Arc::new(program),
+            execution,
+            cache: CacheBackend::new(),
+            session: None,
         })
     }
 
     #[wasm_bindgen(getter)]
     pub fn artifact_id(&self) -> String {
-        self.session.program().artifact_id().to_string()
+        self.program.artifact_id().to_string()
+    }
+
+    /// Opens the kernel cursor, creating it only if absent. Retried after host loads.
+    pub fn open(&mut self) -> Result<(), JsError> {
+        self.session = None;
+        self.session = Some(
+            Session::open(self.program.clone(), self.execution, self.cache.share())
+                .map_err(js_error)?,
+        );
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = takeRequest)]
+    pub fn take_request(&self) -> Option<Vec<u8>> {
+        self.cache.take_request().map(|r| r.encode())
+    }
+    pub fn load(&mut self, bytes: &[u8]) -> Result<bool, JsError> {
+        let result = self.cache.load(&Loaded::decode(bytes)?);
+        self.settle(result)
+    }
+    pub fn unconfirmed(&self) -> Option<Vec<u8>> {
+        self.cache.unconfirmed().map(|r| r.encode())
+    }
+    pub fn confirm(&mut self, bytes: &[u8]) -> Result<bool, JsError> {
+        let result = self.cache.confirm(&FlushReply::decode(bytes)?);
+        self.settle(result)
+    }
+    fn settle(&mut self, result: Result<(), HostError>) -> Result<bool, JsError> {
+        match result {
+            Ok(()) => Ok(true),
+            Err(HostError::Superseded(_)) => {
+                self.session = None;
+                Ok(false)
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+    pub fn reload(&mut self) {
+        self.session = None;
+        self.cache.invalidate();
+    }
+    /// Starts an isolated, fully known cache when browser persistence is unavailable.
+    pub fn memory(&mut self) -> Result<(), JsError> {
+        self.session = None;
+        self.cache.invalidate();
+        self.cache.load(&Loaded {
+            store: StoreState {
+                id: StoreId::from_bytes(*self.execution.as_bytes()),
+                revision: 0,
+            },
+            keys: vec![],
+            objects: vec![],
+            key_ranges: vec![],
+            object_ranges: vec![],
+        })?;
+        self.open()
+    }
+    /// Acknowledges memory-only batches so the fallback retains no pending flush history.
+    pub fn confirm_memory(&mut self) -> Result<(), JsError> {
+        if let Some(flush) = self.cache.unconfirmed()
+            && let Some(batch) = flush.batches.last()
+        {
+            self.cache.confirm(&FlushReply::Persisted {
+                revision: batch.revision,
+            })?;
+        }
+        Ok(())
+    }
+    fn opened(&self) -> Result<&Session<CacheBackend>, JsError> {
+        self.session
+            .as_ref()
+            .ok_or_else(|| JsError::new("open the session first"))
+    }
+    fn opened_mut(&mut self) -> Result<&mut Session<CacheBackend>, JsError> {
+        self.session
+            .as_mut()
+            .ok_or_else(|| JsError::new("open the session first"))
     }
 
     /// The pack bytes the book was opened from.
@@ -68,11 +152,16 @@ impl NodeBook {
         self.pack.clone()
     }
 
+    /// Prepares possible next graph chunks between interactions, without advancing history.
+    pub fn prefetch(&mut self) -> Result<(), JsError> {
+        self.opened_mut()?.prefetch().map_err(js_error)
+    }
+
     /// The text-free book view as JSON.
     pub fn inspect(&self) -> Result<String, JsError> {
         json(&BookView {
-            view: self.session.view(self.names.as_ref()).map_err(js_error)?,
-            page: self.session.page().map_err(js_error)?,
+            view: self.opened()?.view(self.names.as_ref()).map_err(js_error)?,
+            page: self.opened()?.page().map_err(js_error)?,
             graphs: self.analysis.graphs.clone(),
             diagnostics: self.analysis.diagnostics.clone(),
         })
@@ -93,40 +182,40 @@ impl NodeBook {
             .map(|option| parse(option, "options", "option:<32 hex digits>"))
             .collect::<Result<Vec<_>, _>>()?;
         let commit = self
-            .session
+            .opened_mut()?
             .choose(&expected, choice_point, options)
             .map_err(js_error)?;
         Ok(commit.to_string())
     }
 
     /// Records a host proposal (a proposal request as JSON) at the cursor, which must still be
-    /// `expected`, and returns the new book view. The interaction stays at the same choice
-    /// point with the proposed options added.
+    /// `expected`, and returns the new cursor. The host inspects the view after confirming
+    /// the pending batches. The interaction stays at the same choice point.
     pub fn propose(&mut self, expected: &str, request: &str) -> Result<String, JsError> {
         let expected = parse(expected, "expected", "commit:<64 hex digits>")?;
         let request: ProposalRequest =
             parse_json_limited(request, MAX_REQUEST_BYTES).map_err(js_error)?;
-        self.session
+        let commit = self
+            .opened_mut()?
             .propose(&expected, &request)
             .map_err(js_error)?;
-        self.inspect()
+        Ok(commit.to_string())
     }
 
     pub fn checkout(&mut self, commit: &str) -> Result<(), JsError> {
         let commit = parse(commit, "commit", "commit:<64 hex digits>")?;
-        self.session.checkout(&commit).map_err(js_error)
+        self.opened_mut()?.checkout(&commit).map_err(js_error)
     }
 
     /// The session export JSON.
     pub fn export(&self) -> Result<String, JsError> {
-        self.session.export().map_err(js_error)
+        self.opened()?.export().map_err(js_error)
     }
 
     /// Replaces the session with a checked export of this artifact; the current session stays
     /// on failure.
     pub fn restore(&mut self, export: &str) -> Result<(), JsError> {
-        self.session =
-            Session::restore(self.session.program().clone(), export).map_err(js_error)?;
+        self.opened_mut()?.import(export).map_err(js_error)?;
         Ok(())
     }
 
@@ -148,14 +237,11 @@ impl NodeBook {
         })?;
         let execution = parse(execution, "execution", "execution:<32 hex digits>")?;
         let ref_text = |reference: &_| content.inner.text(reference, &[]);
-        self.session = r1::migrate_save(
-            self.session.program().clone(),
-            names,
-            save,
-            execution,
-            &ref_text,
-        )
-        .map_err(js_error)?;
+        let migrated = r1::migrate_save(self.program.clone(), names, save, execution, &ref_text)
+            .map_err(js_error)?;
+        self.opened_mut()?
+            .import_session(&migrated)
+            .map_err(js_error)?;
         Ok(())
     }
 }

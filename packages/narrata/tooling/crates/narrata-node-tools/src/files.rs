@@ -41,6 +41,12 @@ pub fn read_text(path: &Path) -> Result<String> {
         .map_err(|_| Error::new("encoding", path.display().to_string(), "file is not UTF-8"))
 }
 
+/// Reads checkpoint text under the session budget, independently of the source budget.
+pub(crate) fn read_session(path: &Path) -> Result<String> {
+    String::from_utf8(read_limited(path, narrata_nodes::MAX_EXPORT_BYTES)?)
+        .map_err(|_| Error::new("encoding", path.display().to_string(), "file is not UTF-8"))
+}
+
 /// Reads a pack of at most 64 MiB.
 pub fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     read_limited(path, MAX_PACK_BYTES)

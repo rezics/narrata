@@ -339,6 +339,7 @@ fn eviction_changes_neither_states_commits_replay_nor_restore() {
         assert_eq!(a.cursor().unwrap(), b.cursor().unwrap());
         assert_eq!(a.state().unwrap().id(), b.state().unwrap().id());
         assert_eq!(a.view(None).unwrap(), b.view(None).unwrap());
+        a.prefetch().unwrap();
         descend(&mut a);
         descend(&mut b);
     }
@@ -349,4 +350,19 @@ fn eviction_changes_neither_states_commits_replay_nor_restore() {
     assert_eq!(restored.cursor().unwrap(), a.cursor().unwrap());
     restored.verify_path(&restored.cursor().unwrap()).unwrap();
     assert_eq!(restored.state().unwrap().frames.len(), 0);
+}
+
+#[test]
+fn lookahead_keeps_candidates_until_choose_even_with_a_one_chunk_budget() {
+    let (program, source) = opened(&fixture(4), 1);
+    let mut session = Session::new(program.clone(), ExecutionId::from_bytes([9; 16])).unwrap();
+    let cursor = session.cursor().unwrap();
+    let state = session.state().unwrap().clone();
+    session.prefetch().unwrap();
+    assert_eq!(session.cursor().unwrap(), cursor);
+    assert_eq!(session.state().unwrap(), &state);
+    let before = source.lock().unwrap().reads.clone();
+    descend(&mut session);
+    assert_eq!(source.lock().unwrap().reads, before);
+    assert_eq!(program.loaded_chunks(), 2);
 }

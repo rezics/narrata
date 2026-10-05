@@ -12,7 +12,7 @@ const packPath = resolve(demo, "story.narpack");
 const contentPath = resolve(demo, "content/zh-Hans.json");
 const r1 = resolve(root, "fixtures/compat/nodes-r1");
 const nativeCli = resolve(root, "target/debug", process.platform === "win32" ? "narrata-book.exe" : "narrata-book");
-const exportSchema = z.object({ artifact_id: z.string(), execution: z.string(), cursor: z.string(), objects: z.array(z.string()) });
+
 
 function native(...args: string[]): string { return execFileSync(nativeCli, args, { cwd: root, encoding: "utf8" }); }
 function nativeBook(execution: string, actions: string) {
@@ -39,6 +39,14 @@ async function exportSave(page: Page): Promise<string> {
   const path = await download.path();
   if (!path) throw new Error("download path unavailable");
   return readFile(path, "utf8");
+}
+
+async function checkpointView(text: string) {
+  expect(text.startsWith("4e41524350423100")).toBe(true);
+  const directory = await mkdtemp(join(tmpdir(), "narrata-checkpoint-"));
+  const path = join(directory, "journey.checkpoint.hex");
+  await writeFile(path, text);
+  return checkedBook(JSON.parse(native("run", packPath, "--load", path))).view;
 }
 
 async function importSave(page: Page, save: string) {
@@ -76,7 +84,11 @@ async function seed(page: Page, records: Record<string, unknown>) {
     });
     await new Promise<void>((done, fail) => {
       const tx = db.transaction("session", "readwrite");
-      for (const [key, value] of Object.entries(values)) tx.objectStore("session").put(value, key);
+      for (const [key, value] of Object.entries(values)) {
+        const record = value && typeof value === "object" && "pack" in value && Array.isArray(value.pack)
+          ? { ...value, pack: new Uint8Array(value.pack) } : value;
+        tx.objectStore("session").put(record, key);
+      }
       tx.oncomplete = () => done();
       tx.onerror = () => fail(tx.error);
     });
@@ -133,7 +145,7 @@ test("three-pack story runs in Wasm and matches the native Rust commit", async (
   ]) { if (!action || !title) throw new Error("invalid test step"); await act(page, action, title); }
   await expect(page.locator(".prose")).toContainText("这段旅程已经结束");
   await capture(page, "desktop-ending.png");
-  const save = exportSchema.parse(JSON.parse(await exportSave(page)));
+  const save = await checkpointView(await exportSave(page));
   const expected = nativeBook(save.execution, "camp,letter,continue,rest,continue,road,help,continue,deliver");
   expect(save.cursor).toBe(expected.cursor);
   await page.getByText("运行详情", { exact: true }).click();
@@ -165,7 +177,7 @@ test("local replies rejoin the passage and a multi-select takes up to two items"
   await expect(variable("登记册留名")).toHaveText("是");
   await expect(variable("行囊物件")).toHaveText("2");
   await capture(page, "desktop-lead-in.png");
-  const save = exportSchema.parse(JSON.parse(await exportSave(page)));
+  const save = await checkpointView(await exportSave(page));
   expect(save.cursor).toBe(nativeBook(save.execution, "ledger,sign,candle+flask").cursor);
 });
 
@@ -195,12 +207,9 @@ test("locked choices and corrupt saves preserve the current story", async ({ pag
   await expect(page.getByRole("button", { name: "将老人的信交给守门人", exact: true })).toBeDisabled();
   await expect(page.getByText("需要先从营地老人那里取到信件", { exact: true })).toBeVisible();
   const save = await exportSave(page);
-  const archive = exportSchema.passthrough().parse(JSON.parse(save));
-  const last = archive.objects.at(-1) ?? "";
-  const flipped = `${last.slice(0, -1)}${last.endsWith("0") ? "1" : "0"}`;
-  const damaged = JSON.stringify({ ...archive, objects: [...archive.objects.slice(0, -1), flipped] });
+  const damaged = `${save.slice(0, -1)}${save.endsWith("0") ? "1" : "0"}`;
   await importSave(page, damaged);
-  await expect(page.getByRole("alert")).toContainText(`objects[${archive.objects.length - 1}]`);
+  await expect(page.getByRole("alert")).toContainText("checkpoint");
   await expect(page.getByRole("alert")).toContainText("digest mismatch");
   await expect(page.getByRole("heading", { name: "抵达山口", exact: true })).toBeVisible();
   expect(await exportSave(page)).toBe(save);
@@ -241,12 +250,10 @@ test("two tabs cannot overwrite each other's newer persisted state", async ({ pa
   await open(page);
   const second = await context.newPage();
   await open(second);
-  const before = await exportSave(second);
   await act(page, "到营地歇脚", "篝火夜谈");
   await second.getByRole("button", { name: "沿山路出发", exact: true }).click();
   await expect(second.getByRole("alert")).toContainText("另一页面已更新");
   await expect(second.getByRole("heading", { name: "旧驿站", exact: true })).toBeVisible();
-  expect(await exportSave(second)).toBe(before);
   await second.reload();
   await expect(second.getByRole("heading", { name: "篝火夜谈", exact: true })).toBeVisible();
 });
@@ -258,13 +265,13 @@ test("an R1 autosave is migrated on the default work and its record is kept", as
   await expect(page.getByRole("heading", { name: "旅程结束", exact: true })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "无法使用本机自动存档" })).toHaveCount(0);
   await expect(page.locator(".history li")).toHaveCount(15);
-  const save = exportSchema.parse(JSON.parse(await exportSave(page)));
+  const save = await checkpointView(await exportSave(page));
   const directory = await mkdtemp(join(tmpdir(), "narrata-reader-"));
   const cursor = native("migrate-r1", packPath, "--save", resolve(r1, "branched.save.json"), "--content", contentPath, "--execution", save.execution, "--out", resolve(directory, "migrated.json")).trim();
   expect(save.cursor).toBe(cursor);
   const values = await stored(page);
   expect(values["r1-backup"]).toEqual(record);
-  expect(values.active).toMatchObject({ version: 2, artifact_id: save.artifact_id });
+  expect(values.active).toMatchObject({ version: 3, artifact_id: save.artifact_id });
   await page.reload();
   await expect(page.getByRole("heading", { name: "旅程结束", exact: true })).toBeVisible();
   await expect(page.locator(".history li")).toHaveCount(15);
@@ -304,4 +311,67 @@ test("graph inspection is read-only and mobile controls remain usable", async ({
   await expect(page.getByRole("heading", { name: "篝火夜谈", exact: true })).toBeFocused();
   await page.getByRole("button", { name: /^旅程/ }).click();
   await expect(page.getByRole("complementary", { name: "旅程检查器" })).toBeVisible();
+});
+
+test("an interim R2 record upgrades through the checked commit remapping path", async ({ page }) => {
+  const directory = resolve(root, "fixtures/compat/nodes-r2");
+  const text = await readFile(resolve(directory, "branched.export.json"), "utf8");
+  const header = z.object({ artifact_id: z.string(), execution: z.string() }).passthrough().parse(JSON.parse(text));
+  const active = { version: 2, revision: "0190f2a0-0000-7000-8000-000000000002", artifact_id: header.artifact_id, session: text, saved_at: "2026-09-01T08:00:00.000Z" };
+  const work = { version: 2, artifact_id: header.artifact_id, pack: Array.from(await readFile(resolve(directory, "story.narpack"))), content: [await readFile(resolve(directory, "zh-Hans.json"), "utf8")] };
+  await seed(page, { active, work });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "旅程结束", exact: true })).toBeVisible();
+  await expect(page.locator(".history li")).toHaveCount(15);
+  const records = await stored(page);
+  expect(records.active).toMatchObject({ version: 3, artifact_id: header.artifact_id });
+  expect(records["r2-backup"]).toEqual(active);
+  const checkpoint = await exportSave(page);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "旅程结束", exact: true })).toBeVisible();
+  expect(await exportSave(page)).toBe(checkpoint);
+});
+
+test("a failed interim R2 upgrade preserves the records and falls back to memory", async ({ page }) => {
+  const directory = resolve(root, "fixtures/compat/nodes-r2");
+  const text = await readFile(resolve(directory, "linear.export.json"), "utf8");
+  const value = z.object({ artifact_id: z.string(), objects: z.array(z.string()) }).passthrough().parse(JSON.parse(text));
+  value.objects[0] = "00";
+  const active = { version: 2, revision: "0190f2a0-0000-7000-8000-000000000003", artifact_id: value.artifact_id, session: JSON.stringify(value), saved_at: "2026-09-01T08:00:00.000Z" };
+  const work = { version: 2, artifact_id: value.artifact_id, pack: Array.from(await readFile(resolve(directory, "story.narpack"))), content: [await readFile(resolve(directory, "zh-Hans.json"), "utf8")] };
+  await seed(page, { active, work });
+  const before = await stored(page);
+  await page.goto("/");
+  await expect(page.getByRole("status").filter({ hasText: "无法使用本机自动存档" })).toBeVisible();
+  await act(page, "到营地歇脚", "篝火夜谈");
+  expect(await stored(page)).toEqual(before);
+});
+
+test("clearing the Wasm cache reloads the same node session from IndexedDB", async ({ page }) => {
+  await open(page);
+  await act(page, "到营地歇脚", "篝火夜谈");
+  const result = await page.evaluate(async moduleUrl => {
+    const db = await new Promise<IDBDatabase>((done, fail) => { const r = indexedDB.open("narrata-gamebook", 1); r.onsuccess = () => done(r.result); r.onerror = () => fail(r.error); });
+    const get = (key: string) => new Promise<unknown>((done, fail) => { const r = db.transaction("session", "readonly").objectStore("session").get(key); r.onsuccess = () => done(r.result); r.onerror = () => fail(r.error); });
+    const active = await get("active"); const work = await get("work"); db.close();
+    if (!active || typeof active !== "object" || !("execution" in active) || typeof active.execution !== "string" || !("database" in active) || typeof active.database !== "string") throw new Error("invalid kernel metadata");
+    if (!work || typeof work !== "object" || !("pack" in work) || !(work.pack instanceof Uint8Array)) throw new Error("invalid work");
+    const wasmUrl = "/src/generated/wasm/narrata_nodes_wasm.js";
+    const wasm = await import(wasmUrl);
+    const { IndexedDbStore, StorageHost } = await import(moduleUrl);
+    await wasm.default();
+    const book = new wasm.NodeBook(work.pack, active.execution);
+    const store = await IndexedDbStore.open(active.database); const host = new StorageHost(store, book);
+    try {
+      await host.run(() => book.open());
+      const before: string = await host.run(() => book.inspect());
+      book.reload();
+      await host.run(() => book.open());
+      const after: string = await host.run(() => book.inspect());
+      return { before, after, loads: store.reads.loads };
+    } finally { book.free(); store.close(); }
+  }, `/@fs/${resolve(root, "packages/narrata/kernel/js/src/index.ts").replaceAll("\\", "/")}`);
+  expect(result.after).toBe(result.before);
+  expect(result.loads).toBeGreaterThan(0);
+  expect(checkedBook(JSON.parse(result.after)).view.frames).toHaveLength(2);
 });

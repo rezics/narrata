@@ -2,7 +2,10 @@
 //! state until the next interaction or the end of the story; any failure discards the copy.
 //! The runtime only emits references; it never reads content.
 
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use narrata_kernel::content::{AnchorId, Segment};
 
@@ -131,6 +134,169 @@ pub(crate) struct Machine<'p> {
 }
 
 impl Machine<'_> {
+    /// Bounded checked lookahead toward the next interaction. Borrowed graphs keep the cache from
+    /// evicting the candidates while a host waits for the reader's next input.
+    pub fn prefetch(&self, state: &State) -> Result<Vec<Arc<crate::plan::Graph>>> {
+        fn walk(
+            program: &Program,
+            frame: &Frame,
+            graph_ref: &GraphRef,
+            node: NodeId,
+            hops: usize,
+            seen: &mut BTreeSet<(GraphRef, NodeId)>,
+            graphs: &mut BTreeMap<GraphRef, Arc<crate::plan::Graph>>,
+        ) -> Result<bool> {
+            if hops >= MAX_CALL_DEPTH
+                || seen.len() >= MAX_STEPS as usize
+                || !seen.insert((graph_ref.clone(), node))
+            {
+                return Ok(false);
+            }
+            let graph = match graphs.get(graph_ref) {
+                Some(graph) => graph.clone(),
+                None => {
+                    let graph = program.graph(graph_ref)?;
+                    graphs.insert(graph_ref.clone(), graph.clone());
+                    graph
+                }
+            };
+            let plan = if *graph_ref == frame.graph {
+                frame.overlay.plan(&graph, &node)
+            } else {
+                graph.nodes.get(&node).map(std::borrow::Cow::Borrowed)
+            }
+            .ok_or_else(|| Error::new("state", "prefetch", "unknown node"))?;
+            match &*plan {
+                Plan::Passage(passage) => {
+                    // Empty passages, and optional points whose options may all be hidden,
+                    // can continue automatically into another graph.
+                    if passage
+                        .choice_points
+                        .iter()
+                        .all(|point| point.min == 0 && !point.proposals)
+                        && let Some(next) = passage.next
+                    {
+                        walk(program, frame, graph_ref, next, hops + 1, seen, graphs)
+                    } else {
+                        Ok(false)
+                    }
+                }
+                Plan::Return { .. } => Ok(true),
+                Plan::Mutate { next, .. } => {
+                    walk(program, frame, graph_ref, *next, hops + 1, seen, graphs)
+                }
+                Plan::Branch {
+                    when_true,
+                    when_false,
+                    ..
+                } => {
+                    let left = walk(
+                        program,
+                        frame,
+                        graph_ref,
+                        *when_true,
+                        hops + 1,
+                        seen,
+                        graphs,
+                    )?;
+                    let right = walk(
+                        program,
+                        frame,
+                        graph_ref,
+                        *when_false,
+                        hops + 1,
+                        seen,
+                        graphs,
+                    )?;
+                    Ok(left || right)
+                }
+                Plan::Call {
+                    target, on_return, ..
+                } => {
+                    let callee = program.resolve_call(graph_ref, target)?;
+                    let graph = program.graph(&callee)?;
+                    let entry = graph.header.entry;
+                    graphs.insert(callee.clone(), graph);
+                    if !walk(program, frame, &callee, entry, hops + 1, seen, graphs)? {
+                        return Ok(false);
+                    }
+                    let mut returned = false;
+                    for node in on_return.values() {
+                        returned |= walk(program, frame, graph_ref, *node, hops + 1, seen, graphs)?;
+                    }
+                    Ok(returned)
+                }
+            }
+        }
+        let Some(frame) = state.frames.last() else {
+            return Ok(Vec::new());
+        };
+        let graph = self.program.graph(&frame.graph)?;
+        let passage = frame
+            .overlay
+            .passage(&graph, &frame.node)
+            .ok_or_else(|| Error::new("state", "prefetch", "not a passage"))?;
+        let point = passage
+            .choice_points
+            .iter()
+            .find(|point| Some(point.id) == frame.at)
+            .ok_or_else(|| Error::new("state", "prefetch", "missing choice point"))?;
+        let mut targets = BTreeSet::new();
+        for option in &point.options {
+            match &option.outcome {
+                Outcome::Branch { target } => {
+                    targets.insert(*target);
+                }
+                Outcome::Local { .. } => {
+                    targets.extend(passage.next);
+                }
+            }
+        }
+        let mut seen = BTreeSet::new();
+        let mut graphs = BTreeMap::new();
+        graphs.insert(frame.graph.clone(), graph.clone());
+        let mut returned = false;
+        for node in targets {
+            returned |= walk(
+                self.program,
+                frame,
+                &frame.graph,
+                node,
+                0,
+                &mut seen,
+                &mut graphs,
+            )?;
+        }
+        // A return can enter the next chapter through an already active caller.
+        for parent in state.frames[..state.frames.len() - 1].iter().rev() {
+            if !returned {
+                break;
+            }
+            let graph = self.program.graph(&parent.graph)?;
+            graphs.insert(parent.graph.clone(), graph.clone());
+            let plan = parent
+                .overlay
+                .plan(&graph, &parent.node)
+                .ok_or_else(|| Error::new("state", "prefetch", "missing caller"))?;
+            let Plan::Call { on_return, .. } = &*plan else {
+                return Err(Error::new("state", "prefetch", "parent is not a call"));
+            };
+            returned = false;
+            for node in on_return.values() {
+                returned |= walk(
+                    self.program,
+                    parent,
+                    &parent.graph,
+                    *node,
+                    0,
+                    &mut seen,
+                    &mut graphs,
+                )?;
+            }
+        }
+        Ok(graphs.into_values().collect())
+    }
+
     /// The state after the manifest's initial state runs to its first interaction.
     pub fn initial(&self) -> Result<Step> {
         let product = &self.program.manifest().product;

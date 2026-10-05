@@ -619,6 +619,7 @@ dependencies = [
  "narrata-content-local",
  "narrata-kernel",
  "narrata-nodes",
+ "narrata-storage-host",
  "serde",
  "serde_json",
  "wasm-bindgen",

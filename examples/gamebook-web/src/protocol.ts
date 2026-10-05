@@ -30,7 +30,7 @@ export const resolvedSchema = z.union([
 export type Resolved = z.infer<typeof resolvedSchema>;
 
 const MiB = 1024 * 1024;
-export const limits = { pack: 16 * MiB, content: 16 * MiB, save: 8 * MiB, r1Save: 4 * MiB } as const;
+export const limits = { pack: 16 * MiB, content: 16 * MiB, save: 64 * MiB, r1Save: 4 * MiB } as const;
 const id = z.number().int().nonnegative();
 const bytes = z.instanceof(Uint8Array).refine(value => value.byteLength <= limits.pack, "构件超过 16 MiB");
 export const requestSchema = z.discriminatedUnion("kind", [

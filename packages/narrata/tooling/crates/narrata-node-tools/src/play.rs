@@ -22,6 +22,8 @@ pub fn act(session: &mut Session, names: Option<&NameTable>, actions: &str) -> R
         )
     })?;
     for step in actions.split(',').filter(|step| !step.is_empty()) {
+        // A hint may fail for an unselected route; the chosen route is checked by choose.
+        let _ = session.prefetch();
         let view = session.view(Some(names))?;
         let Interaction::Choose {
             choice_point,

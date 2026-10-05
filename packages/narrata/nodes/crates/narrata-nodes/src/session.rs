@@ -26,7 +26,8 @@ use std::{
 /// Limits of the old JSON importer, not limits of a kernel session.
 pub const MAX_COMMITS: usize = 512;
 pub const MAX_RETAINED_STATE_BYTES: usize = 2 * 1024 * 1024;
-pub const MAX_EXPORT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_EXPORT_BYTES: usize = 64 * 1024 * 1024;
+const MAX_INTERIM_EXPORT_BYTES: usize = 8 * 1024 * 1024;
 pub const EXPORT_FORMAT_VERSION: u16 = 2;
 
 #[derive(Debug)]
@@ -44,6 +45,7 @@ pub struct Session<B = MemoryBackend> {
     session: narrata_history::Session<NodeDomain>,
     current: Record,
     _pins: ChunkPins,
+    prefetched: Vec<Arc<crate::plan::Graph>>,
 }
 
 /// Read-only compatibility with the temporary R2 JSON container.
@@ -124,7 +126,7 @@ impl Session {
             return Self::open(program, execution, history.into_backend());
         }
         if text.len() > MAX_EXPORT_BYTES {
-            return Err(Error::new("limit", "export", "checkpoint exceeds 8 MiB"));
+            return Err(Error::new("limit", "export", "checkpoint exceeds 64 MiB"));
         }
         let bytes = hex::decode(text.trim())
             .map_err(|e| Error::new("decode", "checkpoint", e.to_string()))?;
@@ -192,6 +194,7 @@ impl<B: StorageBackend> Session<B> {
             session,
             current: record(loaded),
             _pins: pins,
+            prefetched: Vec::new(),
         })
     }
     pub fn program(&self) -> &Arc<Program> {
@@ -199,6 +202,14 @@ impl<B: StorageBackend> Session<B> {
     }
     pub fn execution(&self) -> ExecutionId {
         self.execution
+    }
+    /// Hosts can run this between interactions; it never changes narrative state or refs.
+    pub fn prefetch(&mut self) -> Result<()> {
+        self.prefetched = Machine {
+            program: &self.program,
+        }
+        .prefetch(&self.current.state)?;
+        Ok(())
     }
     pub fn history(&self) -> &History<B, DomainKinds<NodeDomain>> {
         &self.history
@@ -308,6 +319,7 @@ impl<B: StorageBackend> Session<B> {
                         },
                         state: Arc::new(advanced.state),
                     };
+                    self.prefetched.clear();
                     self._pins = pins;
                     return Ok(self.current.id);
                 }
@@ -353,6 +365,7 @@ impl<B: StorageBackend> Session<B> {
             )
             .map_err(history_error)?;
         self.current = record(loaded);
+        self.prefetched.clear();
         self._pins = pins;
         Ok(())
     }
@@ -383,6 +396,7 @@ impl<B: StorageBackend> Session<B> {
             .load_save(&mut self.history, &key, 0)
             .map_err(history_error)?;
         self.current = record(loaded);
+        self.prefetched.clear();
         self._pins = pins;
         Ok(())
     }
@@ -519,6 +533,25 @@ impl<B: StorageBackend> Session<B> {
             .history
             .export(kernel(self.current.id), &BTreeSet::new())
             .map_err(bundle_error)?;
+        // Include the manifest envelope and per-object headers before allocating the
+        // container. Hex transport doubles the container size.
+        let total = bundle
+            .manifest
+            .objects
+            .iter()
+            .try_fold(0_u64, |total, object| total.checked_add(object.bytes))
+            .unwrap_or(u64::MAX)
+            .saturating_add(bundle.manifest.encode().len() as u64 + 80)
+            .saturating_add(bundle.manifest.objects.len() as u64 * 44);
+        if total > (MAX_EXPORT_BYTES / 2) as u64
+            || bundle.manifest.objects.len() as u64 > BundleLimits::default().max_objects
+        {
+            return Err(Error::new(
+                "limit",
+                "export",
+                "checkpoint exceeds 64 MiB of hex",
+            ));
+        }
         let bytes = bundle
             .to_bytes()
             .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
@@ -526,7 +559,7 @@ impl<B: StorageBackend> Session<B> {
             return Err(Error::new(
                 "limit",
                 "export",
-                "checkpoint exceeds 8 MiB of hex",
+                "checkpoint exceeds 64 MiB of hex",
             ));
         }
         Ok(hex::encode(bytes))
@@ -566,6 +599,7 @@ impl<B: StorageBackend> Session<B> {
         let pins = self.program.pin_state(&loaded.state)?;
         self.session = session;
         self.current = record(loaded);
+        self.prefetched.clear();
         self._pins = pins;
         Ok(())
     }
@@ -654,6 +688,7 @@ impl<B: StorageBackend> Session<B> {
         let pins = self.program.pin_state(&loaded.state)?;
         self.session = session;
         self.current = record(loaded);
+        self.prefetched.clear();
         self._pins = pins;
         Ok(())
     }
@@ -741,7 +776,7 @@ impl<B: StorageBackend> Session<B> {
 type Legacy = (ExecutionId, CommitId, Vec<Object>, Vec<CommitId>);
 
 fn legacy(program: &Arc<Program>, text: &str) -> Result<Legacy> {
-    let export: SessionExport = parse_json_limited(text, MAX_EXPORT_BYTES)?;
+    let export: SessionExport = parse_json_limited(text, MAX_INTERIM_EXPORT_BYTES)?;
     if export.format_version != EXPORT_FORMAT_VERSION {
         return Err(Error::new(
             "version",

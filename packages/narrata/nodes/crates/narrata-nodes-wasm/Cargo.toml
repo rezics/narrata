@@ -11,6 +11,7 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+narrata-storage-host = { path = "../../../kernel/crates/narrata-storage-host", version = "=0.1.0-alpha.1" }
 narrata-content-local = { path = "../../../tooling/crates/narrata-content-local", version = "=0.1.0-alpha.1" }
 narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
 narrata-nodes = { path = "../narrata-nodes", version = "=0.1.0-alpha.1" }
