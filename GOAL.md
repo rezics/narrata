@@ -7,7 +7,11 @@ Goal 都长寿。
 
 | Goal | 结果 | Manager |
 | --- | --- | --- |
-| [Web 与 REZICS](docs/goals/web-and-rezics/GOAL.md) | npm 包与 Wasm 运行时、带正文渲染插槽的阅读器外壳、图视图、REZICS 适配 | 所依赖的叙事核心与 Kernel 存档已完成，可由维护者启动 |
+| [Web 宿主 SDK](docs/goals/web-and-rezics/GOAL.md) | 带版本的 npm/Wasm 交付物、正文渲染插槽、存档接口与图视图；模拟宿主验收 | 本机 manager 负责；依赖已完成，维护者已要求启动 |
+
+REZICS 接入由另一台电脑上的独立 manager 在 REZICS 仓库执行，见
+[REZICS 接入 Goal 交接简报](docs/integrations/rezics-goal.md)。真实联合验证是该 Goal 的最后一个任务，
+不阻塞本机 SDK Goal 的模拟宿主验收。
 
 `task goal -- status` 显示运行中的 Goal、manager 会话和存活的任务。启动 worker 前确认所用
 引擎的 CLI 已登录。

@@ -8,6 +8,11 @@ rezics-next 中已不存在。本页依据 rezics-next 的代码（`D:/rezics-re
 Narrata 的工作不修改 REZICS 仓库（[决定 13](../product/decisions.md)）。REZICS 需要增加的
 能力列在[能力请求](#能力请求)，由 REZICS 的 Goal 决定是否以及如何实施；状态变化时更新本页。
 
+维护者于 2026-10-05 将实现拆为两个 manager：本机执行 Narrata 的
+[Web 宿主 SDK Goal](../goals/web-and-rezics/GOAL.md)，另一台电脑在 REZICS 仓库执行
+[REZICS 接入 Goal 交接简报](rezics-goal.md)。真实联合验证放在 REZICS Goal 的最后一个任务，
+使用固定版本的 Narrata npm/Wasm 发行交付物。
+
 ## REZICS 的分层
 
 | 层 | 承载什么 | 与 Narrata 的关系 |
