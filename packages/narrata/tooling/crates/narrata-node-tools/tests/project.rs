@@ -11,7 +11,7 @@ use narrata_node_tools::{
     act, compose, ids::Minter, load_content, load_project, open_pack, r1, read_text, render,
     verify_lock, write_text,
 };
-use narrata_nodes::{AuthoredId, Program, Session, SessionExport, r1::migrate_save};
+use narrata_nodes::{AuthoredId, Program, Session, r1::migrate_save};
 use proptest::prelude::*;
 use serde_json::{Value, json};
 
@@ -112,6 +112,7 @@ fn commits(pack: &Path, actions: &str) -> Vec<String> {
     act(&mut session, names.as_ref(), actions).unwrap();
     session
         .commits()
+        .unwrap()
         .map(|(id, commit)| format!("{id} {}", commit.state))
         .collect()
 }
@@ -150,6 +151,7 @@ fn source_migration_and_both_r1_save_migrations_agree() {
         .unwrap();
         let migrated: Vec<String> = session
             .commits()
+            .unwrap()
             .map(|(id, commit)| format!("{id} {}", commit.state))
             .collect();
         if save == "linear" {
@@ -271,6 +273,7 @@ fn read_through(content: &LocalContent, language: &str) -> (String, Vec<String>,
     }
     let commits = session
         .commits()
+        .unwrap()
         .map(|(id, commit)| format!("{id} {}", commit.state))
         .collect();
     (artifact, commits, pages)
@@ -450,11 +453,10 @@ fn run_prints_resolved_text_and_round_trips_exports() {
         EXECUTION,
     ])
     .unwrap();
-    let export: SessionExport = serde_json::from_str(&read_text(&save).unwrap()).unwrap();
-    assert_eq!(export.execution.to_string(), EXECUTION);
+    let checkpoint = read_text(&save).unwrap();
     let (program, _) = open_pack(&pack).unwrap();
     let restored = Session::restore(program, &read_text(&save).unwrap()).unwrap();
-    assert_eq!(restored.cursor().unwrap(), export.cursor);
+    assert_eq!(restored.export().unwrap(), checkpoint);
     run(&[
         "run",
         pack.to_str().unwrap(),

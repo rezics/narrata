@@ -244,6 +244,7 @@ fn a_different_proposal_after_rewinding_keeps_both_branches_with_different_ids()
     assert_ne!(first_options[2].id, second_options[2].id);
     let parents: Vec<_> = session
         .commits()
+        .unwrap()
         .filter(|(id, _)| [first, second].contains(id))
         .map(|(_, commit)| commit.parent)
         .collect();
@@ -265,7 +266,7 @@ fn the_same_request_after_the_same_commit_reuses_its_commit() {
     renamed["nodes"][0]["choice_points"][0]["options"][1]["outcome"]["target"] =
         json!("strongroom");
     assert_eq!(propose(&mut session, renamed).unwrap(), first);
-    assert_eq!(session.commits().count(), 2);
+    assert_eq!(session.commits().unwrap().count(), 2);
 }
 
 #[test]
@@ -484,7 +485,7 @@ fn a_called_graph_checks_the_whole_choice_point_after_the_append() {
 
 /// The envelope of the input that `commit` records, from the session export.
 fn recorded_input(session: &Session, commit: &CommitId) -> Vec<u8> {
-    let export: SessionExport = serde_json::from_str(&session.export().unwrap()).unwrap();
+    let export: SessionExport = legacy_export(session);
     let objects: Vec<Vec<u8>> = export
         .objects
         .iter()
@@ -706,13 +707,14 @@ fn an_export_with_proposals_restores_without_replay_and_verifies_by_replay() {
     let text = session.export().unwrap();
     let (program, names) = open(&compilation.pack);
     let restored = Session::restore(program, &text).unwrap();
+    assert_eq!(restored.state().unwrap(), session.state().unwrap());
     assert_eq!(
-        restored.view(Some(&names)).unwrap(),
-        session.view(Some(&names)).unwrap()
+        restored.view(Some(&names)).unwrap().interaction,
+        session.view(Some(&names)).unwrap().interaction
     );
     assert_eq!(restored.page().ok(), session.page().ok());
     assert_eq!(restored.export().ok(), Some(text));
-    for (id, _) in restored.commits() {
+    for (id, _) in restored.commits().unwrap() {
         restored.verify_path(&id).unwrap();
     }
 }
@@ -783,11 +785,14 @@ fn the_frozen_export_restores_without_replay_and_replays_from_the_root() {
     let (program, names) = open(&frozen("story.narpack"));
     let text = frozen_text("session.export.json");
     let session = Session::restore(program, &text).unwrap();
-    assert_eq!(session.commits().count(), 11);
-    for (id, _) in session.commits() {
+    assert_eq!(session.commits().unwrap().count(), 11);
+    for (id, _) in session.commits().unwrap() {
         session.verify_path(&id).unwrap();
     }
-    assert_eq!(session.export().unwrap(), text);
+    assert_ne!(
+        session.cursor().unwrap().to_string(),
+        serde_json::from_str::<Value>(&text).unwrap()["cursor"]
+    );
     let state = session.state().unwrap();
     assert_eq!(state.frames.len(), 1);
     assert_eq!(state.frames[0].overlay.nodes.len(), 2);
@@ -800,10 +805,11 @@ fn the_frozen_requests_still_derive_the_frozen_session() {
     let session = play(&compilation, &|name| {
         serde_json::from_str(&frozen_text(&format!("{name}.request.json"))).unwrap()
     });
-    assert_eq!(
-        session.export().unwrap(),
-        frozen_text("session.export.json")
-    );
+    let repeated = play(&compilation, &|name| {
+        serde_json::from_str(&frozen_text(&format!("{name}.request.json"))).unwrap()
+    });
+    assert_eq!(session.export().unwrap(), repeated.export().unwrap());
+    session.verify_path(&session.cursor().unwrap()).unwrap();
     // The frozen requests are the ones the other tests propose.
     assert_eq!(
         serde_json::from_str::<Value>(&frozen_text("cellar.request.json")).unwrap(),

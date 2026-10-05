@@ -1508,7 +1508,7 @@ pub(crate) fn decode_input(r: &mut CborReader<'_>) -> D<Input> {
     }
 }
 
-pub(crate) fn encode_commit(value: &Commit) -> Vec<u8> {
+pub(crate) fn encode_interim_commit(value: &Commit) -> Vec<u8> {
     let mut w = CborWriter::new();
     map_header(
         &mut w,
@@ -1537,7 +1537,7 @@ pub(crate) fn encode_commit(value: &Commit) -> Vec<u8> {
     w.into_bytes()
 }
 
-pub(crate) fn decode_commit(r: &mut CborReader<'_>) -> D<Commit> {
+pub(crate) fn decode_interim_commit(r: &mut CborReader<'_>) -> D<Commit> {
     let (mut artifact, mut parent, mut input, mut state, mut depth) =
         (None, None, None, None, None);
     let mut map = MapIn::new(r, 5)?;
@@ -1558,5 +1558,53 @@ pub(crate) fn decode_commit(r: &mut CborReader<'_>) -> D<Commit> {
         input,
         state: required(state, "commit state")?,
         depth: required(depth, "commit depth")?,
+    })
+}
+
+pub(crate) fn encode_commit(value: &Commit) -> Vec<u8> {
+    narrata_history::Commit {
+        artifact: narrata_history::ArtifactId::from_bytes(*value.artifact.as_bytes()),
+        parent: value
+            .parent
+            .map(|id| narrata_history::ObjectId::from_bytes(*id.as_bytes())),
+        input: value
+            .input
+            .map(|id| narrata_history::ObjectId::from_bytes(*id.as_bytes())),
+        state: narrata_history::ObjectId::from_bytes(*value.state.as_bytes()),
+        depth: value.depth,
+    }
+    .encode()
+}
+
+pub(crate) fn decode_commit(r: &mut CborReader<'_>) -> D<Commit> {
+    if r.map_len()? != 5 {
+        return Err(DecodeError::Schema("commit field count"));
+    }
+    if r.unsigned()? != 0 {
+        return Err(DecodeError::Schema("commit artifact key"));
+    }
+    let artifact = ArtifactId::from_bytes(r.bytes_exact::<32>()?);
+    if r.unsigned()? != 1 {
+        return Err(DecodeError::Schema("commit parent key"));
+    }
+    let parent = r.optional(|r| Ok(CommitId::from_bytes(r.bytes_exact::<32>()?)))?;
+    if r.unsigned()? != 2 {
+        return Err(DecodeError::Schema("commit input key"));
+    }
+    let input = r.optional(object)?;
+    if r.unsigned()? != 3 {
+        return Err(DecodeError::Schema("commit state key"));
+    }
+    let state = object(r)?;
+    if r.unsigned()? != 4 {
+        return Err(DecodeError::Schema("commit depth key"));
+    }
+    let depth = r.unsigned()?;
+    Ok(Commit {
+        artifact,
+        parent,
+        input,
+        state,
+        depth,
     })
 }

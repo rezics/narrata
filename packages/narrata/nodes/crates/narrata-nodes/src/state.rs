@@ -156,6 +156,23 @@ impl Input {
 }
 
 impl Commit {
+    /// Checked read-only decoding of the interim optional-field commit encoding.
+    pub fn decode_interim(envelope: &[u8]) -> Result<(Self, CommitId)> {
+        let (commit, id) = wire::open(
+            envelope,
+            wire::KIND_COMMIT,
+            1024,
+            "commit",
+            wire::decode_interim_commit,
+            wire::encode_interim_commit,
+        )?;
+        if commit.parent.is_some() != commit.input.is_some()
+            || commit.parent.is_some() != (commit.depth > 0)
+        {
+            return Err(Error::new("commit", "commit", "invalid interim root shape"));
+        }
+        Ok((commit, CommitId::from_bytes(*id.as_bytes())))
+    }
     pub fn encode(&self) -> Vec<u8> {
         wire::encode_commit(self)
     }

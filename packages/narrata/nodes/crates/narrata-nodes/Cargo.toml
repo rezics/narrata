@@ -8,6 +8,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+narrata-history = { path = "../../../kernel/crates/narrata-history", version = "=0.1.0-alpha.1" }
+narrata-storage = { path = "../../../kernel/crates/narrata-storage", version = "=0.1.0-alpha.1" }
 narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -16,7 +18,6 @@ hex.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-narrata-history = { path = "../../../kernel/crates/narrata-history", version = "=0.1.0-alpha.1" }
 proptest.workspace = true
 
 [lints]

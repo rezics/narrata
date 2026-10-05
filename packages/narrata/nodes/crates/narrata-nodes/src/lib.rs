@@ -13,6 +13,7 @@ mod check;
 mod compile;
 mod error;
 mod expr;
+pub mod history;
 mod ids;
 mod json;
 pub mod outline;

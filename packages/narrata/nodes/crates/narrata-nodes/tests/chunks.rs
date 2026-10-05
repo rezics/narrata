@@ -222,14 +222,14 @@ fn failed_pinning_releases_partial_pins() {
 }
 
 #[test]
-fn checkout_restore_and_cloning_keep_only_their_live_frame_chunks() {
+fn checkout_restore_and_independent_sessions_keep_only_their_live_frame_chunks() {
     let (program, source) = opened(&fixture(4), 1);
     let mut session = Session::new(program.clone(), ExecutionId::from_bytes([6; 16])).unwrap();
     let root = session.cursor().unwrap();
     descend(&mut session);
     let deep = session.cursor().unwrap();
-    let copy = session.clone();
     let save = session.export().unwrap();
+    let copy = Session::restore(program.clone(), &save).unwrap();
     session.checkout(&root).unwrap();
     program.set_chunk_capacity(NonZeroUsize::new(1).unwrap());
     assert_eq!(program.loaded_chunks(), 2);

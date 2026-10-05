@@ -7,11 +7,10 @@ use std::collections::BTreeMap;
 use narrata_kernel::content::{AnchorId, Segment};
 
 use crate::{
-    CommitId, Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, Program, ProposalRequest, Result, Scalar,
-    Scope, ViewScalar,
+    CommitId, Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, Program, Result, Scalar, Scope, ViewScalar,
     expr::{Values, expect},
     plan::{GraphRef, NameTable, Outcome, Passage, Plan},
-    proposal::{apply_proposal, materialize},
+    proposal::apply_proposal,
     state::{Finished, Frame, Input, Overlay, State, check_choice, check_size},
     view::{Interaction, OptionView, OutcomeKind, Presented, Role},
 };
@@ -188,19 +187,6 @@ impl Machine<'_> {
                 })
             }
         }
-    }
-
-    /// Records a host proposal made at commit `parent_commit`. The interaction stays at the
-    /// same choice point and nothing is presented.
-    pub fn propose(
-        &self,
-        parent_commit: &CommitId,
-        parent: &State,
-        request: &ProposalRequest,
-    ) -> Result<(Input, Step)> {
-        let input = materialize(parent_commit, request)?;
-        let step = self.apply(parent_commit, parent, &input)?;
-        Ok((input, step))
     }
 
     /// Chooses options at the parent's interaction. Every chosen option is checked against

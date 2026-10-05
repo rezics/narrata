@@ -604,6 +604,7 @@ dependencies = [
  "hex",
  "narrata-history",
  "narrata-kernel",
+ "narrata-storage",
  "proptest",
  "schemars",
  "serde",

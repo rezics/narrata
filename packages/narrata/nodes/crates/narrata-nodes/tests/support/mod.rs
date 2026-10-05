@@ -332,3 +332,29 @@ pub fn set(value: &mut Value, pointer: &str, field: &str, new: Value) {
 }
 
 pub const GATE: &str = "/graphs/start/nodes/gate/data";
+
+/// Rebuilds the old container only to exercise its read-only import path.
+pub fn legacy_export(session: &Session) -> narrata_nodes::SessionExport {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut objects = Vec::new();
+    for (_, commit) in session.commits().unwrap() {
+        for id in [commit.input, Some(commit.state)].into_iter().flatten() {
+            if seen.insert(id) {
+                let object = session
+                    .history()
+                    .reader()
+                    .require(narrata_history::ObjectId::from_bytes(*id.as_bytes()), None)
+                    .unwrap();
+                objects.push(hex::encode(object.bytes()));
+            }
+        }
+        objects.push(hex::encode(commit.envelope()));
+    }
+    narrata_nodes::SessionExport {
+        format_version: 2,
+        artifact_id: session.program().artifact_id(),
+        execution: session.execution(),
+        cursor: session.cursor().unwrap(),
+        objects,
+    }
+}

@@ -72,7 +72,7 @@ Windows 父进程每 10 ms 读取读者的 `PeakWorkingSet64`；读者输出后�
 
 ## 游玩与全扫描
 
-一次游玩的原计划是 10,000 次选择，但现有参考 `Session` 保留至多 512 个提交（含根），
+本组历史测量的游玩原计划是 10,000 次选择，当时参考 `Session` 保留至多 512 个提交（含根），
 各次运行都在第 512 次选择时报 `history_limit`，实际样本为 511 次，涉及 8–9 个块。
 因此以下结果只证明短程选择分布，不能验收“一次游玩数千次选择、跨越大量图”。
 不能把多次重启 Session 的样本合并，声称完成了同一次长程游玩。
@@ -141,14 +141,14 @@ Windows 父进程每 10 ms 读取读者的 `PeakWorkingSet64`；读者输出后�
 先剖析上述冷加载路径，并在稳定机器状态下重测每次选择的 1 ms 目标。
 
 会话已自动持有当前态的帧 pin，初始化、选择、提议、checkout 与 restore 在替换 guard 前
-先固定新态；失败保留旧 guard，克隆会话可独立移动与释放。运行时在 call / return 时同步
+先固定新态；失败保留旧 guard，各会话可独立移动与释放。运行时在 call / return 时同步
 工作态的 pin，并把最终 guard 交给会话。runner 不再显式固定帧。
 [块缓存测试](../../../packages/narrata/nodes/crates/narrata-nodes/tests/chunks.rs) 覆盖容量 1 下
 64 层连续自动调用与返回：每个活跃块只加载一次，返回后缓存回到预算；也覆盖恢复、检出、
-克隆与失败选择的 guard 生命周期。上面的测量仍是接入前的记录，不能据此声称接入后的延迟。
+独立会话与失败选择的 guard 生命周期。上面的测量仍是接入前的记录，不能据此声称接入后的延迟。
 
-512 提交限制仍阻止长程基准。kernel 接入发现一个格式阻碍：R2 根提交的规范 CBOR 是省略
-parent / input 的三字段 map，kernel 通用提交要求含两个 null 的五字段 map，并拒绝已有根。
-非根载荷逐字节相同；根的不同会改变所有后代身份。[冻结根测试](../../../packages/narrata/nodes/crates/narrata-nodes/tests/history.rs)
-记录这一差异。需要 kernel 提供保留 R2 根载荷与身份的读取及创建路径，才能在不改冻结语料的
-前提下继续接入历史层与浏览器存储。长程游玩与每次选择低于 1 ms 尚未验收。
+会话现由 kernel 历史层驱动，512 提交限制已移除。节点采用 kernel 的五字段提交编码；
+临时三字段根只读，导入重映射提交与游标，State / Input 字节保留。
+[历史层测试](../../../packages/narrata/nodes/crates/narrata-nodes/tests/history.rs) 覆盖冻结语料、
+存档槽重开、checkpoint 与受检导入；编码修订见 [ADR 0013](../../adr/0013-r2-text-free-node-format.md)。
+新的长程游玩与每次选择低于 1 ms 的测量仍待完成。

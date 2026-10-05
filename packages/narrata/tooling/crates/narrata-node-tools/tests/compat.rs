@@ -90,7 +90,22 @@ fn r1_saves_still_migrate_to_the_frozen_exports() {
     for (save, _, _) in SAVES {
         let session = migrate(&corpus().join("story.narpack"), &content, save);
         let frozen = read_text(&corpus().join(format!("{save}.export.json"))).unwrap();
-        assert_eq!(session.export().unwrap(), frozen, "{save}");
+        let restored = Session::restore(session.program().clone(), &frozen).unwrap();
+        assert_eq!(
+            session.cursor().unwrap(),
+            restored.cursor().unwrap(),
+            "{save}"
+        );
+        assert_eq!(
+            session.state().unwrap(),
+            restored.state().unwrap(),
+            "{save}"
+        );
+        assert_eq!(
+            session.commits().unwrap().collect::<Vec<_>>(),
+            restored.commits().unwrap().collect::<Vec<_>>(),
+            "{save}"
+        );
     }
 }
 
@@ -100,8 +115,8 @@ fn frozen_exports_restore_without_replay_and_verify_from_the_root() {
     for (save, commits, outcome) in SAVES {
         let text = read_text(&corpus().join(format!("{save}.export.json"))).unwrap();
         let session = Session::restore(program.clone(), &text).unwrap();
-        assert_eq!(session.commits().count(), commits, "{save}");
-        for (id, _) in session.commits() {
+        assert_eq!(session.commits().unwrap().count(), commits, "{save}");
+        for (id, _) in session.commits().unwrap() {
             session.verify_path(&id).unwrap();
         }
         let Interaction::Finished { outcome: ended, .. } = session.view(None).unwrap().interaction
@@ -132,6 +147,7 @@ fn timeline(
 ) -> Vec<String> {
     let commits: Vec<_> = session
         .commits()
+        .unwrap()
         .map(|(id, commit)| (id, commit.parent))
         .collect();
     let text = |value: &Scalar| match value {
@@ -141,10 +157,14 @@ fn timeline(
         Scalar::Ref(reference) => content.text(reference, &[]).unwrap(),
     };
     let mut out = Vec::new();
+    let mut paths: std::collections::BTreeMap<narrata_nodes::CommitId, String> =
+        std::collections::BTreeMap::new();
     for (id, parent) in &commits {
         session.checkout(id).unwrap();
         let state = session.state().unwrap();
-        let parent = parent.and_then(|parent| commits.iter().position(|(id, _)| *id == parent));
+        let parent = parent
+            .map(|parent| paths[&parent].clone())
+            .unwrap_or_default();
         let frames: Vec<String> = state
             .frames
             .iter()
@@ -162,8 +182,11 @@ fn timeline(
             .map(|name| format!("{name}={}", text(&state.shared[name])))
             .collect();
         let outcome = state.finished.as_ref().map(|finished| &finished.outcome);
-        out.push(format!("{parent:?} {frames:?} {values:?} {outcome:?}"));
+        let path = format!("{parent}/{frames:?} {values:?} {outcome:?}");
+        paths.insert(*id, path.clone());
+        out.push(path);
     }
+    out.sort();
     out
 }
 

@@ -157,7 +157,7 @@ State  = { shared: {名字: Scalar}, frames: [Frame], next_instance: u32,
            finished?: { node, instance, outcome } }
 Frame  = { graph: GraphRef, node: NodeId, at?: ChoicePointId, instance: u32,
            parameters, locals, overlay? }
-Commit = { artifact: [u8;32], parent?: CommitId, input?: ObjectId, state: ObjectId, depth: u64 }
+Commit = { artifact: [u8;32], parent: CommitId | null, input: ObjectId | null, state: ObjectId, depth: u64 }
 ```
 
 - State 只含 ID 与标量，不含任何文字与别名。`decode_state` 是构造 State 的唯一途径：先做规范
@@ -169,16 +169,20 @@ Commit = { artifact: [u8;32], parent?: CommitId, input?: ObjectId, state: Object
   - 叠加层只引用本图节点或叠加层自身的节点。
   - 每个 ID 都存在，且不是墓碑。
 - 提交与 kernel 的节点会话提交 API 一致：提交身份是上面载荷的 object id，不含执行 ID；根提交
-  没有 `parent` 与 `input`，深度为 0，非根提交两者都有，深度为父提交加一。相同父提交与相同
+  的 `parent` 与 `input` 为 null，深度为 0，非根提交两者都有，深度为父提交加一。相同父提交与相同
   Input 复用既有提交。根提交的 State 是从清单的初始状态确定性推进到第一个交互后的结果。
 - **恢复不重放。** 恢复读入对象、复核摘要、确认构件相同，再用 `decode_state` 校验。这证明状态
   对该构件良构，不证明它可经游玩到达；需要时用可选的 `verify_path` 从根重放审计。
 - `ExecutionId`（16 字节，宿主在新会话开始时铸造 UUIDv7）属于会话或引用的元数据。
   呈现键 `PresentationKey = (ExecutionId, CommitId, occurrence)`，`occurrence` 是该提交呈现项的
   序号。
-- 在 kernel 的节点会话存储落地之前，会话导出使用临时 JSON 容器
-  `{ format_version: 2, artifact_id, execution, cursor, objects: [十六进制信封] }`，保留 R1 的
-  512 个提交与 2 MiB State 上限。容器里的对象与 kernel 存储的对象逐字节相同，切换时只换容器。
+- 新导出使用 [kernel Checkpoint Bundle](0015-kernel-history-layer.md)，文本接口以十六进制
+  传递原始 bundle 字节；包含当前提交及其祖先，其他分支与存档槽留在存储后端。ExecutionId
+  是宿主会话元数据，不在 checkpoint 中；导入当前会话时保留该会话的 ExecutionId。
+- 临时 JSON 容器 `{ format_version: 2, artifact_id, execution, cursor, objects: [十六进制信封] }`
+  只读。导入先复核旧对象、状态与输入，再把提交改写为 kernel 的五字段载荷，从根开始重映射
+  提交身份、父引用与游标；State 与 Input 信封逐字节保留。旧容器的 512 提交与 2 MiB State
+  上限只约束此兼容读取路径，不约束 kernel 会话。
 
 ### 7. 呈现与 view
 
@@ -256,6 +260,13 @@ language, entries: { key: { text } | { blocks: [{ id, text } | { id, choice_poin
 - 本 ADR 不规定发布时分析的输出格式，只保留 kind code。
 
 ## 修订
+
+- 2026-10-05，接入 kernel 历史层：早期实现把根提交写成省略 parent / input 的三字段 map，
+  这是偏离已约定 kernel API 的实现失误。统一采用五字段 map，根的两个可选值显式为 null；
+  CommitId 是该载荷在 kind `0x0110` 下的 object_id。临时容器从此只读，冻结的 nodes-r2 与
+  nodes-r2-proposals 不改写，导入时转换提交并保留 State / Input 字节。
+  旧提议的派生 ID 使用旧父提交身份；读取与回放时从转换后的祖先载荷重建旧身份并复核该派生，
+  不接受任意 ID。新提议只从当前 kernel 提交身份派生。
 
 - 2026-10-05，首个实现：补充原文未规定、实现必须确定的细节——`migrated_from_r1` 写在项目
   清单中（手工整理的作品也要能接收 R1 存档）、结局正文是 `Segment`（与段落正文同样按块解析）、

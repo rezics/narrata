@@ -357,7 +357,7 @@ fn the_same_input_from_the_same_parent_reuses_the_commit() {
     session.checkout(&root).unwrap();
     choose(&mut session, &names, &["wave"]).unwrap();
     assert_eq!(session.cursor().unwrap(), first);
-    assert_eq!(session.commits().count(), 2);
+    assert_eq!(session.commits().unwrap().count(), 2);
 }
 
 fn played() -> (
@@ -384,9 +384,10 @@ fn restoring_an_export_reproduces_the_view_without_replay() {
     let text = session.export().unwrap();
     let (program, _) = open(&compilation.pack);
     let restored = Session::restore(program, &text).unwrap();
+    assert_eq!(restored.state().unwrap(), session.state().unwrap());
     assert_eq!(
-        restored.view(Some(&names)).unwrap(),
-        session.view(Some(&names)).unwrap()
+        restored.view(Some(&names)).unwrap().interaction,
+        session.view(Some(&names)).unwrap().interaction
     );
     assert_eq!(restored.page().ok(), session.page().ok());
     assert_eq!(restored.export().ok(), Some(text));
@@ -395,7 +396,7 @@ fn restoring_an_export_reproduces_the_view_without_replay() {
 #[test]
 fn every_commit_follows_its_input_and_state_in_the_export() {
     let (_, session, _) = played();
-    let export: SessionExport = serde_json::from_str(&session.export().unwrap()).unwrap();
+    let export: SessionExport = legacy_export(&session);
     assert_eq!(export.format_version, 2);
     let mut seen = std::collections::BTreeSet::new();
     for object in &export.objects {
@@ -432,8 +433,28 @@ fn restore_rejects_an_export_of_another_artifact() {
 /// Replaces the state of the last commit (a leaf) with `change(state)`, re-seals that commit
 /// and moves the cursor to it.
 fn tampered(session: &Session, change: impl FnOnce(&mut State)) -> String {
-    let mut export: SessionExport = serde_json::from_str(&session.export().unwrap()).unwrap();
-    let position = export.objects.len() - 1;
+    let mut export: SessionExport = legacy_export(session);
+    let position = export
+        .objects
+        .iter()
+        .rposition(|object| {
+            let bytes = hex::decode(object).unwrap();
+            let Ok(commit) = Commit::decode(&bytes) else {
+                return false;
+            };
+            session
+                .history()
+                .load(
+                    &narrata_nodes::history::NodeDomain(session.program().clone()),
+                    narrata_history::ObjectId::from_bytes(*commit.id().as_bytes()),
+                )
+                .unwrap()
+                .state
+                .frames
+                .len()
+                == 2
+        })
+        .unwrap();
     let mut commit =
         Commit::decode(&hex::decode(&export.objects[position]).unwrap_or_default()).unwrap();
     let (index, mut state) = export
@@ -450,7 +471,7 @@ fn tampered(session: &Session, change: impl FnOnce(&mut State)) -> String {
         .unwrap();
     change(&mut state);
     commit.state = state.id();
-    // Only the leaf references its state, so it is replaced in place.
+    // This leaf's state is unique in the fixture.
     export.objects[index] = hex::encode(state.envelope());
     export.objects[position] = hex::encode(commit.envelope());
     export.cursor = commit.id();
@@ -499,7 +520,7 @@ fn restore_rejects_states_outside_the_declarations() {
 #[test]
 fn restore_rejects_tampered_object_bytes() {
     let (_, session, _) = played();
-    let mut export: SessionExport = serde_json::from_str(&session.export().unwrap()).unwrap();
+    let mut export: SessionExport = legacy_export(&session);
     let mut bytes = hex::decode(&export.objects[0]).unwrap_or_default();
     let last = bytes.len() - 1;
     bytes[last] ^= 1;
@@ -525,7 +546,12 @@ fn verify_path_detects_a_well_formed_but_unreachable_state() {
         restored.view(Some(&names)).err().map(|e| e.code).as_deref(),
         Some("unreachable_state")
     );
-    let root = restored.commits().next().map(|(id, _)| id).unwrap();
+    let root = restored
+        .commits()
+        .unwrap()
+        .next()
+        .map(|(id, _)| id)
+        .unwrap();
     restored.verify_path(&root).unwrap();
 }
 

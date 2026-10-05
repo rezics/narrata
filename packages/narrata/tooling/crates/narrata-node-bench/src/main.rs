@@ -199,7 +199,7 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
     let first_screen = interval.finish();
     let first_screen_chunk_reads = reads.count.load(Relaxed);
     let first_screen_transfer_bytes = open_transfer_bytes + reads.bytes.load(Relaxed);
-    let mut samples = Vec::with_capacity(steps.min(narrata_nodes::MAX_COMMITS));
+    let mut samples = Vec::with_capacity(steps);
     let before_reads = reads.count.load(Relaxed);
     let interval = Interval::start();
     let mut stop_reason = "requested_choices_completed".to_owned();
@@ -249,7 +249,7 @@ fn read(directory: &Path, capacity: NonZeroUsize, steps: usize, output: &Path) -
     let interval = Interval::start();
     let mut scan_max_loaded_chunks = 0;
     // A separate cache-only full scan verifies that old chunks do not accumulate. It is
-    // not counted as play, and does not claim to bypass the coordinator's history limit.
+    // not counted as play; session-owned pins have been released.
     for key in program.manifest().graphs.keys() {
         drop(program.graph(key)?);
         program.set_chunk_capacity(capacity);

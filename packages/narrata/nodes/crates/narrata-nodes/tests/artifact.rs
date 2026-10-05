@@ -225,7 +225,7 @@ proptest! {
             choose(&mut session, &names, &["rope", "lamp"]).unwrap();
             choose(&mut session, &names, &["left"]).unwrap();
             session
-                .commits()
+                .commits().unwrap()
                 .map(|(id, commit)| (id, commit.state))
                 .collect::<Vec<_>>()
         };

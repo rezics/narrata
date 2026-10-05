@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "SessionExport",
-  "description": "Temporary session export (ADR 0013 §6). The objects are the same envelopes a kernel store\nkeeps; switching to that store replaces only this container.",
+  "description": "Read-only compatibility with the temporary R2 JSON container.",
   "type": "object",
   "properties": {
     "artifact_id": {
@@ -20,7 +20,6 @@
       "minimum": 0
     },
     "objects": {
-      "description": "Hexadecimal envelopes; each commit follows the input and state it references.",
       "type": "array",
       "items": {
         "type": "string"
