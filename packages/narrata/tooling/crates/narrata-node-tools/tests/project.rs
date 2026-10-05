@@ -8,10 +8,10 @@ use std::{
 
 use narrata_content_local::{Block, ContentPack, Entry, LocalContent};
 use narrata_node_tools::{
-    act, compose, ids::Minter, load_content, load_project, open_pack, r1, read_text, render,
-    verify_lock, write_text,
+    act, compose, compose_published, ids::Minter, load_content, load_project, open_pack, r1,
+    read_text, render, verify_lock, write_text,
 };
-use narrata_nodes::{AuthoredId, Program, Session, r1::migrate_save};
+use narrata_nodes::{AuthoredId, Pack, Program, Session, r1::migrate_save};
 use proptest::prelude::*;
 use serde_json::{Value, json};
 
@@ -295,6 +295,65 @@ fn migrated_linear_save(content: &LocalContent) -> String {
     .unwrap()
 }
 
+fn read_project_route(
+    pack: &Path,
+    content: &Path,
+    language: &str,
+    actions: &str,
+) -> (Vec<String>, String) {
+    let (program, names) = open_pack(pack).unwrap();
+    let content = load_content(&[content.display().to_string()]).unwrap();
+    let mut session = Session::new(program, EXECUTION.parse().unwrap()).unwrap();
+    let mut pages = String::new();
+    for step in actions.split(',') {
+        pages += &render(&session, names.as_ref(), &content, vec![language.into()]).unwrap();
+        act(&mut session, names.as_ref(), step).unwrap();
+    }
+    assert_eq!(
+        session.state().unwrap().finished.as_ref().unwrap().outcome,
+        "delivered"
+    );
+    let commits = session
+        .commits()
+        .unwrap()
+        .map(|(id, commit)| format!("{id} {}", commit.state))
+        .collect();
+    (commits, pages)
+}
+
+fn rewrite_text(pack: &mut ContentPack, prefix: &str) {
+    for entry in pack.entries.values_mut() {
+        match entry {
+            Entry::Text(entry) => entry.text = format!("{prefix}{}", entry.text),
+            Entry::Blocks(entry) => {
+                for block in &mut entry.blocks {
+                    if let Block::Text { text, .. } = block {
+                        *text = format!("{prefix}{text}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn rename_choice_aliases(package: &mut Value, suffix: &str) {
+    for graph in package["graphs"].as_object_mut().unwrap().values_mut() {
+        for node in graph["nodes"].as_object_mut().unwrap().values_mut() {
+            if let Some(points) = node["data"].get_mut("choice_points") {
+                for point in points.as_array_mut().unwrap() {
+                    if let Some(key) = point.get_mut("key") {
+                        *key = json!(format!("{}_{suffix}", key.as_str().unwrap()));
+                    }
+                    for option in point["options"].as_array_mut().unwrap() {
+                        let key = &mut option["key"];
+                        *key = json!(format!("{}_{suffix}", key.as_str().unwrap()));
+                    }
+                }
+            }
+        }
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(16))]
 
@@ -332,6 +391,86 @@ proptest! {
         prop_assert_eq!(commits, other_commits);
         prop_assert_ne!(pages, other_pages);
         prop_assert_eq!(migrated_linear_save(&only), migrated_linear_save(&both));
+    }
+
+    /// Recompose independently after each kind of presentation edit. The source lock
+    /// deliberately records aliases (ADR 0013 §8); content text/language never enter it.
+    #[test]
+    fn recomposition_preserves_runtime_ids_after_text_language_or_choice_alias_edits(
+        language in "(en|fr|de|ja)",
+        prefix in "[^{}\\p{C}]{1,12}",
+        suffix in "[a-z]{1,10}",
+    ) {
+        for change in ["text", "language", "aliases"] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = directory.path();
+            copy_demo(root);
+            let manifest = root.join("project.json");
+            let output = root.join("story.narpack");
+            let content = root.join("content/zh-Hans.json");
+            let before = compose_published(&manifest, &output, false, &[]).unwrap().compilation;
+            let lock_bytes = fs::read(root.join("project.lock.json")).unwrap();
+            let before_pack = Pack::decode(&before.pack).unwrap();
+            let (before_commits, before_pages) = read_project_route(&output, &content, "zh-Hans", LINEAR);
+            let mut actions = LINEAR.to_owned();
+            let mut selected_language = "zh-Hans";
+            match change {
+                "text" | "language" => {
+                    let mut pack = ContentPack::parse(&read_text(&content).unwrap()).unwrap();
+                    if change == "text" {
+                        rewrite_text(&mut pack, &prefix);
+                    } else {
+                        pack.language = language.clone();
+                        selected_language = &language;
+                    }
+                    write_text(&content, &serde_json::to_string_pretty(&pack).unwrap()).unwrap();
+                }
+                "aliases" => {
+                    for package in ["main", "road", "camp"] {
+                        let path = root.join(format!("packages/{package}.json"));
+                        let mut value: Value = serde_json::from_str(&read_text(&path).unwrap()).unwrap();
+                        rename_choice_aliases(&mut value, &suffix);
+                        write_text(&path, &serde_json::to_string_pretty(&value).unwrap()).unwrap();
+                    }
+                    actions = LINEAR.split(',').map(|key| format!("{key}_{suffix}")).collect::<Vec<_>>().join(",");
+                }
+                _ => unreachable!(),
+            }
+            let after = compose_published(&manifest, &output, false, &[]).unwrap().compilation;
+            let after_pack = Pack::decode(&after.pack).unwrap();
+            prop_assert_eq!(before.program.artifact_id(), after.program.artifact_id());
+            prop_assert_eq!(&before.program.manifest().chunks, &after.program.manifest().chunks);
+            prop_assert_eq!(before.program.manifest().tombstones, after.program.manifest().tombstones);
+            prop_assert_eq!(before_pack.manifest, after_pack.manifest);
+            prop_assert_eq!(before_pack.chunks, after_pack.chunks);
+            prop_assert_eq!(before_pack.tombstones, after_pack.tombstones);
+            prop_assert_eq!(&before.lock.node_types, &after.lock.node_types);
+            for (alias, old) in &before.lock.packages {
+                let new = &after.lock.packages[alias];
+                prop_assert_eq!(&old.id, &new.id);
+                prop_assert_eq!(&old.version, &new.version);
+                if change == "aliases" {
+                    prop_assert_ne!(&old.digest, &new.digest);
+                } else {
+                    prop_assert_eq!(&old.digest, &new.digest);
+                }
+            }
+            if change == "aliases" {
+                prop_assert_ne!(&before.lock, &after.lock);
+                prop_assert_ne!(before_pack.names, after_pack.names);
+            } else {
+                prop_assert_eq!(&before.lock, &after.lock);
+                prop_assert_eq!(lock_bytes, fs::read(root.join("project.lock.json")).unwrap());
+                prop_assert_eq!(before_pack.names, after_pack.names);
+            }
+            let (after_commits, after_pages) = read_project_route(&output, &content, selected_language, &actions);
+            // Every commit and State ID in one complete run, including the root and ending.
+            prop_assert_eq!(before_commits.len(), LINEAR.split(',').count() + 1);
+            prop_assert_eq!(before_commits, after_commits);
+            if change == "text" {
+                prop_assert_ne!(before_pages, after_pages);
+            }
+        }
     }
 }
 
