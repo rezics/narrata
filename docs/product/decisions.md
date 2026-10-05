@@ -24,8 +24,8 @@
 创作时文字与逻辑可以并置，编译时分离。会影响规则判断的内容（谜题答案、需要比对的名字）
 不是"内容"，属于程序本身。
 
-当前实现与此冲突：`ProgramArtifactId` 和 Snapshot 都包含文本，节点运行时硬编码了结局文字。
-迁移需要新的格式 ADR 与新冻结语料（见决定 14）。
+已实施（2026-10-05）：节点栈见 [ADR 0013](../adr/0013-r2-text-free-node-format.md)，旧 Stage 1–5 格式见
+[ADR 0018](../adr/0018-stage-6-text-free-flow-format.md)；R1 与 `stage5-v0` 经迁移读取。
 
 ## 3. 身份以 Narrata 为权威
 
