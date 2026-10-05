@@ -32,6 +32,42 @@ pub struct Compilation {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// The same checked compilation before optional single-file packing. Each envelope keeps
+/// its existing identity; the sum of these objects is not constrained by the pack budget.
+#[derive(Debug)]
+pub struct ObjectCompilation {
+    pub program: Program,
+    pub objects: Pack,
+    pub names: NameTable,
+    pub lock: CompositionLock,
+    pub analysis: Analysis,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl ObjectCompilation {
+    pub fn into_packed(self) -> Result<Compilation> {
+        let pack = self.objects.encode();
+        // Preserve the old single-file budget and checked pack behavior.
+        let (program, names) = Program::from_pack(&pack)?;
+        if names.as_ref() != Some(&self.names) {
+            return Err(Error::new(
+                "state",
+                "pack",
+                "name table differs after packing",
+            ));
+        }
+        program.verify_artifact()?;
+        Ok(Compilation {
+            program,
+            pack,
+            names: self.names,
+            lock: self.lock,
+            analysis: self.analysis,
+            diagnostics: self.diagnostics,
+        })
+    }
+}
+
 impl std::fmt::Debug for Compilation {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -111,6 +147,13 @@ struct Lowered {
 }
 
 pub fn compile(source: &ProjectSource, registry: &NodeRegistry) -> Result<Compilation> {
+    compile_objects(source, registry)?.into_packed()
+}
+
+pub fn compile_objects(
+    source: &ProjectSource,
+    registry: &NodeRegistry,
+) -> Result<ObjectCompilation> {
     let manifest_source = &source.manifest;
     check_source_header(source, &mut crate::check::Checks::first())?;
     let product_source = &manifest_source.product;
@@ -189,20 +232,31 @@ pub fn compile(source: &ProjectSource, registry: &NodeRegistry) -> Result<Compil
         artifact: artifact_id,
         ..provisional
     };
-    let pack = Pack {
+    let objects = Pack {
         manifest: manifest_envelope,
         chunks: chunk_envelopes,
         tombstones: tombstones_envelope,
         names: Some(wire::seal(wire::KIND_NAMES, &wire::encode_names(&names)).1),
+    };
+    let mut object_source = crate::MemorySource::default();
+    for object in objects
+        .chunks
+        .iter()
+        .chain(std::iter::once(&objects.tombstones))
+    {
+        object_source.insert(object.clone())?;
     }
-    .encode();
-    // Reopening the pack runs every checked decoder over what was just encoded.
-    let (program, reopened) = Program::from_pack(&pack)?;
+    let program = Program::from_manifest(&objects.manifest, Box::new(object_source))?;
+    let reopened = objects
+        .names
+        .as_deref()
+        .map(|bytes| program.decode_names(bytes))
+        .transpose()?;
     if reopened.as_ref() != Some(&names) || program.artifact_id() != artifact_id {
         return Err(Error::new(
             "state",
-            "pack",
-            "pack does not reopen to its sources",
+            "objects",
+            "objects do not reopen to their sources",
         ));
     }
     program.verify_artifact()?;
@@ -227,9 +281,9 @@ pub fn compile(source: &ProjectSource, registry: &NodeRegistry) -> Result<Compil
         node_types: lowered.node_types,
     };
     let diagnostics = analysis.diagnostics.clone();
-    Ok(Compilation {
+    Ok(ObjectCompilation {
         program,
-        pack,
+        objects,
         names,
         lock,
         analysis,

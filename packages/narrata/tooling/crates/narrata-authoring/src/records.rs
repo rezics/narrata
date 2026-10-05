@@ -1007,6 +1007,11 @@ pub(crate) fn locate_diagnostics(records: &[CheckedRecord], diagnostics: &mut [D
                     located.pointer.push_str("/data");
                 }
                 located.pointer.push_str(&pointer);
+                located.unit = diagnostic.location.unit.clone().or(located.unit);
+                located.anchor = diagnostic.location.anchor.clone().or(located.anchor);
+                located.node = diagnostic.location.node.or(located.node);
+                located.choice_point = diagnostic.location.choice_point.or(located.choice_point);
+                located.option = diagnostic.location.option.or(located.option);
                 diagnostic.location = located;
                 break;
             }

@@ -5,20 +5,46 @@
 #![forbid(unsafe_code)]
 
 pub mod compose;
+pub mod graph;
 pub mod ids;
+pub mod objects;
+pub mod publication;
 pub mod records;
+pub mod relations;
 pub mod validate;
 
 pub use compose::{ComposeMode, ComposedSource, compose_source};
 pub use ids::{MintedEdit, Minter, mint_ids};
+pub use publication::{
+    CheckedPublication, PublicationReport, PublicationStatus, PublishedRecords, publish_records,
+};
 pub use records::{
     CheckedRecord, CheckedRecords, DraftIndexes, DraftRecord, MAX_RECORD_BYTES, assemble_records,
     derive_draft_indexes, split_source,
 };
+pub use relations::{CheckedRelations, project_relations};
 pub use validate::{
     Diagnostic, Report, Severity, ValidationBudget, validate_project, validate_record,
 };
 
 pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {
-    vec![("draft-record.schema.json", records::schema())]
+    vec![
+        ("draft-record.schema.json", records::schema()),
+        (
+            "publication.schema.json",
+            schemars::schema_for!(publication::PublicationDescription),
+        ),
+        (
+            "publication-diagnostics.schema.json",
+            schemars::schema_for!(validate::DiagnosticReport<'static>),
+        ),
+        (
+            "relation-index.schema.json",
+            schemars::schema_for!(relations::RelationIndex),
+        ),
+        (
+            "relation-part.schema.json",
+            schemars::schema_for!(relations::RelationPart),
+        ),
+    ]
 }

@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PublicationDescription",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "evolution": {
+      "description": "ADR 0023's full MigrationId digest, addressed by the evolution role.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "format_version": {
+      "$ref": "#/$defs/Version1"
+    },
+    "graph": {
+      "$ref": "#/$defs/GraphFiles"
+    },
+    "names": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Digest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ObjectReference"
+      }
+    },
+    "relation_index": {
+      "$ref": "#/$defs/Digest"
+    },
+    "summary": {
+      "$ref": "#/$defs/Digest"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "artifact_id",
+    "graph",
+    "summary",
+    "relation_index",
+    "objects"
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ClusterId": {
+      "type": "string",
+      "pattern": "^cluster:[0-9a-f]{32}$"
+    },
+    "Digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Encoding": {
+      "type": "string",
+      "enum": [
+        "cbor",
+        "json"
+      ]
+    },
+    "GraphFiles": {
+      "description": "Bootstrap references for object-id-named files in the companion `.graph/` directory.",
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "format_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 1,
+          "minimum": 1
+        },
+        "index_object_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LabelObject"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "format_version",
+        "artifact_id",
+        "index_object_id",
+        "labels"
+      ]
+    },
+    "LabelObject": {
+      "type": "object",
+      "properties": {
+        "cluster": {
+          "$ref": "#/$defs/ClusterId"
+        },
+        "object_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cluster",
+        "object_id"
+      ]
+    },
+    "ObjectReference": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "encoding": {
+          "$ref": "#/$defs/Encoding"
+        },
+        "object_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "role": {
+          "$ref": "#/$defs/ObjectRole"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "object_id",
+        "bytes",
+        "encoding"
+      ]
+    },
+    "ObjectRole": {
+      "description": "Lexical role order is the descriptor order. Evolution is reserved for ADR 0023;\nthis publisher neither creates nor accepts unchecked evolution descriptors.",
+      "type": "string",
+      "enum": [
+        "chunk",
+        "evolution",
+        "graph_index",
+        "graph_tile",
+        "labels",
+        "manifest",
+        "names",
+        "relation_index",
+        "relation_part",
+        "summary",
+        "tombstones"
+      ]
+    },
+    "Version1": {
+      "type": "integer",
+      "const": 1
+    }
+  }
+}

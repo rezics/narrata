@@ -3,18 +3,23 @@
 
 use narrata_kernel::content::{AnchorId, ContentRef};
 use narrata_nodes::{ChoicePointId, Error, NodeId, NodeRegistry, OptionId, Result};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::records::{CheckedRecord, CheckedRecords, DraftRecord, MAX_RECORD_BYTES};
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     Error,
     Warning,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(
+    Clone, Debug, Default, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
+)]
 #[serde(deny_unknown_fields)]
 pub struct Location {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -34,7 +39,7 @@ pub struct Location {
     pub anchor: Option<AnchorId>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Diagnostic {
     pub severity: Severity,
@@ -52,7 +57,7 @@ pub struct Report<T> {
     pub value: Option<T>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, JsonSchema, Serialize)]
 pub struct DiagnosticReport<'a> {
     pub complete: bool,
     pub diagnostics: &'a [Diagnostic],
@@ -377,6 +382,47 @@ pub fn validate_project_with_budget(
     registry: &NodeRegistry,
     budget: ValidationBudget,
 ) -> Report<ValidatedProject> {
+    let report = validate_records_with_budget(records, registry, budget);
+    let mut out = Collector::new(budget.max_diagnostics);
+    out.complete = report.complete;
+    out.diagnostics = report.diagnostics;
+    if let Some(records) = report.value {
+        match narrata_nodes::compile(records.source(), registry) {
+            Ok(compilation) => {
+                for diagnostic in &compilation.diagnostics {
+                    out.push(warning(diagnostic));
+                }
+                crate::records::locate_diagnostics(records.records(), &mut out.diagnostics);
+                return out.finish(Some(ValidatedProject {
+                    records,
+                    compilation,
+                }));
+            }
+            Err(error) => out.error(error, None),
+        }
+    }
+    out.finish(None)
+}
+
+pub(crate) fn warning(diagnostic: &narrata_nodes::Diagnostic) -> Diagnostic {
+    Diagnostic {
+        severity: Severity::Warning,
+        code: diagnostic.code.clone(),
+        location: Location {
+            pointer: source_pointer(&diagnostic.path),
+            source_path: Some(diagnostic.path.clone()),
+            ..Location::default()
+        },
+        related: Vec::new(),
+        message: diagnostic.message.clone(),
+    }
+}
+
+pub(crate) fn validate_records_with_budget(
+    records: &[&[u8]],
+    registry: &NodeRegistry,
+    budget: ValidationBudget,
+) -> Report<CheckedRecords> {
     let mut out = Collector::new(budget.max_diagnostics);
     let mut checked = Vec::new();
     let mut bytes = 0_usize;
@@ -464,29 +510,7 @@ pub fn validate_project_with_budget(
                 .iter()
                 .any(|diagnostic| diagnostic.severity == Severity::Error)
         {
-            match narrata_nodes::compile(&source, registry) {
-                Ok(compilation) => {
-                    for diagnostic in &compilation.diagnostics {
-                        out.push(Diagnostic {
-                            severity: Severity::Warning,
-                            code: diagnostic.code.clone(),
-                            location: Location {
-                                pointer: source_pointer(&diagnostic.path),
-                                source_path: Some(diagnostic.path.clone()),
-                                ..Location::default()
-                            },
-                            related: Vec::new(),
-                            message: diagnostic.message.clone(),
-                        });
-                    }
-                    crate::records::locate_diagnostics(&checked, &mut out.diagnostics);
-                    return out.finish(Some(ValidatedProject {
-                        records: CheckedRecords::from_assembled(checked, source),
-                        compilation,
-                    }));
-                }
-                Err(error) => out.error(error, None),
-            }
+            return out.finish(Some(CheckedRecords::from_assembled(checked, source)));
         }
     }
     out.finish(None)

@@ -4,8 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use narrata_nodes::{
-    AuthoredId, Compilation, CompositionLock, Error, NodeRegistry, Owner, Program, ProjectSource,
-    Result, compile,
+    AuthoredId, Compilation, CompositionLock, Error, NodeRegistry, ObjectCompilation, Owner,
+    Program, ProjectSource, Result, compile_objects,
 };
 
 use crate::records::DraftRecord;
@@ -19,6 +19,14 @@ pub enum ComposeMode<'a> {
 #[derive(Debug)]
 pub struct ComposedSource {
     pub compilation: Compilation,
+    pub appended: Vec<(String, AuthoredId)>,
+    pub tombstones: Vec<DraftRecord>,
+    pub compared: bool,
+}
+
+#[derive(Debug)]
+pub struct ComposedObjects {
+    pub compilation: ObjectCompilation,
     pub appended: Vec<(String, AuthoredId)>,
     pub tombstones: Vec<DraftRecord>,
     pub compared: bool,
@@ -50,7 +58,22 @@ pub fn compose_with_registry(
     mode: ComposeMode<'_>,
     registry: &NodeRegistry,
 ) -> Result<ComposedSource> {
-    let mut compilation = compile(source, registry)?;
+    let composed = compose_objects_with_registry(source, previous, mode, registry)?;
+    Ok(ComposedSource {
+        compilation: composed.compilation.into_packed()?,
+        appended: composed.appended,
+        tombstones: composed.tombstones,
+        compared: composed.compared,
+    })
+}
+
+pub fn compose_objects_with_registry(
+    source: &ProjectSource,
+    previous: Option<&Program>,
+    mode: ComposeMode<'_>,
+    registry: &NodeRegistry,
+) -> Result<ComposedObjects> {
+    let mut compilation = compile_objects(source, registry)?;
     let mut appended = Vec::new();
     if let Some(old) = previous {
         old.verify_artifact()?;
@@ -100,7 +123,7 @@ pub fn compose_with_registry(
                 package.tombstones.push(*id);
             }
         }
-        compilation = compile(&updated, registry)?;
+        compilation = compile_objects(&updated, registry)?;
     }
     if let ComposeMode::Locked(expected) = mode
         && expected != &compilation.lock
@@ -119,7 +142,7 @@ pub fn compose_with_registry(
             payload: *payload,
         })
         .collect();
-    Ok(ComposedSource {
+    Ok(ComposedObjects {
         compilation,
         appended,
         tombstones,

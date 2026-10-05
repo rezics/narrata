@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiagnosticReport",
+  "type": "object",
+  "properties": {
+    "complete": {
+      "type": "boolean"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      }
+    }
+  },
+  "required": [
+    "complete",
+    "diagnostics"
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "Diagnostic": {
+      "type": "object",
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "choice_point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "node": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "option": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OptionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pointer": {
+          "type": "string"
+        },
+        "record": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Location"
+          }
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "source_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "severity",
+        "code",
+        "pointer",
+        "related",
+        "message"
+      ]
+    },
+    "Location": {
+      "type": "object",
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "choice_point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "node": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "option": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OptionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pointer": {
+          "type": "string"
+        },
+        "record": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pointer"
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "OptionId": {
+      "type": "string",
+      "pattern": "^option:[0-9a-f]{32}$"
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "error",
+        "warning"
+      ]
+    }
+  }
+}

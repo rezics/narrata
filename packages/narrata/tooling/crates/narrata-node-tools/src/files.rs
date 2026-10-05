@@ -18,7 +18,7 @@ pub(crate) fn io_error(path: &Path, error: std::io::Error) -> Error {
     Error::new("io", path.display().to_string(), error.to_string())
 }
 
-fn read_limited(path: &Path, limit: usize) -> Result<Vec<u8>> {
+pub(crate) fn read_limited(path: &Path, limit: usize) -> Result<Vec<u8>> {
     let mut value = Vec::new();
     File::open(path)
         .map_err(|e| io_error(path, e))?
@@ -98,6 +98,46 @@ pub fn write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
 
 pub fn write_text(path: &Path, text: &str) -> Result<()> {
     write_bytes(path, text.as_bytes())
+}
+
+/// Publish complete bytes without replacing an existing object, including when two CLI
+/// writers race. Linking a synced temporary file is atomic and fails if the name exists.
+pub(crate) fn write_immutable(path: &Path, bytes: &[u8], limit: usize) -> Result<()> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let temporary = parent.join(".temp");
+    fs::create_dir_all(&temporary).map_err(|e| io_error(&temporary, e))?;
+    let temp = temporary.join(format!(
+        "object.{}.{}.tmp",
+        std::process::id(),
+        TEMP_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)
+        .map_err(|e| io_error(&temp, e))?;
+    let result = (|| {
+        file.write_all(bytes).map_err(|e| io_error(&temp, e))?;
+        file.sync_all().map_err(|e| io_error(&temp, e))?;
+        drop(file);
+        match fs::hard_link(&temp, path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                if read_limited(path, limit)? == bytes {
+                    Ok(())
+                } else {
+                    Err(Error::new(
+                        "object_conflict",
+                        path.display().to_string(),
+                        "an immutable object already exists with different bytes",
+                    ))
+                }
+            }
+            Err(e) => Err(io_error(path, e)),
+        }
+    })();
+    let cleanup = fs::remove_file(&temp).map_err(|e| io_error(&temp, e));
+    result.and(cleanup)
 }
 
 /// Pretty JSON with a final newline, the form every generated JSON file uses.

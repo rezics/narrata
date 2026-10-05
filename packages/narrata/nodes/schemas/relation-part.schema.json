@@ -1,0 +1,445 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RelationPart",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "kind": {
+      "$ref": "#/$defs/RelationKind"
+    },
+    "projection_version": {
+      "$ref": "#/$defs/Version1"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RelationRow"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "artifact_id",
+    "projection_version",
+    "kind",
+    "rows"
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "ClusterId": {
+      "type": "string",
+      "pattern": "^cluster:[0-9a-f]{32}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "Digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "EndingClass": {
+      "type": "string",
+      "enum": [
+        "unspecified",
+        "success",
+        "failure",
+        "neutral"
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "OptionId": {
+      "type": "string",
+      "pattern": "^option:[0-9a-f]{32}$"
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "RelationKind": {
+      "type": "string",
+      "enum": [
+        "unit",
+        "node",
+        "edge",
+        "entry",
+        "ending",
+        "route",
+        "cluster",
+        "first"
+      ]
+    },
+    "RelationRow": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "content_key": {
+              "$ref": "#/$defs/ContentKey"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "provider": {
+              "$ref": "#/$defs/ProviderId"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "unit"
+            },
+            "unit_id": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "unit_id",
+            "provider",
+            "content_key"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "cluster_id": {
+              "$ref": "#/$defs/ClusterId"
+            },
+            "first_anchor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AnchorId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "graph": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            },
+            "last_anchor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AnchorId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "node_id": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "package": {
+              "type": "string"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "node"
+            },
+            "unit_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Digest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "node_id",
+            "package",
+            "graph",
+            "kind",
+            "cluster_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "choice_point": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ChoicePointId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edge_kind": {
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            },
+            "edge_no": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "option": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/OptionId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "edge"
+            },
+            "source_node": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "source_unit": {
+              "$ref": "#/$defs/Digest"
+            },
+            "target_node": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "target_unit": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "edge_no",
+            "source_unit",
+            "target_unit",
+            "source_node",
+            "target_node",
+            "edge_kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "node_id": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "entry"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "node_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "class": {
+              "$ref": "#/$defs/EndingClass"
+            },
+            "node_id": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "reachable": {
+              "type": "boolean"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "ending"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "node_id",
+            "class",
+            "reachable"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "cluster_id": {
+              "$ref": "#/$defs/ClusterId"
+            },
+            "ending_node": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "route"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "ending_node",
+            "cluster_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "cluster_id": {
+              "$ref": "#/$defs/ClusterId"
+            },
+            "graph": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "package": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "cluster"
+            },
+            "unit_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Digest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "cluster_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "distance": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "node_id": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "first"
+            },
+            "unit_id": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "unit_id",
+            "node_id",
+            "distance"
+          ]
+        }
+      ]
+    },
+    "Version1": {
+      "type": "integer",
+      "const": 1
+    }
+  }
+}

@@ -140,8 +140,13 @@ impl SemanticSummary {
     }
 }
 
-pub(crate) fn summarize(graph: &CheckedGraph, analysis: &Analysis) -> SemanticSummary {
+pub(crate) fn summarize(
+    graph: &CheckedGraph,
+    analysis: &Analysis,
+    route_limit: Option<usize>,
+) -> Result<SemanticSummary, crate::GraphError> {
     let mut endings = Vec::new();
+    let mut route_count = 0_usize;
     // Epoch marks reuse the traversal allocation across ending routes.
     let mut visited = vec![0_usize; graph.nodes.len()];
     for (ordinal, (&ending, &class)) in graph.endings.iter().enumerate() {
@@ -151,9 +156,13 @@ pub(crate) fn summarize(graph: &CheckedGraph, analysis: &Analysis) -> SemanticSu
             if visited[node] != ordinal + 1 && analysis.rows[node].reachable {
                 visited[node] = ordinal + 1;
                 clusters.insert(graph.nodes[node].cluster);
+                if route_limit.is_some_and(|limit| route_count + clusters.len() > limit) {
+                    return Err(crate::GraphError::Limit("ending cluster rows"));
+                }
                 pending.extend(&graph.predecessors[node]);
             }
         }
+        route_count += clusters.len();
         endings.push(EndingSummary {
             node: graph.nodes[ending].id,
             class,
@@ -178,7 +187,7 @@ pub(crate) fn summarize(graph: &CheckedGraph, analysis: &Analysis) -> SemanticSu
             });
         }
     }
-    SemanticSummary {
+    Ok(SemanticSummary {
         format_version: SUMMARY_VERSION,
         artifact_id: None,
         entries: graph
@@ -188,5 +197,5 @@ pub(crate) fn summarize(graph: &CheckedGraph, analysis: &Analysis) -> SemanticSu
             .collect(),
         endings,
         bottleneck_runs,
-    }
+    })
 }

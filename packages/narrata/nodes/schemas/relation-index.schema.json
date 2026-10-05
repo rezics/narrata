@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RelationIndex",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "cluster": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "edge": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "ending": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "entry": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "first": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "node": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "route": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "unit": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "parts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PartReference"
+      }
+    },
+    "projection_version": {
+      "$ref": "#/$defs/Version1"
+    },
+    "row_count": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "artifact_id",
+    "projection_version",
+    "parts",
+    "counts",
+    "row_count"
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "Digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "PartReference": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "object_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "ordinal": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "row_count": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ordinal",
+        "object_id",
+        "bytes",
+        "row_count"
+      ]
+    },
+    "RelationKind": {
+      "type": "string",
+      "enum": [
+        "unit",
+        "node",
+        "edge",
+        "entry",
+        "ending",
+        "route",
+        "cluster",
+        "first"
+      ]
+    },
+    "Version1": {
+      "type": "integer",
+      "const": 1
+    }
+  }
+}

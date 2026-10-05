@@ -43,11 +43,31 @@ pub struct Publication {
 }
 
 pub fn prepare(graph: Graph) -> Result<Publication, GraphError> {
+    prepare_inner(graph, None)
+}
+
+/// A collection publisher bounds route expansion before allocating layout or tile output.
+/// The existing graph-only publication retains its original budgets and bytes.
+pub fn prepare_with_route_limit(
+    graph: Graph,
+    route_limit: usize,
+) -> Result<Publication, GraphError> {
+    prepare_inner(graph, Some(route_limit))
+}
+
+/// Structural analysis and summary only; relation reconstruction does not need geometry.
+pub fn structural_summary(graph: Graph, route_limit: usize) -> Result<SemanticSummary, GraphError> {
     let graph = model::CheckedGraph::new(graph)?;
     let analysis = analysis::analyze(&graph);
+    summary::summarize(&graph, &analysis, Some(route_limit))
+}
+
+fn prepare_inner(graph: Graph, route_limit: Option<usize>) -> Result<Publication, GraphError> {
+    let graph = model::CheckedGraph::new(graph)?;
+    let analysis = analysis::analyze(&graph);
+    let summary = summary::summarize(&graph, &analysis, route_limit)?;
     let layout = layout::place(&graph, &analysis);
     let tiles = tiles::build(&graph, &analysis, &layout);
-    let summary = summary::summarize(&graph, &analysis);
     Ok(Publication {
         nodes: graph.nodes,
         edges: graph.edges,

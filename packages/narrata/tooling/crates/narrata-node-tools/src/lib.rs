@@ -125,6 +125,23 @@ mod native {
         let rest = &rest[1..];
         match command.as_str() {
             "compose" => compose_command(path, rest),
+            "publication" => {
+                let flags = options(rest, &["--out", "--objects"], &[])?;
+                let output = Path::new(
+                    one(&flags, "--out").ok_or("publication requires --out <publication.json>")?,
+                );
+                let objects = Path::new(
+                    one(&flags, "--objects").ok_or("publication requires --objects <directory>")?,
+                );
+                let publication = narrata_authoring::publication::publication_from_pack(
+                    &read_bytes(path).map_err(text)?,
+                )
+                .map_err(text)?;
+                super::publish::write_object_collection(output, objects, &publication)
+                    .map_err(text)?;
+                println!("{}", publication.publication_id());
+                Ok(())
+            }
             "ids" => {
                 options(rest, &[], &[])?;
                 let mut project = load_project(path).map_err(text)?;
@@ -373,6 +390,7 @@ mod native {
         "narrata-book compose <project.json> --out <story.narpack> [--locked] [--outline <outline.json>]...\n\
      narrata-book ids <project.json>\n\
      narrata-book inspect <story.narpack>\n\
+     narrata-book publication <story.narpack> --out <publication.json> --objects <directory>\n\
      narrata-book outline <content.json> [--out <outline.json>]\n\
      narrata-book run <story.narpack> [--content <pack.json>]... [--language <tag>] [--actions a,b+c,~]\n\
      \x20                [--load export.json] [--save export.json] [--checkout commit] [--execution id]\n\

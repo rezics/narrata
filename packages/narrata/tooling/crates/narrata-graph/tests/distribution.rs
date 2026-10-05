@@ -10,6 +10,33 @@ use serde::Deserialize;
 
 mod support;
 
+#[test]
+fn relation_summary_bounds_route_rows_before_geometry_and_preserves_existing_summary()
+-> Result<(), Box<dyn Error>> {
+    let graph = support::compatibility_graph();
+    let existing = prepare(graph.clone())?;
+    let count: usize = existing
+        .summary
+        .endings
+        .iter()
+        .map(|e| e.clusters.len())
+        .sum();
+    assert_eq!(
+        narrata_graph::structural_summary(graph.clone(), count)?,
+        existing.summary
+    );
+    assert_eq!(
+        narrata_graph::prepare_with_route_limit(graph.clone(), count)?,
+        existing
+    );
+    assert!(matches!(
+        narrata_graph::structural_summary(graph.clone(), count - 1),
+        Err(narrata_graph::GraphError::Limit("ending cluster rows"))
+    ));
+    assert!(narrata_graph::prepare_with_route_limit(graph, count - 1).is_err());
+    Ok(())
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
