@@ -129,3 +129,35 @@ test("calls serialize, close releases the handle and schema parsing rejects unpr
   await book.close(); await book.close();
   await expect(book.inspect()).rejects.toThrow("closed");
 });
+
+test("a lost save acknowledgement retries identical bytes and reloads the durable result after conflict", async () => {
+  const store = await IndexedDbStore.open(`unknown-${crypto.randomUUID()}`);
+  let loseReply = false;
+  const writes: Uint8Array[] = [];
+  const storage: CacheStore = {
+    load: request => store.load(request),
+    persist: async batch => {
+      writes.push(batch.slice());
+      const reply = await store.persist(batch);
+      if (loseReply) { loseReply = false; throw new Error("reply lost after commit"); }
+      return reply;
+    },
+  };
+  const book = await openBook({ pack: demoPack, execution, storage });
+  try {
+    const choice = firstChoice(await book.inspect());
+    loseReply = true;
+    await expect(book.choose(choice.cursor, choice.point, [choice.option])).rejects.toThrow("reply lost");
+    const failedWrite = writes.at(-1)?.slice();
+    const count = writes.length;
+    await expect(book.inspect()).rejects.toThrow("unknown outcome");
+    await expect(book.choose(choice.cursor, choice.point, [choice.option])).rejects.toThrow("unknown outcome");
+    expect(writes).toHaveLength(count);
+    await expect(book.retrySave()).rejects.toBeInstanceOf(StoreSuperseded);
+    expect(writes.at(-1)).toEqual(failedWrite);
+    await expect(book.inspect()).rejects.toBeInstanceOf(StoreSuperseded);
+    await book.reload();
+    expect((await book.inspect()).view.depth).toBe(1);
+    expect(await book.retrySave()).toBe(false);
+  } finally { await book.close(); store.close(); }
+});

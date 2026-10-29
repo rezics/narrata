@@ -35,6 +35,10 @@ export class StoreSuperseded extends Error {
 
 export class StorageHost {
   private queue: Promise<unknown> = Promise.resolve();
+  private persistence:
+    | { kind: "ready" }
+    | { kind: "pending"; flush: Uint8Array }
+    | { kind: "superseded" } = { kind: "ready" };
 
   constructor(
     private readonly store: CacheStore,
@@ -47,7 +51,40 @@ export class StorageHost {
    * its result. Operations run one at a time, so no load overlaps a flush.
    */
   run<T>(operation: () => T): Promise<T> {
-    const result = this.queue.then(() => this.drive(operation));
+    return this.enqueue(() => {
+      if (this.persistence.kind === "superseded") throw new StoreSuperseded();
+      if (this.persistence.kind === "pending") {
+        throw new Error("a write has an unknown outcome; retryPending or reload the cache before another operation");
+      }
+      return this.drive(operation);
+    });
+  }
+
+  /** Retries the original flush without rerunning its operation. A conflict requires reload and verification. */
+  retryPending(): Promise<boolean> {
+    return this.enqueue(async () => {
+      if (this.persistence.kind === "superseded") throw new StoreSuperseded();
+      if (this.persistence.kind === "ready") return false;
+      await this.persistPending(this.persistence.flush);
+      return true;
+    });
+  }
+
+  /**
+   * Deliberately abandons the old operation after the caller invalidates its session/cache.
+   * This does not establish whether its write committed; the caller must verify that separately.
+   */
+  discardPendingAfterReload(): Promise<void> {
+    return this.enqueue(() => {
+      if (this.cache.unconfirmed() !== undefined) {
+        throw new Error("invalidate the cache before discarding a pending write");
+      }
+      this.persistence = { kind: "ready" };
+    });
+  }
+
+  private enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
+    const result = this.queue.then(operation);
     this.queue = result.catch(() => undefined);
     return result;
   }
@@ -60,7 +97,10 @@ export class StorageHost {
       } catch (error) {
         const request = this.cache.takeRequest();
         if (request === undefined) throw error;
-        if (!this.cache.load(await this.store.load(request))) throw new StoreSuperseded();
+        if (!this.cache.load(await this.store.load(request))) {
+          this.persistence = { kind: "superseded" };
+          throw new StoreSuperseded();
+        }
         continue;
       }
       // A miss the operation recovered from needs no load.
@@ -74,6 +114,18 @@ export class StorageHost {
   private async flush(): Promise<void> {
     const batches = this.cache.unconfirmed();
     if (batches === undefined) return;
-    if (!this.cache.confirm(await this.store.persist(batches))) throw new StoreSuperseded();
+    // Neither the cache nor a transport retaining its argument may change retry bytes.
+    const flush = Uint8Array.from(batches);
+    this.persistence = { kind: "pending", flush };
+    await this.persistPending(flush);
+  }
+
+  private async persistPending(flush: Uint8Array): Promise<void> {
+    const reply = await this.store.persist(Uint8Array.from(flush));
+    if (!this.cache.confirm(reply)) {
+      this.persistence = { kind: "superseded" };
+      throw new StoreSuperseded();
+    }
+    this.persistence = { kind: "ready" };
   }
 }

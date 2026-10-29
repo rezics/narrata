@@ -74,6 +74,8 @@ export interface Book {
   pack(): Uint8Array;
   /** Discards unconfirmed changes and reopens the durable session after a failed write. */
   reload(): Promise<void>;
+  /** Retry save bytes without applying the choice again. On conflict, reload and inspect durable progress. */
+  retrySave(): Promise<boolean>;
   /** Closes after queued operations settle. The caller owns and closes the storage connection. */
   close(): Promise<void>;
 }
@@ -111,7 +113,18 @@ class RuntimeBook implements Book {
   /** Full-pack imports can be exported again; manifest hosts retain their own artifact bytes. */
   pack(): Uint8Array { this.assertOpen(); return this.raw.pack(); }
   reload(): Promise<void> {
-    return this.run(() => this.host ? this.raw.open() : this.raw.memory(), () => this.raw.reload());
+    return this.run(() => this.host ? this.raw.open() : this.raw.memory(), async () => {
+      this.raw.reload();
+      await this.host?.discardPendingAfterReload();
+    });
+  }
+  retrySave(): Promise<boolean> {
+    const result = this.queue.then(async () => {
+      this.assertOpen();
+      return this.host ? this.host.retryPending() : false;
+    });
+    this.queue = result.catch(() => undefined);
+    return result;
   }
   /** Closes after queued operations settle. The caller owns and closes the storage connection. */
   close(): Promise<void> {
@@ -120,10 +133,10 @@ class RuntimeBook implements Book {
     return result;
   }
   private assertOpen(): void { if (this.closed) throw new Error("The book is closed."); }
-  private run<T>(operation: () => T, prepare?: () => void): Promise<T> {
+  private run<T>(operation: () => T, prepare?: () => void | Promise<void>): Promise<T> {
     const result = this.queue.then(async () => {
       this.assertOpen();
-      prepare?.();
+      await prepare?.();
       // The storage host executes synchronous Wasm calls. A program miss escapes it without
       // confirming anything; supplying that checked chunk retries the same serialized call.
       for (let attempt = 0; attempt < 100_000; attempt++) {

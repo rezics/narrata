@@ -127,4 +127,137 @@ describe("StorageHost", () => {
       }),
     ).rejects.toThrow("after 3 loads");
   });
+
+  it("retries owned original bytes without rerunning the operation", async () => {
+    const cache = new ScriptedCache();
+    cache.loaded.add(3);
+    const attempts: Uint8Array[] = [];
+    const failure = new Error("the reply was lost");
+    const store = new RecordingStore(cache.events);
+    store.persist = async (flush) => {
+      attempts.push(Uint8Array.from(flush));
+      if (attempts.length === 1) {
+        flush.fill(90);
+        throw failure;
+      }
+      return flush;
+    };
+    const host = new StorageHost(store, cache);
+    await expect(host.run(cache.operation(3))).rejects.toBe(failure);
+    // A cache/transport retaining mutable buffers cannot alter the original retry.
+    cache.pending!.fill(99);
+    expect(await host.retryPending()).toBe(true);
+    expect(attempts).toEqual([bytes(3), bytes(3)]);
+    expect(cache.events).toEqual(["run 3", "confirm 3"]);
+    expect(await host.retryPending()).toBe(false);
+    expect(await host.run(() => 11)).toBe(11);
+  });
+
+  it("blocks queued operations and cache loads after persistence becomes unknown", async () => {
+    const cache = new ScriptedCache();
+    cache.loaded.add(3);
+    const store = new RecordingStore(cache.events);
+    store.persist = async () => { throw new Error("connection lost"); };
+    const host = new StorageHost(store, cache);
+    const first = expect(host.run(cache.operation(3))).rejects.toThrow("connection lost");
+    const second = expect(host.run(cache.operation(4))).rejects.toThrow("unknown outcome");
+    await Promise.all([first, second]);
+    expect(cache.events).toEqual(["run 3"]);
+    expect(cache.pending).toEqual(bytes(3));
+  });
+
+  it("keeps a failed retry pending until an explicit retry succeeds", async () => {
+    const cache = new ScriptedCache();
+    cache.loaded.add(3);
+    const attempts: Uint8Array[] = [];
+    const store = new RecordingStore(cache.events);
+    store.persist = async (flush) => {
+      attempts.push(Uint8Array.from(flush));
+      if (attempts.length < 3) throw new Error("still unavailable");
+      return flush;
+    };
+    const host = new StorageHost(store, cache);
+    await expect(host.run(cache.operation(3))).rejects.toThrow("still unavailable");
+    await expect(host.retryPending()).rejects.toThrow("still unavailable");
+    await expect(host.run(cache.operation(4))).rejects.toThrow("unknown outcome");
+    expect(await host.retryPending()).toBe(true);
+    expect(attempts).toEqual([bytes(3), bytes(3), bytes(3)]);
+    expect(cache.events).toEqual(["run 3", "confirm 3"]);
+  });
+
+  it("reports a retry conflict after a lost committed reply without applying the operation twice", async () => {
+    const cache = new ScriptedCache();
+    cache.loaded.add(3);
+    const attempts: Uint8Array[] = [];
+    let commits = 0;
+    const store = new RecordingStore(cache.events);
+    store.persist = async (flush) => {
+      attempts.push(Uint8Array.from(flush));
+      if (commits === 0) {
+        commits++;
+        throw new Error("committed, but reply lost");
+      }
+      // The repeated original CAS sees the revision advanced by the first request.
+      cache.superseded = true;
+      return flush;
+    };
+    const host = new StorageHost(store, cache);
+    await expect(host.run(cache.operation(3))).rejects.toThrow("reply lost");
+    await expect(host.retryPending()).rejects.toBeInstanceOf(StoreSuperseded);
+    await expect(host.run(cache.operation(4))).rejects.toBeInstanceOf(StoreSuperseded);
+    await expect(host.retryPending()).rejects.toBeInstanceOf(StoreSuperseded);
+    expect(attempts).toEqual([bytes(3), bytes(3)]);
+    expect(commits).toBe(1);
+    expect(cache.events).toEqual(["run 3", "confirm 3"]);
+  });
+
+  it("keeps an unverified acknowledgement pending", async () => {
+    const cache = new ScriptedCache();
+    cache.loaded.add(3);
+    const failure = new Error("invalid acknowledgement");
+    const confirm = cache.confirm.bind(cache);
+    cache.confirm = () => { throw failure; };
+    const host = new StorageHost(new RecordingStore(cache.events), cache);
+    await expect(host.run(cache.operation(3))).rejects.toBe(failure);
+    await expect(host.retryPending()).rejects.toBe(failure);
+    await expect(host.run(cache.operation(4))).rejects.toThrow("unknown outcome");
+    cache.confirm = confirm;
+    expect(await host.retryPending()).toBe(true);
+    expect(cache.events).toEqual(["run 3", "persist 3", "persist 3", "persist 3", "confirm 3"]);
+  });
+
+  it("requires cache invalidation before deliberately discarding an unknown write", async () => {
+    const cache = new ScriptedCache();
+    cache.loaded.add(3);
+    const attempts: Uint8Array[] = [];
+    const store = new RecordingStore(cache.events);
+    store.persist = async (flush) => {
+      attempts.push(Uint8Array.from(flush));
+      if (attempts.length === 1) throw new Error("outcome unknown");
+      return flush;
+    };
+    const host = new StorageHost(store, cache);
+    await expect(host.run(cache.operation(3))).rejects.toThrow("outcome unknown");
+    await expect(host.discardPendingAfterReload()).rejects.toThrow("invalidate the cache");
+    await expect(host.run(cache.operation(4))).rejects.toThrow("unknown outcome");
+    // The owner invalidates the runtime/session together with this cache.
+    cache.pending = undefined;
+    cache.loaded.clear();
+    await host.discardPendingAfterReload();
+    expect(await host.retryPending()).toBe(false);
+    expect(await host.run(cache.operation(4))).toBe(4);
+    expect(attempts).toEqual([bytes(3), bytes(4)]);
+    expect(cache.events).toEqual(["run 3", "run 4", "fetch 4", "load 4", "run 4", "confirm 4"]);
+  });
+
+  it("resumes only after the owner reloads a superseded cache", async () => {
+    const cache = new ScriptedCache();
+    cache.loaded.add(3);
+    cache.superseded = true;
+    const host = new StorageHost(new RecordingStore(cache.events), cache);
+    await expect(host.run(cache.operation(3))).rejects.toBeInstanceOf(StoreSuperseded);
+    cache.superseded = false;
+    await host.discardPendingAfterReload();
+    expect(await host.run(cache.operation(4))).toBe(4);
+  });
 });
