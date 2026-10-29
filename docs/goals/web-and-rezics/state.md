@@ -17,11 +17,11 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 ## 当前与下一步
 
 1. [公共创作与精简 reader](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-034.md)已合入至 04aca6a 并 verified 关闭，分支保留。五项独立评审缺陷均修复并复核；合并后 check:r1（23 浏览器）、check:web（56 单测及 tarball）、test:scripts（53）与 docs:check 通过。忽略的重型绑定测试已另行执行并通过：88 对象、68,985,624 字节，旧 pack 上限仍被拒绝。
-   reader Wasm 为 1,677,387 / 431,589 字节 raw/gzip，authoring 独立加载，旧 raw 模块兼容。候选包 SHA-256 为 7327e2e659a68667607b6a878e23aeace46d7a3def6b466b43acc052207bf320，固定副本与元数据在 .temp/delivery/authoring-candidate.json；这还不是完整 M1 交付。合并后的日志在 .temp/manager-sdk-*.log；宿主说明已更新，当前提交的 GitHub CI 待推送核实。
-2. 下一步派发[在线会话与精确构件恢复](tasks/G-035.md)，公共绑定依赖已解除；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
+   reader Wasm 为 1,677,387 / 431,589 字节 raw/gzip，authoring 独立加载，旧 raw 模块兼容。候选包 SHA-256 为 7327e2e659a68667607b6a878e23aeace46d7a3def6b466b43acc052207bf320，固定副本与元数据在 .temp/delivery/authoring-candidate.json；这还不是完整 M1 交付。合并后的日志在 .temp/manager-sdk-*.log；宿主说明已更新。已推送 2d45844，[新 CI](https://github.com/rezics/narrata/actions/runs/40895469616)正在验证含 check:web 的完整流程。
+2. [在线会话与精确构件恢复](tasks/G-035.md)已启动 Codex/high worker；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
    已查看公共包桌面/移动端插槽截图，其 HOST CONTENT 内容只证明渲染接线。M1 最终模拟旅程须接公共创作输出、宿主真实正文/标签与在线保存恢复，已加入在线任务；不以占位截图代替完整旅程。
 3. M1 完成后交付固定 tarball 与模拟宿主旅程。M2 仍需 visits/读者地图、真实 PostgreSQL 关系装载、planEvolution/发布挂接/影响评估/Wasm 与阅读器确认，以及导入导出/浅历史/GC/配额维护公共接口。
-   [公共演化链路](tasks/G-036.md)的前置已关闭，将与在线会话按互斥路径推进；已用 goalctl 的 pathsOverlap 验证两份简报没有重叠认领。
+   [公共演化链路](tasks/G-036.md)也已启动 Codex/high worker，与在线会话按互斥路径推进；已用 goalctl 的 pathsOverlap 验证两份简报没有重叠认领。wait 均已挂起，实际存活/结果以账本和进程为准。
    [visits/地图/关系宿主](tasks/G-037.md)与[维护/浅恢复](tasks/G-038.md)简报也已准备，按依赖顺序推进；不为准备简报提前认领实现路径。
 4. 三类结果分别记录：包可交付、完整 Goal 关闭、REZICS 实际产品可用。未完成 M2/M3 不关闭 Goal，也不启动重叠的 Web VN 实施。
 
