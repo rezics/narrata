@@ -17,7 +17,7 @@ try {
     npm ci
     npm audit --audit-level=high
     npm run build
-    npx playwright install chromium
+    npx playwright install --with-deps chromium
     npm run test:e2e
 } finally {
     Pop-Location
