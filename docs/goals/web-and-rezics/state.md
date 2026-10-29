@@ -1,6 +1,6 @@
 # State
 
-2026-10-29，M0 完成。manager 会话为 codex-01a187ba-9af7-71c1-b110-0ee55db54795；[Goal](GOAL.md)的 M1/M2/M3 边界保持不变。运行时事实以 task goal -- status 为准。
+2026-10-30 接续检查点；M0 完成。manager 会话为 codex-01a187ba-9af7-71c1-b110-0ee55db54795；[Goal](GOAL.md)的 M1/M2/M3 边界保持不变。运行时事实以 task goal -- status 为准。
 
 ## 当前事实
 
@@ -19,11 +19,13 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 1. [公共创作与精简 reader](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-034.md)已合入至 04aca6a 并 verified 关闭，分支保留。五项独立评审缺陷均修复并复核；合并后 check:r1（23 浏览器）、check:web（56 单测及 tarball）、test:scripts（53）与 docs:check 通过。忽略的重型绑定测试已另行执行并通过：88 对象、68,985,624 字节，旧 pack 上限仍被拒绝。
    reader Wasm 为 1,677,387 / 431,589 字节 raw/gzip，authoring 独立加载，旧 raw 模块兼容。候选包 SHA-256 为 7327e2e659a68667607b6a878e23aeace46d7a3def6b466b43acc052207bf320，固定副本与元数据在 .temp/delivery/authoring-candidate.json；这还不是完整 M1 交付。合并后的日志在 .temp/manager-sdk-*.log；宿主说明已更新。已推送 2d45844 的[新 CI](https://github.com/rezics/narrata/actions/runs/40895469616)全部通过，含 Windows/Linux check:web、Gamebook、三平台 kernel 与服务器存档；后续在线/演化代码仍需自己的检查。
 2. [在线会话与精确构件恢复](tasks/G-035.md)已启动 Codex/high worker；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
+   attempt 1 的客户端/真实正文/A-B 故障旅程已通过，Web 评审接受。Rust 评审要求把保留证明从重试间二次工作改为有界进度，并修复 native reopen 删除竞争；M1 冷读取和同篇复合叙事也仍需验收。已用 .temp/review-g035-repair.md 在原任务 attempt 2 / high 接续；当前还需看正式交接，不能提前合入。
    已查看公共包桌面/移动端插槽截图，其 HOST CONTENT 内容只证明渲染接线。M1 最终模拟旅程须接公共创作输出、宿主真实正文/标签与在线保存恢复，已加入在线任务；不以占位截图代替完整旅程。
    Sol/medium 对接续前基线另确认参考 App 默认 full pack，以及最小 shortStorySource 缺复合叙事机制。最终交接后按 .temp/m1-reference-acceptance-review.md 核对同一公共创作作品的局部汇合/延迟后果/参数化调用/结局、真实页面和冷首屏；先看新分支是否已解决，不重复派发或误报仍在编写的代码。
-3. M1 完成后交付固定 tarball 与模拟宿主旅程。M2 仍需 visits/读者地图、真实 PostgreSQL 关系装载、planEvolution/发布挂接/影响评估/Wasm 与阅读器确认，以及导入导出/浅历史/GC/配额维护公共接口。
-   [公共演化链路](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-036.md)也已启动 Codex/high worker，与在线会话按互斥路径推进；已用 goalctl 的 pathsOverlap 验证两份简报没有重叠认领。wait 均已挂起，实际存活/结果以账本和进程为准。
+3. M1 完成后交付固定 tarball 与模拟宿主旅程。M2 仍需 visits/读者地图、真实 PostgreSQL 关系装载、阅读器跨构件与演化确认接线，以及导入导出/浅历史/GC/配额维护公共接口。
+   [公共演化后端](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-036.md)已合入至 938d1d9 并 verified 关闭，分支保留。规划/发布挂接/Wasm/控制器/只读影响评估与浅导出已交付；未知写入再评估状态和读取预算两项评审缺陷已修复复核。主线 check:r1、check:web（88 单测、独立 Node/Bun/Chromium）及预算通过；默认 nodes 测试已隔离 Cargo feature 合并，脚本 53 测试通过。reader 读数/上限未改；仅为按需作者能力登记实际体积及有限余量，待与在线分支合并时再核对。候选包与源码/校验和在 .temp/delivery/evolution-candidate.json，仍非完整 M1/M2 交付。
    [visits/地图/关系宿主](tasks/G-037.md)与[维护/浅恢复](tasks/G-038.md)简报也已准备，按依赖顺序推进；不为准备简报提前认领实现路径。
+   演化 worker 明确交接的历史程序加载、跨版本 checkout 和真实确认 UI 已登记为[阅读器组合任务](tasks/G-039.md)，在前述接口收敛后执行；不以脱离产品的控制器测试替代该结果。
 4. 三类结果分别记录：包可交付、完整 Goal 关闭、REZICS 实际产品可用。未完成 M2/M3 不关闭 Goal，也不启动重叠的 Web VN 实施。
 
 ## 主机与外部边界
