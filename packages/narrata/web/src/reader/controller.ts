@@ -3,6 +3,7 @@ import type { ContentResolver, ResolveContext, ResolveItem, Resolution } from ".
 import type { BookView, CommitId, OptionId } from "../generated/book-view.js";
 import type { Book } from "../runtime.js";
 import { StoreSuperseded } from "../storage.js";
+import type { OnlineSession, OnlineStatus } from "../online/index.js";
 
 /** Also permits a host's worker proxy. The host retains ownership of the book and storage. */
 export type ReaderBook = Pick<Book, "inspect" | "choose" | "checkout" | "reload" | "nextContentUnits">;
@@ -20,7 +21,7 @@ export interface ReaderScreen {
 export type ReaderSave =
   | { readonly status: "memory" }
   | { readonly status: "saved"; readonly at: string | null }
-  | { readonly status: "saving" | "failed" | "superseded" | "reloading" };
+  | { readonly status: Exclude<OnlineStatus, "saved"> | "failed" | "superseded" | "reloading" };
 export type SelectionIssue = "count" | "disabled" | "unknown" | "duplicate";
 export type ReaderError =
   | { readonly kind: "content" | "runtime" | "reload" }
@@ -33,6 +34,8 @@ export interface ReaderSnapshot {
   readonly error: ReaderError | null;
 }
 export interface ReaderOptions {
+  /** Match recovery controls to an online session's checked persistence outcome. */
+  readonly online?: OnlineSession;
   readonly context?: ResolveContext;
   readonly maxItems?: number;
   /** Book does not expose its storage connection; the host declares whether writes are durable. */
@@ -65,14 +68,28 @@ export class ReaderController {
   private disposed = false;
   private prefetchTimer: ReturnType<typeof setTimeout> | undefined;
   private generation = 0;
+  private readonly online: OnlineSession | undefined;
+  private readonly unsubscribeOnline: (() => void) | undefined;
 
   constructor(private readonly book: ReaderBook, private readonly resolver: ContentResolver, options: ReaderOptions = {}) {
+    if (options.online && book !== options.online) throw new TypeError("The reader's online lifecycle must belong to its book.");
     this.maxItems = options.maxItems ?? 4096;
     if (!Number.isSafeInteger(this.maxItems) || this.maxItems < 1) throw new RangeError("maxItems must be a positive safe integer");
     this.context = structuredClone(options.context ?? {});
-    this.durable = options.persistence === "durable";
+    this.durable = options.persistence === "durable" || options.online !== undefined;
+    this.online = options.online;
     this.snapshot = freeze({ phase: "idle", screen: null, selected: [], error: null,
       save: this.durable ? { status: "saved", at: options.savedAt ?? null } : { status: "memory" } });
+    const initial = this.online?.getSnapshot();
+    if (initial) this.snapshot = freeze({ ...this.snapshot, save: initial.status === "saved" ? { status: "saved", at: null } : { status: initial.status } });
+    this.unsubscribeOnline = this.online?.subscribe(() => {
+      const online = this.online?.getSnapshot();
+      if (!online) return;
+      if (online.status === "closed") {
+        this.generation++;
+        this.publish({ phase: "error", screen: null, selected: [], save: { status: "closed" }, error: null });
+      } else this.publish({ save: online.status === "saved" ? { status: "saved", at: null } : { status: online.status } });
+    });
   }
 
   readonly getSnapshot = (): ReaderSnapshot => this.snapshot;
@@ -155,18 +172,23 @@ export class ReaderController {
     return this.run(false, () => this.book.reload(), true);
   }
 
-  retry(): Promise<boolean> { return this.needsReload() ? this.reload() : this.refresh(); }
+  retry(): Promise<boolean> {
+    const online = this.online;
+    if (online?.getSnapshot().status === "unknown") return this.available() ? this.run(false, () => online.retrySave()) : Promise.resolve(false);
+    return this.needsReload() ? this.reload() : this.refresh();
+  }
 
   /** Unsubscribe and cancel speculative work. This does not close a host-owned book. */
   dispose(): void {
     this.disposed = true;
+    this.unsubscribeOnline?.();
     this.generation++;
     clearTimeout(this.prefetchTimer);
     this.listeners.clear();
   }
 
   private available(): boolean { return !this.disposed && !this.pending; }
-  private needsReload(): boolean { return ["failed", "superseded", "reloading"].includes(this.snapshot.save.status); }
+  private needsReload(): boolean { return ["failed", "superseded", "reloading", "unknown", "conflict", "quota", "unavailable", "closed"].includes(this.snapshot.save.status); }
   private publish(update: Partial<ReaderSnapshot>): void {
     if (this.disposed) return;
     this.snapshot = freeze({ ...this.snapshot, ...update });
@@ -184,9 +206,11 @@ export class ReaderController {
       let confirmed = false;
       try {
         await action?.();
+        if (this.disposed || generation !== this.generation) return false;
         confirmed = true;
         if (mutation || reload) this.publish({ save: this.durable ? { status: "saved", at: new Date().toISOString() } : { status: "memory" } });
         const book = structuredClone(await this.book.inspect());
+        if (this.disposed || generation !== this.generation) return false;
         stage = "content";
         const context = structuredClone(this.context);
         const items = collectScreenContent(book);
@@ -196,16 +220,17 @@ export class ReaderController {
           if (!result) throw new Error("Content resolver omitted a result");
           return { item, resolution: result.status === "incompatible" ? { status: "incompatible" } : structuredClone(result) };
         });
-        if (this.disposed) return false;
+        if (this.disposed || generation !== this.generation) return false;
         if (this.pending === pending) this.pending = undefined;
         this.publish({ phase: "ready", screen: { book, context, content }, selected: [], error: null });
         // Speculation starts after publishing the first screen; it is never on its critical path.
         this.prefetchTimer = setTimeout(() => { void this.prefetch(generation, context); }, 0);
         return true;
       } catch (error) {
+        if (this.disposed || generation !== this.generation) return false;
         if (this.pending === pending) this.pending = undefined;
         this.publish({ phase: "error", error: { kind: stage },
-          ...(!confirmed && mutation ? { save: { status: superseded(error) ? "superseded" : "failed" } } : {}) });
+          ...(!confirmed && mutation && !this.online ? { save: { status: superseded(error) ? "superseded" : "failed" } } : {}) });
         return false;
       }
     }).finally(() => { if (this.pending === pending) this.pending = undefined; });

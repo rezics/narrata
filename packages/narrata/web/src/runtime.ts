@@ -1,4 +1,4 @@
-import init, { NodeBook, LocalContent } from "./reader-wasm/narrata_nodes_wasm.js";
+import init, { NodeBook, LocalContent, SaveLocator } from "./reader-wasm/narrata_nodes_wasm.js";
 import { StorageHost, type CacheStore } from "./storage.js";
 import validate from "./generated/validate-book.js";
 import type { BookView, ChoicePointId, CommitId, ExecutionId, OptionId } from "./generated/book-view.js";
@@ -47,6 +47,13 @@ export type OpenBookOptions = SessionOptions & (
 
 /** Open a checked program and restore/create its session before resolving. Storage stays host-owned. */
 export async function openBook(options: OpenBookOptions): Promise<Book> {
+  const book = await prepareBook(options);
+  try { await book.start(); return book; }
+  catch (error) { await book.close(); throw error; }
+}
+
+/** Internal two-phase opening lets online hosts retain an unacknowledged initial root. */
+export async function prepareBook(options: OpenBookOptions): Promise<RuntimeBook> {
   await initialize(options.wasm);
   const raw = options.pack !== undefined
     ? new NodeBook(options.pack, options.execution)
@@ -54,7 +61,6 @@ export async function openBook(options: OpenBookOptions): Promise<Book> {
   try {
     if (options.names) raw.loadNames(options.names);
     const book = new RuntimeBook(raw, options.storage, options.fetchChunk);
-    await book.start();
     return book;
   } catch (error) { raw.free(); throw error; }
 }
@@ -76,14 +82,17 @@ export interface Book {
   reload(): Promise<void>;
   /** Retry save bytes without applying the choice again. On conflict, reload and inspect durable progress. */
   retrySave(): Promise<boolean>;
-  /** Closes after queued operations settle. The caller owns and closes the storage connection. */
+  /** Rejects new calls immediately and frees Wasm after queued operations settle. */
   close(): Promise<void>;
 }
 
-class RuntimeBook implements Book {
+export class RuntimeBook implements Book {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly host: StorageHost | undefined;
   private closed = false;
+  private closing: Promise<void> | undefined;
+  private candidate: CommitId | undefined;
+  get pendingCommit(): CommitId | undefined { return this.candidate; }
 
   constructor(
     private readonly raw: NodeBook,
@@ -92,7 +101,10 @@ class RuntimeBook implements Book {
   ) { this.host = storage ? new StorageHost(storage, raw, 100_000) : undefined; }
 
   get artifactId(): string { this.assertOpen(); return this.raw.artifact_id; }
-  start(): Promise<void> { return this.run(() => this.host ? this.raw.open() : this.raw.memory()); }
+  start(existingOnly = false): Promise<void> { return this.run(() => {
+    if (this.host) { if (existingOnly) this.raw.resume(); else this.raw.open(); } else this.raw.memory();
+    this.candidate = this.raw.cursor();
+  }); }
   inspect(): Promise<BookView> { return this.run(() => decodeBook(this.raw.inspect())); }
   nextContentUnits(): Promise<ContentRef[]> {
     return this.run(() => {
@@ -102,9 +114,9 @@ class RuntimeBook implements Book {
     });
   }
   choose(expected: CommitId, choicePoint: ChoicePointId, options: readonly OptionId[]): Promise<CommitId> {
-    return this.run(() => this.raw.choose(expected, choicePoint, [...options]));
+    return this.run(() => { const commit = this.raw.choose(expected, choicePoint, [...options]); this.candidate = commit; return commit; });
   }
-  checkout(commit: CommitId): Promise<void> { return this.run(() => this.raw.checkout(commit)); }
+  checkout(commit: CommitId): Promise<void> { return this.run(() => { this.raw.checkout(commit); this.candidate = this.raw.cursor(); }); }
   exportSave(): Promise<string> { return this.run(() => this.raw.export()); }
   restore(save: string): Promise<void> { return this.run(() => this.raw.restore(save)); }
   migrateR1(save: string, content: LocalContent, execution: ExecutionId): Promise<void> {
@@ -119,34 +131,45 @@ class RuntimeBook implements Book {
     });
   }
   retrySave(): Promise<boolean> {
+    if (this.closed) return Promise.reject(new Error("The book is closed."));
     const result = this.queue.then(async () => {
       this.assertOpen();
-      return this.host ? this.host.retryPending() : false;
+      const retried = this.host ? await this.host.retryPending() : false;
+      this.assertOpen(); this.candidate = undefined;
+      return retried;
     });
     this.queue = result.catch(() => undefined);
     return result;
   }
-  /** Closes after queued operations settle. The caller owns and closes the storage connection. */
+  /** Reject new calls immediately, then free Wasm after queued operations settle. */
   close(): Promise<void> {
-    const result = this.queue.then(() => { if (!this.closed) { this.closed = true; this.raw.free(); } });
+    if (this.closing) return this.closing;
+    this.closed = true;
+    const result = this.queue.then(() => { this.raw.free(); });
     this.queue = result.catch(() => undefined);
+    this.closing = result;
     return result;
   }
   private assertOpen(): void { if (this.closed) throw new Error("The book is closed."); }
   private run<T>(operation: () => T, prepare?: () => void | Promise<void>): Promise<T> {
+    if (this.closed) return Promise.reject(new Error("The book is closed."));
     const result = this.queue.then(async () => {
       this.assertOpen();
       await prepare?.();
+      this.assertOpen();
       // The storage host executes synchronous Wasm calls. A program miss escapes it without
       // confirming anything; supplying that checked chunk retries the same serialized call.
       for (let attempt = 0; attempt < 100_000; attempt++) {
         try {
-          if (this.host) return await this.host.run(operation);
+          if (this.host) { const value = await this.host.run(operation); this.assertOpen(); this.candidate = undefined; return value; }
           const value = operation(); this.raw.confirm_memory(); return value;
         } catch (error) {
+          this.assertOpen();
           const id = this.raw.takeChunkRequest();
           if (id === undefined || !this.fetchChunk) throw error;
-          this.raw.loadChunk(id, await this.fetchChunk(id));
+          const bytes = await this.fetchChunk(id);
+          this.assertOpen();
+          this.raw.loadChunk(id, bytes);
         }
       }
       throw new Error("The operation did not settle after 100000 program loads.");
@@ -154,4 +177,26 @@ class RuntimeBook implements Book {
     this.queue = result.catch(() => undefined);
     return result;
   }
+}
+
+/** Read-only checked discovery: it cannot initialize a library or flush a write. */
+export async function locateSave(storage: CacheStore, execution: ExecutionId, wasm?: WasmSource): Promise<{ cursor: CommitId; artifact: string } | null> {
+  await initialize(wasm);
+  const locator = new SaveLocator(execution);
+  try {
+    const text = await new StorageHost(storage, locator, 100_000).run(() => locator.locate());
+    if (text === undefined) return null;
+    const value: unknown = JSON.parse(text);
+    if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== "string" || typeof value[1] !== "string"
+      || !/^commit:[0-9a-f]{64}$/.test(value[0]) || !/^artifact:[0-9a-f]{64}$/.test(value[1])) throw new Error("Invalid save location");
+    return { cursor: value[0], artifact: value[1] };
+  } finally { locator.free(); }
+}
+
+export async function retainedSave(storage: CacheStore, execution: ExecutionId, candidate: CommitId, limits = { roots: 4096, commits: 65_536 }): Promise<boolean> {
+  for (const count of [limits.roots, limits.commits]) if (!Number.isSafeInteger(count) || count < 1 || count > 1_000_000) throw new RangeError("Invalid retention budget");
+  await initialize();
+  const locator = new SaveLocator(execution);
+  try { return await new StorageHost(storage, locator, 100_000).run(() => locator.retained(candidate, limits.roots, limits.commits)); }
+  finally { locator.free(); }
 }

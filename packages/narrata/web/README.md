@@ -49,6 +49,58 @@ only after the storage host persists and confirms their batches. A failed write 
 use `reload()` to discard unconfirmed changes before continuing. Another writer's newer state
 is rejected rather than overwritten. Without `storage`, the session stays in memory.
 
+## Authenticated online journeys
+
+Use `createOnlineSession` for server-backed saves. Supply a new `AuthenticatedLibrary` for each
+authenticated library instance, with its host-issued 16-byte StoreId, an authenticated `CacheStore`,
+and release, deletion and content-cache invalidation callbacks. The transport stays bound to that
+instance; account switching closes the old session and creates a new wrapper. Deletion receives
+the checked, observed StoreId/revision for the host's CAS. A replacement library needs a new ID.
+
+```ts
+import { AuthenticatedLibrary, createOnlineSession, createReader } from "@rezics/narrata";
+
+const library = new AuthenticatedLibrary({
+  store: authenticatedTransport,
+  storeId: authenticatedLibraryId,
+  release: () => authenticatedTransport.close(),
+  remove: observed => host.deleteLibrary(observed),
+  clearContent: () => hostContent.clear(),
+});
+const session = createOnlineSession({
+  library, execution,
+  currentArtifact: () => host.currentPublishedArtifact(),
+  loadArtifact: artifact => host.readerObjects(artifact), // manifest, optional names, fetchChunk
+});
+await session.start();
+const reader = createReader(session, hostContent, { online: session, context: { viewer: account } });
+await reader.start();
+// On logout, invalidate synchronously, then await queued work and handle release.
+await session.close();
+```
+
+Only an absent active cursor consults the current publication. Existing executions locate their
+exact artifact through the checked read-only `locateSave` helper, then verify the loaded manifest's
+identity before fetching its chunks. Each journey keeps that artifact's chunk loader even if the
+work publishes a newer version.
+
+The snapshot distinguishes `saved`, `saving`, `unknown`, `conflict`, `quota`, `unavailable` and
+`closed`. `progress` remains the last confirmed view on failure. An unknown write retains its
+candidate commit; `retrySave()` retries the original bytes without replaying a choice. A conflict
+on that retry uses bounded native history traversal to prove the candidate is retained by this
+execution's durable roots, including when another device has continued beyond it. Missing objects,
+read errors, exhausted budgets and orphan candidates leave the outcome unknown. Resolve it before
+reloading. Definite conflicts and rejections permit `reload()`.
+
+Transport errors are unknown unless the host can guarantee the entire write had no effect; only
+then map quota or explicit unavailability to `WriteRejected`. A later rejection cannot decide an
+earlier unknown attempt. The server reference host remains the storage transaction authority;
+this coordinator adds no HTTP protocol, database schema or login/offline synchronization.
+
+The reference reader's `?online` route creates, edits and previews the public short story, publishes
+A, resolves host-owned prose and option labels, simulates save failures and publishes B. Its
+IndexedDB transport isolates client behavior; it does not implement server authentication.
+
 `@rezics/narrata/reader` exports the same reader surface as the root entry. Both load only the
 reader Wasm, without compiler, publication, layout or trace code. The raw
 `dist/wasm/narrata_nodes_wasm.js` module keeps its default build and `publishGraph` for existing

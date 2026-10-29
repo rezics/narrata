@@ -5,4 +5,7 @@ import "./styles.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing root element");
-createRoot(root).render(<StrictMode><App /></StrictMode>);
+if (new URLSearchParams(location.search).has("online")) {
+  document.title = "Narrata online story journey";
+  void import("./online").then(module => module.mountOnlineReference(root));
+} else createRoot(root).render(<StrictMode><App /></StrictMode>);

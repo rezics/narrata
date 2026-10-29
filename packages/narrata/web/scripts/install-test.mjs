@@ -132,9 +132,16 @@ execFileSync(process.execPath, [join(directory, "authoring.mjs"), "browser-entry
 execFileSync("bun", [join(directory, "node.mjs"), "default"], { cwd: directory, stdio: "inherit" });
 execFileSync("bun", [join(directory, "authoring.mjs"), "default"], { cwd: directory, stdio: "inherit" });
 
-npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "react@19.2.8", "react-dom@19.2.8", "@types/react@^19.0.0", "@types/react-dom@^19.0.0");
+npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "react@19.2.8", "react-dom@19.2.8", "@types/react@^19.0.0", "@types/react-dom@^19.0.0", `vitest@${packageMetadata.devDependencies.vitest}`, `fake-indexeddb@${packageMetadata.devDependencies["fake-indexeddb"]}`);
+// The fault matrix imports only the unpacked public entries, never workspace implementations.
+cpSync(resolve(here, "test/online.test.ts"), join(directory, "online.test.ts"));
+writeFileSync(join(directory, "story.narpack"), demoPack);
+writeFileSync(join(directory, "fixture.ts"), readFileSync(resolve(here, "test/fixture.ts"), "utf8").replace("../../../../products/gamebook-demo/story.narpack", "story.narpack"));
+execFileSync(process.execPath, [join(directory, "node_modules/vitest/vitest.mjs"), "run", "online.test.ts"], { cwd: directory, stdio: "inherit" });
 cpSync(resolve(here, "test/reader-types.tsx"), join(directory, "reader-types.tsx"));
 cpSync(resolve(here, "test/graph-types.tsx"), join(directory, "graph-types.tsx"));
+// Run the reference host unchanged against the unpacked public tarball.
+cpSync(resolve(here, "../../../examples/gamebook-web/src/online.tsx"), join(directory, "online.tsx"));
 writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, jsx: "react-jsx" }, include: ["types.ts", "native-types.ts", "reader-types.tsx", "graph-types.tsx"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 
@@ -169,9 +176,12 @@ window.ready = (async () => {
   const slot = props => <span data-host-role={props.role} data-realization={props.context.realization}>{props.resolution.status === "ok" ? props.resolution.payload.text : props.resolution.status}</span>;
   const root = createRoot(document.querySelector("#reader"));
   root.render(<Reader controller={controller} slots={{ body: slot, option: slot, reference: slot }} />);
-  let firstScreenRequests;
-  controller.subscribe(() => { if (firstScreenRequests === undefined && controller.getSnapshot().phase === "ready") firstScreenRequests = performance.getEntriesByType("resource").filter(entry => entry.name.endsWith(".cbor")).length; });
-  window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), firstScreen: () => firstScreenRequests,
+  let firstScreenRequests; let firstScreenUrls;
+  controller.subscribe(() => { if (firstScreenRequests === undefined && controller.getSnapshot().phase === "ready") {
+    firstScreenUrls = performance.getEntriesByType("resource").filter(entry => entry.name.endsWith(".cbor")).map(entry => entry.name);
+    firstScreenRequests = firstScreenUrls.length;
+  } });
+  window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), firstScreen: () => firstScreenRequests, firstScreenUrls: () => firstScreenUrls,
     failContentOnce: async () => { failContent = true; const failed = await controller.refresh(); const phase = controller.getSnapshot().phase; const retried = await controller.retry(); return { failed, phase, retried, after: controller.getSnapshot().phase }; },
     author: () => new Promise((done, fail) => {
       const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
@@ -193,6 +203,11 @@ window.ready = (async () => {
       const slice = adapter.lookup(request.items[0], request.context, resolution);
       return { status: resolution.status, ids: slice?.blocks.map(block => block.id), image: slice?.blocks[1]?.value.kind,
         marker: nativeContentOutline("native", { chapter: document }).units.chapter.markers.decision };
+    },
+    online: async () => {
+      controller.dispose(); root.unmount(); await book.close(); store.close();
+      const { mountOnlineReference } = await import("./online.tsx");
+      window.onlineReference = await mountOnlineReference(document.querySelector("#reader"));
     },
     close: async () => { controller.dispose(); root.unmount(); await book.close(); store.close(); } };
   if (!await controller.start()) throw new Error("Controller failed to open the screen");
@@ -222,6 +237,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   const errors = []; page.on("pageerror", error => errors.push(error.message));
+  const consoleMessages = []; page.on("console", message => { if (["error", "warning"].includes(message.type())) consoleMessages.push(message.text()); });
   const requests = []; page.on("request", request => requests.push(new URL(request.url()).pathname));
   await page.goto(`http://127.0.0.1:${port}/`);
   await page.waitForFunction(() => document.querySelector("#status")?.textContent === "ready", { timeout: 30_000 });
@@ -233,6 +249,7 @@ try {
   assert.equal(await page.evaluate(() => window.installed.firstScreen()), 2, "First screen requests only the manifest and entry chunk before speculative prefetch");
   assert.equal(requests.filter(path => path.endsWith(".wasm")).length, 1);
   assert.deepEqual(served, ["reader"], "The reader route fetches only the reader Wasm: no authoring or compatibility module");
+  writeFileSync(join(directory, "first-screen-requests.json"), JSON.stringify({ cbor: await page.evaluate(() => window.installed.firstScreenUrls()), wasm: requests.filter(path => path.endsWith(".wasm")), requests: [...requests] }, null, 2));
   assert.deepEqual(requests.filter(path => /sigma|graphology|renderer|graph/i.test(path)), [], "The first screen loads no graph code or tiles");
   assert.deepEqual(await page.evaluate(() => window.installed.native()), { status: "ok", ids: ["arrival", "map"], image: "image", marker: "choice-point:" + "1".repeat(32) });
   const beforePrefetch = await page.evaluate(() => window.installed.save());
@@ -263,8 +280,79 @@ try {
   await page.screenshot({ path: join(directory, "desktop-reader.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: join(directory, "mobile-reader.png"), fullPage: true });
+  // Public authoring -> host prose/labels -> online persistence -> exact A/B restoration.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(() => window.installed.online());
+  await page.getByText(/At dusk, Mara found a lantern/).waitFor();
+  const initialOnline = await page.evaluate(() => window.onlineReference.getSnapshot().binding.session.getSnapshot());
+  assert.equal(initialOnline.status, "saved");
+  await page.getByText("Simulate a save failure", { exact: true }).click();
+  await page.getByRole("button", { name: "Lose the next save response", exact: true }).click();
+  await page.getByRole("button", { name: "Follow the light into the forest", exact: true }).click();
+  await page.getByRole("button", { name: "Retry and verify save", exact: true }).waitFor();
+  assert.equal(await page.getByText("Story finished", { exact: true }).count(), 0);
+  assert.equal((await page.evaluate(() => window.onlineReference.getSnapshot().binding.session.getSnapshot())).progress.view.cursor, initialOnline.progress.view.cursor);
+  await page.screenshot({ path: join(directory, "online-unknown.png"), fullPage: true });
+  await page.getByRole("button", { name: "Retry and verify save", exact: true }).click();
+  await page.getByText(/Under the cedar branches/).waitFor();
+  const recovered = await page.evaluate(() => window.onlineReference.getSnapshot().binding.session.getSnapshot());
+  assert.equal(recovered.status, "saved"); assert.equal(recovered.progress.view.depth, 1);
+  const retryWrites = await page.evaluate(() => window.onlineReference.evidence().writes);
+  assert.deepEqual(retryWrites.at(-1), retryWrites.at(-2), "Unknown save retries exactly the original bytes");
+  await page.getByRole("button", { name: "Publish B", exact: true }).click();
+  await page.getByRole("button", { name: "Reopen this journey", exact: true }).click();
+  await page.getByRole("button", { name: "Seek the second light", exact: true }).waitFor();
+  const resumedOnline = await page.evaluate(() => window.onlineReference.getSnapshot().binding.session.getSnapshot());
+  assert.equal(resumedOnline.progress.view.artifact_id, initialOnline.progress.view.artifact_id);
+  assert.equal(resumedOnline.progress.view.cursor, recovered.progress.view.cursor);
+  await page.getByRole("button", { name: "Start a new journey", exact: true }).click();
+  await page.getByText(/At dusk, Mara found a lantern/).waitFor();
+  await page.getByRole("button", { name: "Reject the next save: storage full", exact: true }).click();
+  await page.getByRole("button", { name: "Follow the light into the forest", exact: true }).click();
+  await page.getByText("Storage is full. Your last saved progress is preserved.", { exact: true }).waitFor();
+  assert.equal((await page.evaluate(() => window.onlineReference.getSnapshot().binding.session.getSnapshot())).progress.view.depth, 0);
+  await page.getByRole("button", { name: "Reload saved progress", exact: true }).click();
+  await page.getByRole("button", { name: "Follow the light into the forest", exact: true }).click();
+  await page.getByRole("button", { name: "Return home with the keeper", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Seek the second light", exact: true }).count(), 0);
+  const onB = await page.evaluate(() => window.onlineReference.getSnapshot().binding.session.getSnapshot());
+  assert.notEqual(onB.progress.view.artifact_id, initialOnline.progress.view.artifact_id);
+  // An old account's successful response arrives after the new account is already reading.
+  await page.evaluate(() => {
+    const host = window.onlineReference; const { session, controller } = host.getSnapshot().binding;
+    const view = session.getSnapshot().progress.view;
+    host.setFault("late"); window.oldOnlineSession = session;
+    window.lateOnlineChoice = controller.choose([view.interaction.options[0].id]);
+  });
+  await page.waitForFunction(() => window.onlineReference.hasLate());
+  await page.getByRole("button", { name: "Switch account", exact: true }).click();
+  await page.getByText("Account: reader-two", { exact: false }).waitFor();
+  await page.evaluate(() => window.onlineReference.releaseLate());
+  assert.equal(await page.evaluate(() => window.lateOnlineChoice), false);
+  assert.deepEqual(await page.evaluate(() => window.oldOnlineSession.getSnapshot()), { status: "closed", progress: null, candidate: null });
+  assert.equal((await page.evaluate(() => window.onlineReference.getSnapshot().binding.session.getSnapshot())).progress.view.depth, 0);
+  // Delete the observed instance, create a new ID, then attempt a late retry on the old handle.
+  const beforeDelete = await page.evaluate(() => {
+    const host = window.onlineReference; window.deletedOnlineSession = host.getSnapshot().binding.session;
+    return { writes: host.evidence().writes.length, id: host.libraryId() };
+  });
+  await page.evaluate(() => window.onlineReference.remove());
+  const afterDelete = await page.evaluate(() => window.onlineReference.evidence().writes.length);
+  assert.ok(afterDelete > beforeDelete.writes, "New library creates its own durable root");
+  assert.notDeepEqual(await page.evaluate(() => window.onlineReference.libraryId()), beforeDelete.id, "Recreated library has a new StoreId");
+  assert.equal(await page.evaluate(async () => { try { await window.deletedOnlineSession.retrySave(); return false; } catch { return true; } }), true);
+  assert.equal(await page.evaluate(() => window.onlineReference.evidence().writes.length), afterDelete);
+  const onlineEvidence = await page.evaluate(() => ({ ...window.onlineReference.evidence(), snapshot: window.onlineReference.getSnapshot().binding.session.getSnapshot() }));
+  writeFileSync(join(directory, "online-evidence.json"), JSON.stringify(onlineEvidence, null, 2));
+  writeFileSync(join(directory, "browser-console.json"), JSON.stringify({ errors, consoleMessages }, null, 2));
+  await page.screenshot({ path: join(directory, "online-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: join(directory, "online-mobile.png"), fullPage: true });
+  assert.deepEqual(errors, []);
+  assert.equal(await page.locator("vite-error-overlay").count(), 0);
+  await page.evaluate(() => window.onlineReference.dispose());
   await page.evaluate(() => window.installed.close());
-  console.log("Installed package: optional React peer, React slots, production Vite, first-screen requests and Wasm, content retry, Worker authoring and A/B publication, keyboard choice, durable save and reopen passed");
+  console.log("Installed package: optional React peer, production Vite reader, first-screen requests, content retry, Worker authoring, real short-story prose/labels, online save verification, A/B recovery, quota, late account responses and deletion/recreation passed");
 } finally {
   await browser?.close();
   await new Promise(done => server.close(done));

@@ -38,7 +38,7 @@
 | CLI、调试、桌面工具 | SQLite | 按行读写；schema v2 旧库用 `narrata store migrate-v2` 显式迁移 |
 | 浏览器 | IndexedDB，经 `narrata-storage-host` 的缓存后端与 `packages/narrata/kernel/js`（[ADR 0017](../adr/0017-browser-storage-host-cache.md)） | 按需读取、先落盘后发布、多标签页冲突检测；浏览器会整源驱逐存储，Safari 删除 7 天无交互的脚本存储：申请持久化并提供导出 |
 | 本地游戏 | 存档字节 | 引擎导出 Checkpoint Bundle 字节（可选浅存档，只带最近 N 个祖先，[ADR 0019](../adr/0019-shallow-history-bundles.md)），宿主写入自己的存档系统；导入时引擎重新校验 |
-| 网站登录用户 | 宿主服务器上的契约实现 | 每个"用户 × 作品"一个库，浏览器经批次协议增量同步；Narrata 不连接该数据库，结构变化由 Narrata 逐库迁移（[决定 15](../product/decisions.md#15-服务器存档实现同一个存储契约)，ADR 待写） |
+| 网站登录用户 | 宿主服务器上的契约实现 | 每个"用户 × 作品"一个库，浏览器经批次协议增量同步；Narrata 不连接该数据库，结构变化由 Narrata 逐库迁移（[决定 15](../product/decisions.md#15-服务器存档实现同一个存储契约)、[ADR 0021](../adr/0021-server-save-storage.md)） |
 
 JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
 
@@ -48,8 +48,15 @@ JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
 闭包（`CheckpointBundle`）；完整时间线（`TimelineArchiveBundle`）默认关闭，由宿主显式启用。
 两者都以字节交给宿主，宿主负责归属、同步、保留和删除说明。
 
+## 在线会话归属
+
+宿主认证后注入固定库实例的传输、释放、按已观察 ID/修订号删除以及内容缓存失效回调。
+账号切换关闭旧包装并新建包装；删除后的新库使用新 StoreId。会话生命周期和恢复动作见
+[Web 包](../../packages/narrata/web/README.md#authenticated-online-journeys)；状态与受检定位边界由代码和测试表达。
+正文及选项标签仍由内容方解析，不进入会话。
+
 ## 当前缺口
 
-- 服务器存档同步（决定 15）、浅存档在 Wasm 中的导出、节点栈的重新发布迁移由 Goal
+- 浅存档在 Wasm 中的导出、节点栈的重新发布迁移由 Goal
   `web-and-rezics` 实施。
 - FFI 宿主仍用默认的内存后端加存档字节；Rust 宿主可以给协议引擎注入任意后端。

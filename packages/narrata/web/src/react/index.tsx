@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { readerContent } from "../reader/controller.js";
-import type { ReaderController, ReaderResolution, ReaderScreen, ReaderSnapshot } from "../reader/controller.js";
+import type { ReaderController, ReaderResolution, ReaderSave, ReaderScreen, ReaderSnapshot } from "../reader/controller.js";
 import type { Content, ResolveContext, ResolveItem } from "../content/index.js";
 import type { PresentationItem, VariableView, ViewScalar } from "../generated/book-view.js";
 
@@ -21,6 +21,7 @@ export interface ReaderSlots {
   readonly reference: ContentSlot;
 }
 export interface ReaderMessages {
+  readonly online?: Partial<typeof onlineMessages>;
   readonly loading: string;
   readonly unavailable: string;
   readonly incompatible: string;
@@ -51,6 +52,21 @@ export const readerMessages: ReaderMessages = {
   selection: (min, max) => min === max ? `Choose ${min}` : `Choose ${min}–${max}`,
   submit: count => count === 0 ? "Continue without selecting" : `Confirm (${count})`,
 };
+/** Optional overrides keep existing message objects compatible with online recovery. */
+export const onlineMessages = {
+  unknown: "The save response was lost. Verify the save before continuing.",
+  conflict: "Another device updated this journey. Reload saved progress.",
+  quota: "Storage is full. Your last saved progress is preserved.",
+  unavailable: "Saved progress is unavailable. Try loading it again.",
+  closed: "This session is closed. Open a new session to continue.",
+  verify: "Retry and verify save",
+};
+function saveMessage(save: ReaderSave, messages: ReaderMessages): string {
+  switch (save.status) {
+    case "unknown": case "conflict": case "quota": case "unavailable": case "closed": return messages.online?.[save.status] ?? onlineMessages[save.status];
+    default: return messages[save.status];
+  }
+}
 export type ReaderClasses = Partial<Record<"reader" | "heading" | "productTitle" | "prose" | "lead" | "reply" | "subtitle" | "choices" | "multi" | "choiceItem" | "choice" | "choiceCheck" | "reason" | "submit" | "footer" | "previous" | "next" | "save" | "path" | "state" | "error", string>>;
 export interface ReaderProps {
   readonly controller: ReaderController;
@@ -88,10 +104,11 @@ function className(classes: ReaderClasses, name: keyof ReaderClasses): string { 
 export function ReaderSaveStatus({ controller, messages = readerMessages, className: css, disabled = false }: { readonly controller: ReaderController; readonly messages?: ReaderMessages; readonly className?: string; readonly disabled?: boolean }) {
   const snapshot = useReader(controller);
   const save = snapshot.save;
-  const failed = save.status === "failed" || save.status === "superseded";
+  const failed = ["failed", "superseded", "unknown", "conflict", "quota", "unavailable"].includes(save.status);
+  const text = saveMessage(save, messages);
   return <div className={css ?? "narrata-reader__save"}>
-    <p role={failed ? "alert" : "status"}>{messages[save.status]}{save.status === "saved" && save.at ? <> <time dateTime={save.at}>{new Date(save.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></> : null}</p>
-    {failed ? <button disabled={disabled || snapshot.phase === "loading"} onClick={() => { void controller.reload(); }}>{messages.reload}</button> : null}
+    <p role={failed ? "alert" : "status"}>{text}{save.status === "saved" && save.at ? <> <time dateTime={save.at}>{new Date(save.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time></> : null}</p>
+    {failed ? <button disabled={disabled || snapshot.phase === "loading"} onClick={() => { void (save.status === "unknown" ? controller.retry() : controller.reload()); }}>{save.status === "unknown" ? messages.online?.verify ?? onlineMessages.verify : messages.reload}</button> : null}
   </div>;
 }
 
@@ -143,6 +160,9 @@ export function Reader({ controller, slots, messages = readerMessages, classes =
     previous.current = cursor;
   }, [cursor]);
   const screen = snapshot.screen;
+  if (!screen && ["unknown", "conflict", "quota", "unavailable", "closed"].includes(snapshot.save.status)) {
+    return <ReaderSaveStatus controller={controller} messages={messages} disabled={disabled} />;
+  }
   if (!screen) return <div className={className(classes, "reader")}>
     <p role={snapshot.error ? "alert" : "status"}>{snapshot.error ? messages.error : messages.loading}</p>
     {snapshot.error ? <button disabled={disabled} onClick={() => { void controller.retry(); }}>{messages.retry}</button> : null}
@@ -193,7 +213,7 @@ export function Reader({ controller, slots, messages = readerMessages, classes =
         })}
         {!single ? <button className={className(classes, "submit")} disabled={disabled || !selection?.canSubmit} onClick={() => { void controller.choose(); }}>{messages.submit(snapshot.selected.length)}</button> : null}
       </fieldset> : null}
-      {snapshot.error && !["failed", "superseded"].includes(snapshot.save.status) ? <div className={className(classes, "error")} role="alert">{messages.error} <button disabled={disabled} onClick={() => { void controller.retry(); }}>{messages.retry}</button></div> : null}
+      {snapshot.error && !["failed", "superseded", "unknown", "conflict", "quota", "unavailable", "closed"].includes(snapshot.save.status) ? <div className={className(classes, "error")} role="alert">{messages.error} <button disabled={disabled} onClick={() => { void controller.retry(); }}>{messages.retry}</button></div> : null}
       {showState ? <section aria-label={messages.state} className={className(classes, "state")}>
         <dl>{variables(view.shared)}</dl>
         {view.frames.filter(frame => frame.parameters.length + frame.locals.length > 0).map(frame => <dl key={frame.instance} aria-label={`${frame.graph.package}.${frame.graph.graph} · ${frame.instance}`}>

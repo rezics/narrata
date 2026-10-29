@@ -2,3 +2,4 @@ export { type Cbor, CborError, compareBytes, decode, encode, equalBytes } from "
 export { type CacheHandle, type CacheStore, StorageHost, StoreSuperseded } from "./host";
 export { DATABASE_VERSION, type HostReads, IndexedDbStore, StoreFormatError } from "./indexeddb";
 export * from "./protocol";
+export { AuthenticatedLibrary, LibraryClosed, WriteRejected, type AuthenticatedLibraryOptions } from "./online";
