@@ -112,6 +112,7 @@ mod native {
                 .into_iter()
                 .chain(narrata_content_local::schemas())
                 .chain(narrata_authoring::schemas())
+                .chain(narrata_nodes::history::evolution::schemas())
             {
                 write_text(
                     &Path::new(output).join(name),

@@ -1,7 +1,105 @@
 /* Generated from Rust authoring interface JSON Schema. Run task web:build. */
 
 export type AuthoredId = string;
+export type ApplyV1 =
+  | {
+      kind: "migrated";
+      migration_commit: CommitId;
+      report: MigrationReportV1;
+      source_commit: CommitId;
+      target_artifact: ArtifactId;
+    }
+  | {
+      actual_cursor?: CursorV1 | null;
+      kind: "conflict";
+    }
+  | {
+      kind: "plan_changed";
+    }
+  | {
+      diagnostic: Diagnostic2;
+      kind: "failed";
+    };
+export type CommitId = string;
+export type ExternalEffectsV1 = "not_applicable";
 export type ArtifactId = string;
+export type NodeId = string;
+/**
+ * This interface was referenced by `undefined`'s JSON-Schema definition
+ * via the `patternProperty` "^[ -~]{1,128}$".
+ */
+export type ChoicePointId = string;
+/**
+ * Only continuation positions can declare recovery; options cannot relocate a state.
+ */
+export type DeletedId = NodeId | ChoicePointId;
+export type PathComparisonV1 =
+  | {
+      kind: "equivalent";
+    }
+  | {
+      differing_fields: string[];
+      input_id?: ObjectId | null;
+      kind: "diverged";
+      new_location?: LocationV1 | null;
+      old_location?: LocationV1 | null;
+      reason: DivergenceReason;
+      source_commit: CommitId;
+    }
+  | {
+      baseline?: CommitId | null;
+      checked_through?: CommitId | null;
+      kind: "unverified";
+      reason: UnverifiedReason;
+    };
+export type ObjectId = string;
+export type DivergenceReason = "initial_state" | "invalid_input" | "execution" | "semantic_state" | "control_trace";
+export type UnverifiedReason =
+  "missing_ancestor" | "missing_artifact" | "missing_descriptor" | "limit" | "baseline" | "trace_unavailable";
+export type CursorRevision = string;
+export type AssessmentV1 =
+  | {
+      kind: "exact";
+      source: SourceV1;
+    }
+  | {
+      kind: "automatic";
+      plan: PlanV1;
+    }
+  | {
+      kind: "needs_confirmation";
+      plan: PlanV1;
+      reason: ConfirmationReason;
+    }
+  | {
+      kind: "old_version_only";
+      reason: string;
+      restart_available: boolean;
+      source: SourceV1;
+      target: ArtifactId;
+    }
+  | {
+      digests: ObjectId[];
+      kind: "needs_objects";
+      retryable: boolean;
+    }
+  | {
+      diagnostic: Diagnostic2;
+      kind: "invalid_save";
+      restart_available: boolean;
+    };
+export type MigrationId = string;
+export type ConfirmationReason = "recovery" | "divergence" | "unverified";
+export type EvolutionPlanningV1 =
+  | {
+      artifact_id: ArtifactId;
+      kind: "exact";
+    }
+  | {
+      descriptor: EvolutionDescriptorV1;
+      kind: "descriptor";
+      migration_id: MigrationId;
+    };
 export type R1ArtifactId = string;
 /**
  * A state value. `text` is data that rules compare (decision 2); translatable names travel as
@@ -11,18 +109,11 @@ export type Scalar = boolean | number | string | ContentRef;
 export type ContentKey = string;
 export type ProviderId = string;
 export type AnchorId = string;
-/**
- * This interface was referenced by `undefined`'s JSON-Schema definition
- * via the `patternProperty` "^[ -~]{1,128}$".
- */
-export type ChoicePointId = string;
-export type NodeId = string;
 export type OptionId = string;
 export type Encoding = "cbor" | "json";
 export type Digest = string;
 /**
- * Lexical role order is the descriptor order. Evolution is reserved for ADR 0023;
- * this publisher neither creates nor accepts unchecked evolution descriptors.
+ * Lexical role order is the descriptor order, including ADR 0023 evolution metadata.
  */
 export type ObjectRole =
   | "chunk"
@@ -38,7 +129,6 @@ export type ObjectRole =
   | "tombstones";
 export type ScalarType = "bool" | "int" | "text" | "ref";
 export type Severity = "error" | "warning";
-export type ObjectId = string;
 export type DraftRecord =
   | {
       format_version: DraftVersion;
@@ -128,6 +218,11 @@ export type TargetStatus = "local" | "passage" | "control" | "unresolved";
  */
 export interface AuthoringInterface {
   authored_id: AuthoredId;
+  comparison_budget: ComparisonBudgetV1;
+  evolution_apply: ApplyV1;
+  evolution_assessment: AssessmentV1;
+  evolution_declarations: RecoveryDeclarationsV1;
+  evolution_planning: EvolutionPlanningV1;
   lock: CompositionLock;
   manifest: ProjectManifest;
   minted_ids: MintedIds;
@@ -140,6 +235,101 @@ export interface AuthoringInterface {
   record: DraftRecord;
   record_indexes: RecordIndexes;
   record_report: RecordReport;
+}
+/**
+ * Per-assessment limits, also bound to the confirmation in this driver. Values may only
+ * tighten the core's limits. JSON integers fit exactly in JavaScript.
+ */
+export interface ComparisonBudgetV1 {
+  automatic_steps: number;
+  object_bytes: number;
+  transitions: number;
+}
+export interface MigrationReportV1 {
+  external_effects: ExternalEffectsV1;
+  from_artifact: ArtifactId;
+  losses: RecoveryLossV1[];
+  migration_commit: CommitId;
+  path: PathComparisonV1;
+  source_commit: CommitId;
+  to_artifact: ArtifactId;
+}
+export interface RecoveryLossV1 {
+  cleared_finished?: NodeId | null;
+  discarded_frames: DiscardedFrameV1[];
+  reset_local_keys: string[];
+  retained_shared_keys: string[];
+  target: RecoveryTarget;
+  tombstones: DeletedId[];
+}
+export interface DiscardedFrameV1 {
+  instance: number;
+  local_keys: string[];
+  node: NodeId;
+  overlay_ids: AuthoredId[];
+  parameter_keys: string[];
+  pending_choice?: ChoicePointId | null;
+}
+export interface RecoveryTarget {
+  choice_point: ChoicePointId;
+  node: NodeId;
+}
+export interface LocationV1 {
+  choice_point?: ChoicePointId | null;
+  graph: GraphRef;
+  instance: number;
+  node: NodeId;
+}
+/**
+ * A graph of one package instance. Package aliases and graph names are composition
+ * structure, so unlike node aliases they are part of the artifact identity.
+ */
+export interface GraphRef {
+  graph: string;
+  package: string;
+}
+export interface CursorV1 {
+  commit: CommitId;
+  revision: CursorRevision;
+}
+export interface Diagnostic2 {
+  code: string;
+  message: string;
+  path: string;
+}
+export interface SourceV1 {
+  artifact_id: ArtifactId;
+  source_commit: CommitId;
+}
+export interface PlanV1 {
+  expected_cursor_revision: CursorRevision;
+  migration_commit: CommitId;
+  migration_ids: MigrationId[];
+  report: MigrationReportV1;
+  report_digest: ObjectId;
+  source_commit: CommitId;
+  target_artifact: ArtifactId;
+}
+export interface RecoveryDeclarationsV1 {
+  format_version: number;
+  from_artifact: ArtifactId;
+  /**
+   * @maxItems 4096
+   */
+  recoveries: Recovery[];
+}
+export interface Recovery {
+  deleted: DeletedId;
+  target: RecoveryTarget;
+}
+export interface EvolutionDescriptorV1 {
+  format_version: number;
+  from_artifact: ArtifactId;
+  /**
+   * @maxItems 4096
+   */
+  recoveries: Recovery[];
+  to_artifact: ArtifactId;
 }
 /**
  * Written next to the project manifest as `project.lock.json`.
@@ -216,14 +406,6 @@ export interface ImportRef {
   graph: string;
   package: string;
   port: string;
-}
-/**
- * A graph of one package instance. Package aliases and graph names are composition
- * structure, so unlike node aliases they are part of the artifact identity.
- */
-export interface GraphRef {
-  graph: string;
-  package: string;
 }
 export interface EndingSource {
   body?: Segment | null;

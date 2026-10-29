@@ -506,11 +506,13 @@ dependencies = [
 name = "narrata-authoring-wasm"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "hex",
  "narrata-authoring",
  "narrata-content-local",
  "narrata-kernel",
  "narrata-node-tools",
  "narrata-nodes",
+ "narrata-storage-host",
  "schemars",
  "serde",
  "serde_json",

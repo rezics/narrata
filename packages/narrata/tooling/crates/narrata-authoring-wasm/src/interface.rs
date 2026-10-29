@@ -94,6 +94,11 @@ pub struct AuthoringInterface {
     pub package: PackageSource,
     pub lock: CompositionLock,
     pub authored_id: AuthoredId,
+    pub evolution_planning: narrata_authoring::EvolutionPlanningV1,
+    pub evolution_declarations: narrata_nodes::history::evolution::RecoveryDeclarationsV1,
+    pub evolution_assessment: narrata_nodes::history::evolution::AssessmentV1,
+    pub evolution_apply: narrata_nodes::history::evolution::ApplyV1,
+    pub comparison_budget: crate::evolution::ComparisonBudgetV1,
 }
 
 pub fn schema() -> Schema {

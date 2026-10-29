@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 pub mod compose;
+pub mod evolution;
 pub mod graph;
 pub mod ids;
 pub mod objects;
@@ -16,6 +17,7 @@ pub mod validate;
 pub use compose::{
     ComposeMode, ComposedObjects, ComposedRecords, ComposedSource, compose_records, compose_source,
 };
+pub use evolution::{CheckedEvolution, EvolutionPlanningV1, PlannedEvolution, plan_evolution};
 pub use ids::{MintedEdit, Minter, mint_ids};
 pub use publication::{
     CheckedPublication, PublicationReport, PublicationStatus, PublishedRecords, publish_records,

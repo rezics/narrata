@@ -6,6 +6,10 @@ import type {
   AuthoredId, CompositionLock, ContentOutline, Diagnostic, DraftRecord, MintedIds, ObjectReference, PackageSource,
   PreviewReport, ProjectManifest, PublicationDescription, PublishReport, RecordIndexes, RecordReport,
 } from "../generated/authoring.js";
+import { Evolution, EvolutionPlan, planEvolution, readEvolution } from "./evolution.js";
+export * from "./evolution.js";
+export * from "./impact.js";
+export * from "./evolution-controller.js";
 
 export type WasmSource = URL | string | Uint8Array | ArrayBuffer | WebAssembly.Module;
 
@@ -104,6 +108,11 @@ abstract class Handle<T extends { free(): void }> {
 
 /** A checked, immutable publication: description and objects, retrieved one at a time. */
 export class Publication extends Handle<RawPublication> {
+  /** Consumes this candidate and returns its new publication identity. Retain the old publication in host storage. */
+  withEvolution(previous: Publication, plan: EvolutionPlan): Publication {
+    const raw = this.take();
+    return new Publication(call(() => raw.withEvolution(previous.handle, plan.handle)));
+  }
   readonly publicationId: string;
   readonly artifactId: string;
   readonly descriptionBytes: Uint8Array;
@@ -203,9 +212,9 @@ export class PublicationLoader extends Handle<RawLoader> {
   missing(): string[] { return this.raw.missing(); }
   supply(id: string, bytes: Uint8Array): void { call(() => this.raw.supply(id, bytes)); }
   /** Verifies the whole collection and consumes the loader, whether or not it succeeds. */
-  finish(): Publication {
+  finish(previous?: Publication): Publication {
     const raw = this.take();
-    return new Publication(call(() => raw.finish()));
+    return new Publication(call(() => previous ? raw.finishAfter(previous.handle) : raw.finish()));
   }
 }
 
@@ -245,6 +254,10 @@ function rawSource(manifest: ProjectManifest, packages: Iterable<readonly [strin
 }
 
 export interface Authoring {
+  planEvolution: typeof planEvolution;
+  readEvolution: typeof readEvolution;
+  /** A separate assessment/application context. Only register trusted publications. */
+  createEvolution(): Evolution;
   /** Checks one record's encoding, fields and independently decidable constraints. */
   validateRecord(record: RecordInput): RecordCheck;
   createDrafts(): Drafts;
@@ -253,11 +266,14 @@ export interface Authoring {
   createMinter(entropy?: Entropy): IdMinter;
   openPublication(description: Uint8Array, publicationId: string): PublicationLoader;
   /** Fetches each referenced object once through `load`, then verifies the publication. */
-  readPublication(description: Uint8Array, publicationId: string, load: (reference: ObjectReference) => Promise<Uint8Array>): Promise<Publication>;
+  readPublication(description: Uint8Array, publicationId: string, load: (reference: ObjectReference) => Promise<Uint8Array>, previous?: Publication): Promise<Publication>;
   publicationFromPack(pack: Uint8Array): Publication;
 }
 
 const authoring: Authoring = {
+  planEvolution,
+  readEvolution,
+  createEvolution: () => new Evolution(),
   validateRecord(record) {
     const result = records(rawValidateRecord(recordBytes(record)));
     const checked = result.records[0];
@@ -270,11 +286,11 @@ const authoring: Authoring = {
   },
   createMinter: (entropy = hostEntropy) => new IdMinter(new RawMinter({ now: () => entropy.now(), random: (bytes: Uint8Array) => entropy.random(bytes) })),
   openPublication: (description, publicationId) => new PublicationLoader(call(() => new RawLoader(description, publicationId))),
-  async readPublication(description, publicationId, load) {
+  async readPublication(description, publicationId, load, previous) {
     const loader = authoring.openPublication(description, publicationId);
     try {
       for (const reference of loader.references) loader.supply(reference.object_id, await load(reference));
-      return loader.finish();
+      return loader.finish(previous);
     } finally { loader.free(); }
   },
   publicationFromPack: pack => new Publication(call(() => RawPublication.fromPack(pack))),

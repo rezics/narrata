@@ -151,7 +151,7 @@
       ]
     },
     "ObjectRole": {
-      "description": "Lexical role order is the descriptor order. Evolution is reserved for ADR 0023;\nthis publisher neither creates nor accepts unchecked evolution descriptors.",
+      "description": "Lexical role order is the descriptor order, including ADR 0023 evolution metadata.",
       "type": "string",
       "enum": [
         "chunk",

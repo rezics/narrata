@@ -6,6 +6,8 @@
 #![forbid(unsafe_code)]
 
 pub mod core;
+pub mod evolution;
+mod evolution_binding;
 pub mod interface;
 
 use narrata_authoring::{CheckedPublication, publication::publication_from_pack, validate_record};
@@ -271,6 +273,15 @@ pub struct Publication {
 
 #[wasm_bindgen]
 impl Publication {
+    /// Consumes this candidate and attaches a checked descriptor, retaining its artifact.
+    #[wasm_bindgen(js_name = withEvolution)]
+    pub fn with_evolution(
+        self,
+        previous: &Publication,
+        plan: &evolution_binding::EvolutionPlan,
+    ) -> Result<Publication, JsError> {
+        plan.attach(self, previous)
+    }
     /// Opens a legacy pack (at most 64 MiB) as a checked publication.
     #[wasm_bindgen(js_name = fromPack)]
     pub fn from_pack(pack: &[u8]) -> Result<Publication, JsError> {
@@ -335,6 +346,15 @@ impl PublicationLoader {
     pub fn finish(self) -> Result<Publication, JsError> {
         Ok(Publication {
             inner: self.inner.finish().map_err(js_error)?,
+        })
+    }
+    #[wasm_bindgen(js_name = finishAfter)]
+    pub fn finish_after(self, previous: &Publication) -> Result<Publication, JsError> {
+        Ok(Publication {
+            inner: self
+                .inner
+                .finish_after(Some(&previous.inner))
+                .map_err(js_error)?,
         })
     }
 }

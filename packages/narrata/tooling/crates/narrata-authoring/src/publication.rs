@@ -2,6 +2,7 @@
 //! switching their current publication reference; these functions do no I/O or switching.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use narrata_kernel::codec::{EnvelopeLimits, inspect_envelope, object_id};
 use narrata_nodes::plan::Plan;
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ComposeMode,
     compose::compose_objects_with_registry,
+    evolution::CheckedEvolution,
     graph::{GraphFiles, PublishedGraph, publication_analysis, publish_collection},
     objects::{Digest, Version1, decode_json, error},
     records::{CheckedRecord, DraftIndexes, DraftRecord, derive_draft_indexes, split_source},
@@ -24,8 +26,7 @@ use crate::{
 
 pub const MAX_DESCRIPTION_BYTES: usize = 4 * 1024 * 1024;
 
-/// Lexical role order is the descriptor order. Evolution is reserved for ADR 0023;
-/// this publisher neither creates nor accepts unchecked evolution descriptors.
+/// Lexical role order is the descriptor order, including ADR 0023 evolution metadata.
 #[derive(
     Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
 )]
@@ -64,6 +65,7 @@ impl ObjectRole {
     }
     fn budget(self) -> usize {
         match self {
+            Self::Evolution => narrata_nodes::history::evolution::MAX_DESCRIPTOR_BYTES,
             Self::Manifest => narrata_nodes::MAX_MANIFEST_BYTES,
             Self::Chunk => narrata_nodes::MAX_CHUNK_BYTES,
             Self::Names | Self::Tombstones => narrata_nodes::MAX_PACK_BYTES,
@@ -120,11 +122,63 @@ pub struct CheckedPublication {
     description_bytes: Vec<u8>,
     publication_id: Digest,
     objects: BTreeMap<Digest, Vec<u8>>,
-    program: Program,
+    program: Arc<Program>,
     names: Option<NameTable>,
     relations: CheckedRelations,
 }
 impl CheckedPublication {
+    /// Attaches a complete checked object after publishing, without changing the artifact.
+    /// Replacing metadata creates a new publication identity; the host retains old ones.
+    pub fn with_evolution(
+        mut self,
+        previous: &CheckedPublication,
+        evolution: &CheckedEvolution,
+    ) -> Result<Self> {
+        evolution
+            .descriptor()
+            .validate(previous.program(), self.program())?;
+        if let Some(old) = self.description.evolution {
+            self.objects.remove(&old);
+        }
+        self.description
+            .objects
+            .retain(|r| r.role != ObjectRole::Evolution);
+        let bytes = evolution.bytes();
+        let id = Digest::from_bytes(*evolution.id().as_bytes());
+        self.description.objects.push(ObjectReference {
+            role: ObjectRole::Evolution,
+            object_id: id,
+            bytes: bytes.len() as u64,
+            encoding: Encoding::Cbor,
+        });
+        self.description
+            .objects
+            .sort_by_key(|r| (r.role, r.object_id));
+        self.description.evolution = Some(id);
+        self.objects.insert(id, bytes);
+        self.description_bytes = canonical_json(&self.description)?;
+        if self.description_bytes.len() > MAX_DESCRIPTION_BYTES {
+            return Err(error("publication description byte budget"));
+        }
+        self.publication_id = Digest::json("narrata.nodes.publication", &self.description_bytes);
+        Ok(self)
+    }
+
+    /// Rechecks the source using the exact historic publication, never reader-supplied metadata.
+    pub fn evolution(&self, previous: &CheckedPublication) -> Result<Option<CheckedEvolution>> {
+        self.description
+            .evolution
+            .map(|id| {
+                CheckedEvolution::read(
+                    self.object(id)
+                        .ok_or_else(|| error("missing evolution object"))?,
+                    narrata_nodes::history::evolution::MigrationId::from_bytes(*id.as_bytes()),
+                    previous,
+                    self,
+                )
+            })
+            .transpose()
+    }
     pub fn description(&self) -> &PublicationDescription {
         &self.description
     }
@@ -136,6 +190,9 @@ impl CheckedPublication {
     }
     pub fn program(&self) -> &Program {
         &self.program
+    }
+    pub fn shared_program(&self) -> Arc<Program> {
+        self.program.clone()
     }
     pub fn names(&self) -> Option<&NameTable> {
         self.names.as_ref()
@@ -378,7 +435,11 @@ fn identity(role: ObjectRole, bytes: &[u8]) -> Result<Digest> {
         ObjectRole::Summary => Ok(Digest::json("narrata.nodes.summary", bytes)),
         ObjectRole::RelationIndex => Ok(Digest::json("narrata.nodes.relation-index", bytes)),
         ObjectRole::RelationPart => Ok(Digest::json("narrata.nodes.relation-part", bytes)),
-        ObjectRole::Evolution => Err(error("evolution checked decoding is not available")),
+        ObjectRole::Evolution => Ok(Digest::from_bytes(
+            *narrata_nodes::history::evolution::EvolutionDescriptorV1::decode(bytes)?
+                .id()
+                .as_bytes(),
+        )),
         _ => cbor_id(role, bytes),
     }
 }
@@ -454,7 +515,7 @@ fn build_collection(
         description_bytes,
         publication_id,
         objects,
-        program,
+        program: Arc::new(program),
         names,
         relations,
     })
@@ -473,8 +534,8 @@ pub fn read_description(
     let description: PublicationDescription =
         decode_json(description_bytes, MAX_DESCRIPTION_BYTES)?;
     GraphFiles::decode_json(&canonical_json(&description.graph)?)?;
-    if description.graph.artifact_id != description.artifact_id || description.evolution.is_some() {
-        return Err(error("artifact ownership or unsupported evolution"));
+    if description.graph.artifact_id != description.artifact_id {
+        return Err(error("artifact ownership"));
     }
     let mut previous = None;
     let mut ids = BTreeSet::new();
@@ -496,7 +557,18 @@ pub fn read_description(
 pub fn read_publication(
     description_bytes: &[u8],
     expected: Digest,
+    load: impl FnMut(Digest) -> Result<Vec<u8>>,
+) -> Result<CheckedPublication> {
+    read_publication_with_source(description_bytes, expected, load, None)
+}
+
+/// Evolution metadata additionally requires its verified source publication. Legacy
+/// publications need no source and preserve their original bytes and reading path.
+pub fn read_publication_with_source(
+    description_bytes: &[u8],
+    expected: Digest,
     mut load: impl FnMut(Digest) -> Result<Vec<u8>>,
+    previous: Option<&CheckedPublication>,
 ) -> Result<CheckedPublication> {
     let description = read_description(description_bytes, expected)?;
     let mut objects = BTreeMap::new();
@@ -605,7 +677,22 @@ pub fn read_publication(
         ObjectRole::RelationPart,
         relations.parts().iter().map(|p| p.id).collect(),
     )?;
-    exact(ObjectRole::Evolution, BTreeSet::new())?;
+    exact(
+        ObjectRole::Evolution,
+        description.evolution.into_iter().collect(),
+    )?;
+    if let Some(id) = description.evolution {
+        let descriptor =
+            narrata_nodes::history::evolution::EvolutionDescriptorV1::decode(&get(id)?)?;
+        let source = previous.ok_or_else(|| {
+            narrata_nodes::Error::new(
+                "needs_artifact",
+                descriptor.source_artifact().to_string(),
+                "evolution requires its checked source publication",
+            )
+        })?;
+        descriptor.validate(source.program(), &program)?;
+    }
     if relations.index().artifact_id != description.artifact_id {
         return Err(error("relation artifact ownership"));
     }
@@ -626,7 +713,7 @@ pub fn read_publication(
         description_bytes: description_bytes.to_vec(),
         publication_id: expected,
         objects,
-        program,
+        program: Arc::new(program),
         names,
         relations,
     })

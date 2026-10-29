@@ -8,7 +8,7 @@ use narrata_authoring::{
     CheckedPublication, CheckedRecord, CheckedRecords, ComposeMode, Diagnostic, DraftIndexes,
     Minter, PublicationReport, Report, compose_records, derive_draft_indexes, mint_ids,
     objects::Digest,
-    publication::{ObjectReference, read_description, read_publication},
+    publication::{ObjectReference, read_description, read_publication_with_source},
     publish_records, split_source, validate_records,
 };
 use narrata_kernel::content::ProviderId;
@@ -419,17 +419,29 @@ impl Loader {
         Ok(())
     }
 
-    pub fn finish(mut self) -> Result<CheckedPublication> {
+    pub fn finish(self) -> Result<CheckedPublication> {
+        self.finish_after(None)
+    }
+
+    pub fn finish_after(
+        mut self,
+        previous: Option<&CheckedPublication>,
+    ) -> Result<CheckedPublication> {
         let objects = &mut self.objects;
-        read_publication(&self.description, self.expected, |id| {
-            objects.remove(&id).ok_or_else(|| {
-                Error::new(
-                    "missing_object",
-                    id.to_string(),
-                    "supply every referenced object before finishing",
-                )
-            })
-        })
+        read_publication_with_source(
+            &self.description,
+            self.expected,
+            |id| {
+                objects.remove(&id).ok_or_else(|| {
+                    Error::new(
+                        "missing_object",
+                        id.to_string(),
+                        "supply every referenced object before finishing",
+                    )
+                })
+            },
+            previous,
+        )
     }
 }
 
