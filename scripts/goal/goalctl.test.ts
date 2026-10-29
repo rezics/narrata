@@ -720,6 +720,25 @@ describe('lifecycle', () => {
     expect(ok(dir, ['new', '--goal', 'alpha', 'Next'])).toContain('G-002 reserved');
   }, 120_000);
 
+  test('verified close can preserve the branch while releasing claims and archiving evidence', () => {
+    const dir = program();
+    ok(dir, ['goal', 'start', 'alpha', '--manager', 'alpha-manager']);
+    write(dir, 'docs/goals/alpha/tasks/G-001.md', briefText('G-001', ['crates/alpha/**']));
+    gitIn(dir, 'add', '.');
+    gitIn(dir, 'commit', '-q', '-m', 'Brief retained branch\n\nGoal: alpha');
+    ok(dir, ['dispatch', 'docs/goals/alpha/tasks/G-001.md'], { FAKE_WRITE: 'crates/alpha/src/retained.rs' });
+    ok(dir, ['wait', 'G-001']);
+    ok(dir, ['merge', 'G-001']);
+    const merged = gitIn(dir, 'rev-parse', 'goal/g-001');
+    expect(ok(dir, ['close', 'G-001', 'verified', '--keep-branch'])).toContain('branch goal/g-001 kept');
+    expect(gitIn(dir, 'rev-parse', 'goal/g-001')).toBe(merged);
+    expect(existsSync(join(dir, '.temp/worktrees/g-001'))).toBe(false);
+    expect(existsSync(join(dir, archiveOf(dir), 'handoffs/G-001.md'))).toBe(true);
+    expect(ledgerOf(dir).tasks['G-001']!.state).toBe('verified');
+    write(dir, 'docs/goals/alpha/tasks/G-002.md', briefText('G-002', ['crates/alpha/**']));
+    expect(ok(dir, ['dispatch', 'docs/goals/alpha/tasks/G-002.md', '--dry-run'])).toContain('claims ok');
+  }, 60_000);
+
   test('refuses overlapping Goals, other Goals\' areas, held claims and signed-out engines', () => {
     const dir = program();
     write(dir, 'docs/goals/gamma/GOAL.md', goalText(['crates/**']));

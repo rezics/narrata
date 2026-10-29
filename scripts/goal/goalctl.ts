@@ -1551,13 +1551,13 @@ function archiveClosedBriefs(ledger: Ledger, tasks: readonly Task[]): string[] {
 
 /** Closes the tasks in order, stopping at the first that cannot close, then archives the briefs and handoffs of those
  * closed in one commit. */
-async function closeTasks(ids: string[], outcome: string): Promise<void> {
+async function closeTasks(ids: string[], outcome: string, keepBranch = false): Promise<void> {
   if (outcome !== 'verified' && outcome !== 'cancelled') throw new Error('close needs verified or cancelled');
   if (!ids.length) throw new Error('close needs a task ID');
   const ledger = readLedger();
   for (const id of ids) assertOwner(taskOf(ledger, id));
   try {
-    for (const id of ids) await closeTask(id, outcome);
+    for (const id of ids) await closeTask(id, outcome, keepBranch);
   } finally {
     await withLedger(current => {
       for (const note of archiveClosedBriefs(current, ids.map(id => taskOf(current, id)))) console.log(note);
@@ -1565,7 +1565,7 @@ async function closeTasks(ids: string[], outcome: string): Promise<void> {
   }
 }
 
-async function closeTask(id: string, outcome: 'verified' | 'cancelled'): Promise<void> {
+async function closeTask(id: string, outcome: 'verified' | 'cancelled', keepBranch = false): Promise<void> {
   const plan = await withLedger(ledger => {
     const task = taskOf(ledger, id);
     if (!isOpen(task)) { console.log(`${task.id} is already ${task.state}`); return undefined; }
@@ -1580,12 +1580,12 @@ async function closeTask(id: string, outcome: 'verified' | 'cancelled'): Promise
   if (!plan) return;
   // Outside the ledger lock: deleting a worktree with a multi-GB Cargo target takes a while.
   if (plan.last && existsSync(plan.task.worktree)) removeWorktree(plan.task);
-  if (plan.last && plan.task.state === 'merged') git(repoRoot(), ['branch', '-d', plan.task.branch], true);
+  if (!keepBranch && plan.last && plan.task.state === 'merged') git(repoRoot(), ['branch', '-d', plan.task.branch], true);
   await withLedger(ledger => {
     const task = taskOf(ledger, id);
     task.state = outcome;
     task.closedAt = new Date().toISOString();
-    console.log(`${task.id} ${outcome}; claims released${outcome === 'cancelled' ? `, branch ${task.branch} kept` : ''}`);
+    console.log(`${task.id} ${outcome}; claims released${outcome === 'cancelled' || keepBranch ? `, branch ${task.branch} kept` : ''}`);
   });
 }
 
@@ -1839,7 +1839,7 @@ const USAGE = 'Usage: goalctl goal start <slug> --manager <session> [--allow-are
   + ' | new [--goal <slug>] <title> | dispatch <brief.md> [--dry-run] [--allow-area] [--skip-preflight] [--force-usage]'
   + ' | wait <id> | resume <id> (-m <text> | --file <path>)... [--effort e] [--engine e] [--fresh] [--skip-preflight]'
   + ' | reclaim <id> <brief> | stop <id> | scope <id> | owner <path> | merge <id> [--allow-scope] [--allow-ids] [--landed]'
-  + ' | close <id>... verified|cancelled | tidy | status | usage [<id>...] | auth | slot [--heavy] -- <command>'
+  + ' | close <id>... verified|cancelled [--keep-branch] | tidy | status | usage [<id>...] | auth | slot [--heavy] -- <command>'
   + `\nEngines: ${ENGINES.map(engine => `${engine} (${modelOf(engine)})`).join(', ')}`;
 
 export async function main(argv: string[]): Promise<number> {
@@ -1866,7 +1866,7 @@ export async function main(argv: string[]): Promise<number> {
       return 0;
     }
     case 'merge': await mergeTask(positional[0] ?? '', flags); return 0;
-    case 'close': await closeTasks(positional.slice(0, -1), positional.at(-1) ?? ''); return 0;
+    case 'close': await closeTasks(positional.slice(0, -1), positional.at(-1) ?? '', flags.has('--keep-branch')); return 0;
     case 'reclaim': await reclaimTask(positional[0] ?? '', positional[1] ?? ''); return 0;
     case 'owner': {
       // Read-only: which open task claims a repository path (workers check before editing outside their claim).

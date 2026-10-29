@@ -25,7 +25,7 @@ Worker 是独立的无界面 CLI 进程，以 bypass 权限模式运行，不是
 | `task goal -- stop G-NNN` | 用 `taskkill /T /F` 结束 worker 的整个进程树，再清理仍在该 worktree 中运行的进程，并确认退出。认领和 worktree 保留。 |
 | `task goal -- scope G-NNN` / `task goal -- owner <路径>` | 列出领先 `main` 的提交、未提交文件与认领之外的文件 / 哪个未关闭任务认领了某路径、它落在哪个 Goal 的范围内。 |
 | `task goal -- merge G-NNN [--allow-scope] [--allow-ids] [--landed]` | 要求 worker 已退出、worktree 干净、文件都在认领内、树中没有新增任务编号（见[收敛](#收敛与结束)）；然后 rebase 到 `main` 并快进 `main`。冲突时任务标为 `conflict`，交给 worker 解决。`--landed` 记录 manager 已手工落地的工作。 |
-| `task goal -- close G-NNN... verified\|cancelled` | 删除 worktree、释放认领，然后在一个提交里把简报和交接移到 `archive/goals/`，并从树中删除简报。 |
+| `task goal -- close G-NNN... verified\|cancelled [--keep-branch]` | 删除 worktree、释放认领，然后在一个提交里把简报和交接移到 `archive/goals/`，并从树中删除简报；要求保留已合入分支时加 `--keep-branch`。 |
 | `task goal -- tidy` / `task goal -- goal close <goal> [--dry-run]` | 归档仍留在树中的已关闭简报 / 当 Goal 在树中已无残留时结束它（见[收敛](#收敛与结束)）。 |
 | `task goal -- status` / `task goal -- usage [G-NNN...]` / `task goal -- auth` | 运行中的 Goal 与 manager、存活 worker、worktree 数与磁盘余量、检查槽位与重型锁的持有者、Codex 周窗口 / 每个任务与引擎的 token 和费用（JSON）/ 各引擎 CLI 的登录状态。 |
 | `task goal -- slot [--heavy] -- <命令>` | 在共享的检查槽位中运行一条命令；重型命令另需取得[全机重型锁](#集成与检查)。 |
