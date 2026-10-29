@@ -62,7 +62,7 @@ REZICS 提供稳定、不透明的内容单元和标签 key，映射到自身当
 
 逻辑构件固定与正文修订是两种政策：当前[内容引用契约](../contracts/content-references.md)允许正文按宿主当前可用修订重新解析；本次请求不增加“所有正文永久固定”的承诺。若以后提供原样重读或离线固定章节，再交付指定修订读取及保留策略。首发可以单语言，但接口保留语言/译本上下文；多语言上线时再验收块 ID 和标签联动。
 
-验收：正文与标签使用同一上下文；缺锚点得到明确诊断；部分引用不可用不泄露原因；预取不推进状态；宿主原生 Document 渲染与 Narrata 的段范围相同。当前 SDK 标准解析载荷只有文字/文字块，富文档适配由 Narrata 与宿主明确实现，不能把 React 插槽当作已经完成的适配。
+验收：正文与标签使用同一上下文；缺锚点得到明确诊断；部分引用不可用不泄露原因；预取不推进状态；宿主原生 Document 渲染与 Narrata 的段范围相同。标准解析载荷仍为文字/文字块；`@rezics/narrata/content/native` 已提供修订绑定的原生快照、段截取和文字回退适配。REZICS 把自己的 Document 转成该快照并提供原生渲染，双方用同一修订验证，不把插槽存在当作宿主转换已完成。
 
 ### 完整发布与不可变对象分发
 
@@ -127,12 +127,15 @@ Narrata 负责场景依赖、推进与恢复语义；播放器负责资源准备
 
 ## Narrata 自己的交付依赖
 
-宿主要求应随可安装交付物一起给出。当前 npm 包已有读取、选择、回退、渲染插槽和 IndexedDB 基础，但以下不能当作已交付能力转嫁给 REZICS：
+宿主要求随固定版本交付物一起核对。当前主线已提供以下通用入口，调用和生命周期见[包说明](../../packages/narrata/web/README.md#authoring-and-publication)：
 
-- Rust authoring 已有记录/校验/ID/组合核心；npm 尚无完整 authoring/server 入口，发布对象集合与演化接口仍在当前 Goal 中实施。
-- reader Wasm 尚依赖部分发布/图工具，读者与 authoring 构建需要分开。
-- 内容大纲、宿主原生富文档渲染、网络存档与账号生命周期需要实际安装包的联合验证。
-- 节点作品演化在 ADR 0023 中已有设计，不能只凭该 ADR 宣称自动迁移已可用。首发基础是存档固定旧逻辑构件；迁移另按实际交付验证。
+- 浏览器 `@rezics/narrata/authoring`、Node/Bun `@rezics/narrata/server` 的 `loadAuthoring()`：逐条记录校验/组装、ID 铸造、诊断、预览、发布及按描述和单个对象受检重开。发布返回对象与规范记录/墓碑；宿主负责完整上传、原子保存草稿及最后的发布引用 CAS。
+- 根入口及 `@rezics/narrata/reader` 使用独立 reader Wasm，首屏不带编译、发布、布局或 trace；旧 raw Wasm 保留兼容入口。作者能力按需加载，部署需保留包内分别定位的 Wasm 资源。
+- `@rezics/narrata/content/native` 支持同一修订的原生文档片段与文字回退；内容大纲仍不含正文或 revision 字段，具体宿主模型转换与权限由 REZICS 实现。
+
+这些入口已有独立 tarball 的 Node/Bun/浏览器验证，但 M1 完整固定包仍待在线会话生命周期、按存档 artifact 定位和真实正文/标签的联合模拟旅程完成。未知保存结果暂停及原字节重试已有基础；durable roots/history 核实、账号切换和删除生命周期尚未作为完整公共流程交付，不能转嫁给宿主补 Narrata 语义。
+
+M2 的 visits/读者地图、关系投影数据库装载、作品演化公共评估/确认/应用和维护入口仍在实施。已有 Rust 核心或 ADR 不表示这些公开旅程已完成；真实 REZICS 联合验收另行记录。
 
 [Gamebook Goal](../goals/web-and-rezics/GOAL.md) 已按 M1 首发包、M2 完整能力、M3 收敛排序；[Web VN Goal](../goals/web-vn/GOAL.md) 另列为待启动计划。Narrata 的模拟宿主和参考适配在本仓库实现，REZICS 专用实现仍只列为本页能力请求。
 
