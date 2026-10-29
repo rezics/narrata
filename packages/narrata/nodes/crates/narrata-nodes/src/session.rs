@@ -804,7 +804,17 @@ impl<B: StorageBackend> Session<B> {
                 })?
                 .bytes(),
         )?;
-        let program = self.program_at(header.artifact)?.clone();
+        let program = self
+            .programs
+            .get(&header.artifact)
+            .ok_or_else(|| {
+                Error::new(
+                    "incompatible_save",
+                    "artifact_id",
+                    "the export belongs to another artifact",
+                )
+            })?
+            .clone();
         let key = RefKey::active(name(self.execution))
             .map_err(|e| Error::new("name", "session", e.to_string()))?;
         let expected = self
