@@ -203,24 +203,29 @@ pub fn compose_records_with_budget(
             None
         }
     };
-    // Identity paths are not source paths; keep them from falling back to the project record.
-    let (mut identified, mut located): (Vec<_>, Vec<_>) = std::mem::take(&mut out.diagnostics)
-        .into_iter()
-        .partition(|diagnostic| identity(diagnostic).is_some());
-    locate_diagnostics(checked.records(), &mut located);
-    for diagnostic in &mut identified {
-        locate_identity(checked.records(), diagnostic);
-    }
-    out.diagnostics = located;
-    out.diagnostics.extend(identified);
+    locate(checked.records(), &mut out.diagnostics);
     out.finish(value.map(|composed| ComposedRecords {
         records: checked,
         composed,
     }))
 }
 
-/// Continuity errors name an authored ID rather than a source path. Locate the record that
-/// still holds it; a deleted ID keeps only its identity.
+/// Locates unlocated diagnostics at records: source paths through their scopes, and the
+/// authored IDs named by continuity errors at the records holding them. A deleted ID keeps
+/// only its identity.
+pub(crate) fn locate(records: &[CheckedRecord], diagnostics: &mut Vec<Diagnostic>) {
+    // Identity paths are not source paths; keep them from falling back to the project record.
+    let (mut identified, mut located): (Vec<_>, Vec<_>) = std::mem::take(diagnostics)
+        .into_iter()
+        .partition(|diagnostic| identity(diagnostic).is_some());
+    locate_diagnostics(records, &mut located);
+    for diagnostic in &mut identified {
+        locate_identity(records, diagnostic);
+    }
+    *diagnostics = located;
+    diagnostics.extend(identified);
+}
+
 fn identity(diagnostic: &Diagnostic) -> Option<AuthoredId> {
     if diagnostic.location.record.is_some() {
         return None;

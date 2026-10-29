@@ -299,6 +299,7 @@ pub fn publish_records_with_budget(
                 out.limit(&error.message);
             } else {
                 out.error(error, None);
+                crate::compose::locate(checked.records(), &mut out.diagnostics);
             }
             out.finish(None)
         }
@@ -459,11 +460,13 @@ fn build_collection(
     })
 }
 
-pub fn read_publication(
+/// Checks a description's identity, encoding and every object reference's role, order,
+/// encoding and role byte budget, before any object is requested. Object bytes, reference
+/// closure and correspondence are proven by `read_publication`.
+pub fn read_description(
     description_bytes: &[u8],
     expected: Digest,
-    mut load: impl FnMut(Digest) -> Result<Vec<u8>>,
-) -> Result<CheckedPublication> {
+) -> Result<PublicationDescription> {
     if Digest::json("narrata.nodes.publication", description_bytes) != expected {
         return Err(error("publication identity"));
     }
@@ -473,20 +476,32 @@ pub fn read_publication(
     if description.graph.artifact_id != description.artifact_id || description.evolution.is_some() {
         return Err(error("artifact ownership or unsupported evolution"));
     }
-    let mut objects = BTreeMap::new();
     let mut previous = None;
-    let mut roles = BTreeMap::new();
+    let mut ids = BTreeSet::new();
     for reference in &description.objects {
         let key = (reference.role, reference.object_id);
         if previous.is_some_and(|p| p >= key)
             || reference.encoding != reference.role.encoding()
             || reference.bytes > reference.role.budget() as u64
             || reference.bytes == 0
-            || objects.contains_key(&reference.object_id)
+            || !ids.insert(reference.object_id)
         {
             return Err(error("object descriptor order, duplication or encoding"));
         }
         previous = Some(key);
+    }
+    Ok(description)
+}
+
+pub fn read_publication(
+    description_bytes: &[u8],
+    expected: Digest,
+    mut load: impl FnMut(Digest) -> Result<Vec<u8>>,
+) -> Result<CheckedPublication> {
+    let description = read_description(description_bytes, expected)?;
+    let mut objects = BTreeMap::new();
+    let mut roles = BTreeMap::new();
+    for reference in &description.objects {
         let bytes = load(reference.object_id)?;
         if bytes.len() as u64 != reference.bytes
             || identity(reference.role, &bytes)? != reference.object_id

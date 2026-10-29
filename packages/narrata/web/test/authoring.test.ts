@@ -148,7 +148,8 @@ test("a short story from public types mints, previews, publishes A then B and ke
     if (draft.kind === "choice_point" && draft.payload.key === "return") draft.payload.options = draft.payload.options.filter(option => option.key !== "wander");
     return draft;
   });
-  const previous = await api.readPublication(descriptionA, idA, async reference => {
+  const { readPublication } = api;
+  const previous = await readPublication(descriptionA, idA, async reference => {
     const bytes = objectsA.get(reference.object_id);
     if (!bytes) throw new Error("missing");
     return bytes;
@@ -240,6 +241,8 @@ test("objects are supplied and read one at a time with checked identity", async 
   expect(() => loader.supply("f".repeat(64), new Uint8Array(1))).toThrow(expect.objectContaining({ code: "reference" }));
   const incomplete = api.openPublication(description, publicationId);
   expect(() => incomplete.finish()).toThrow(expect.objectContaining({ code: "missing_object" }));
+  expect(() => incomplete.finish()).toThrow("freed");
+  incomplete.free();
   for (const item of loader.references) loader.supply(item.object_id, product(`story.publication/${item.object_id}.${item.encoding}`));
   expect(loader.missing()).toEqual([]);
   const publication = loader.finish();
@@ -256,7 +259,8 @@ test("minting uses injected entropy, avoids occupied IDs and defaults to Web Cry
   const api = await authoring;
   const fixed = api.createMinter({ now: () => 1_750_000_000_000, random: bytes => bytes.fill(9) });
   const [node] = fixed.mint({ nodes: 1 }).nodes;
-  expect(node).toMatch(/^node:[0-9a-f]{12}7[0-9a-f]{3}[89ab][0-9a-f]{15}$/);
+  // Exact suffix proves bytes written by the JS callback were copied back into Wasm.
+  expect(node).toBe("node:01977420dc0079098909090909090909");
   expect(() => fixed.mint({ nodes: 1 })).toThrow(expect.objectContaining({ code: "random" }));
   const other = api.createMinter({ now: () => 1_750_000_000_000, random: bytes => bytes.fill(9) });
   if (!node) throw new Error("Node expected");
@@ -266,4 +270,22 @@ test("minting uses injected entropy, avoids occupied IDs and defaults to Web Cry
   const host = api.createMinter().mint({ nodes: 1, choicePoints: 1, options: 2 });
   expect(new Set([...host.nodes, ...host.choice_points, ...host.options]).size).toBe(4);
   fixed.free(); other.free();
+  fixed.free();
+  expect(() => fixed.mint({ nodes: 1 })).toThrow("freed");
+});
+
+test("decodeRecord rejects malformed and wrong-shaped external bytes before promising a record", async () => {
+  const api = await authoring;
+  for (const json of ["not json", "{}", "null", "[]", '{"format_version":1,"kind":"project","payload":{}}']) {
+    expect(() => decodeRecord(new TextEncoder().encode(json))).toThrow(AuthoringError);
+  }
+  expect(() => decodeRecord(new Uint8Array([0xff]))).toThrow(AuthoringError);
+  const source = shortStorySource();
+  const minter = api.createMinter(counter(60));
+  try {
+    const filled = minter.fill(source.manifest, source.packages);
+    const record = filled.records[0];
+    if (!record) throw new Error("Record expected");
+    expect(api.validateRecord(decodeRecord(record.bytes)).record?.bytes).toEqual(record.bytes);
+  } finally { minter.free(); }
 });

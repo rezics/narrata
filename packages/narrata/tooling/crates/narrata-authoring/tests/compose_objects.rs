@@ -196,3 +196,71 @@ fn continuity_errors_locate_identities_and_locked_composition_never_appends() {
             .is_some()
     );
 }
+
+#[test]
+fn publication_continuity_errors_carry_the_same_typed_locations() {
+    let checked = records();
+    let previous = Program::from_pack(&demo_pack()).unwrap().0;
+    let lock = compile(&support::demo().unwrap(), &NodeRegistry::gamebook())
+        .unwrap()
+        .lock;
+    let publish = |bytes: &[Vec<u8>], previous: &Program, mode| {
+        narrata_authoring::publish_records(&inputs(bytes), &[], Some(previous), mode)
+    };
+    let code = |report: &narrata_authoring::PublicationReport, code: &str| {
+        assert!(report.value.is_none());
+        report
+            .diagnostics
+            .iter()
+            .find(|d| d.code == code)
+            .cloned()
+            .unwrap_or_else(|| panic!("{:#?}", report.diagnostics))
+    };
+
+    let mut deleted = encoded(&checked);
+    let rocks = choice_point(&checked, "crossing", "rocks");
+    let mut retreat = None;
+    edit(&mut deleted, rocks, |record| {
+        retreat = options(record).pop().unwrap().id;
+    });
+    let needed = code(
+        &publish(&deleted, &previous, ComposeMode::Locked(&lock)),
+        "tombstones_needed",
+    );
+    assert_eq!(needed.location.option, retreat);
+    assert_eq!(needed.location.record, None);
+
+    // B records the tombstone; dropping it again against B is a removed tombstone.
+    let b = publish(&deleted, &previous, ComposeMode::Update)
+        .into_result()
+        .unwrap();
+    let b_program = b.publication.program();
+    let without: Vec<_> = b
+        .records
+        .iter()
+        .filter(|r| !matches!(r.record(), DraftRecord::Tombstone { .. }))
+        .map(|r| r.bytes().to_vec())
+        .collect();
+    let removed = code(
+        &publish(&without, b_program, ComposeMode::Update),
+        "tombstone_removed",
+    );
+    assert_eq!(removed.location.option, retreat);
+
+    let mut moved = encoded(&checked);
+    let fire = choice_point(&checked, "visit", "fire");
+    let letter = choice_point(&checked, "visit", "letter");
+    let mut leave = None;
+    edit(&mut moved, fire, |record| leave = options(record).pop());
+    let leave = leave.unwrap();
+    let id = leave.id;
+    edit(&mut moved, letter, |record| options(record).push(leave));
+    let owner = code(
+        &publish(&moved, &previous, ComposeMode::Update),
+        "owner_changed",
+    );
+    assert_eq!(owner.location.record, Some(checked[letter].key()));
+    assert_eq!(owner.location.option, id);
+    assert_eq!(owner.location.pointer, "/payload/options/1");
+    assert!(owner.location.choice_point.is_some() && owner.location.node.is_some());
+}

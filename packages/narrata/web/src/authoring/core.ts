@@ -32,8 +32,16 @@ export type RecordInput = Uint8Array | DraftRecord;
 function recordBytes(record: RecordInput): Uint8Array {
   return record instanceof Uint8Array ? record : encoder.encode(JSON.stringify(record));
 }
+/** Checks external bytes with the Rust record validator before returning a typed record. */
 export function decodeRecord(bytes: Uint8Array): DraftRecord {
-  return JSON.parse(decoder.decode(bytes)) as DraftRecord;
+  const result = records(call(() => rawValidateRecord(bytes)));
+  const checked = result.records[0];
+  if (!checked) {
+    const diagnostic = result.diagnostics.find(diagnostic => diagnostic.severity === "error");
+    throw new AuthoringError(diagnostic?.code ?? "record", diagnostic?.source_path ?? "$", diagnostic?.message ?? "No checked record");
+  }
+  // Only Rust-validated, canonical bytes establish the generated DraftRecord contract.
+  return JSON.parse(decoder.decode(checked.bytes)) as DraftRecord;
 }
 
 export interface CheckedRecord {
@@ -263,7 +271,7 @@ const authoring: Authoring = {
   createMinter: (entropy = hostEntropy) => new IdMinter(new RawMinter({ now: () => entropy.now(), random: (bytes: Uint8Array) => entropy.random(bytes) })),
   openPublication: (description, publicationId) => new PublicationLoader(call(() => new RawLoader(description, publicationId))),
   async readPublication(description, publicationId, load) {
-    const loader = this.openPublication(description, publicationId);
+    const loader = authoring.openPublication(description, publicationId);
     try {
       for (const reference of loader.references) loader.supply(reference.object_id, await load(reference));
       return loader.finish();

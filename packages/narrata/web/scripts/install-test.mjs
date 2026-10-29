@@ -40,6 +40,7 @@ for (const [id, bytes] of parts.objects) writeFileSync(join(publicDirectory, "ob
 writeFileSync(join(directory, "objects.json"), JSON.stringify(Object.fromEntries([...parts.objects].map(([id, bytes]) => [id, [...bytes]]))));
 writeFileSync(join(directory, "manifest.cbor"), parts.manifest);
 cpSync(resolve(here, "test/types.ts"), join(directory, "types.ts"));
+cpSync(resolve(here, "scripts/install/source.ts"), join(directory, "source.ts"));
 writeFileSync(join(directory, "native-types.ts"), `
 import { createNativeContentAdapter, type NativeDocument } from "@rezics/narrata/content/native";
 import { nativeDocumentSample, type SampleNativeValue } from "@rezics/narrata/testing";
@@ -48,7 +49,7 @@ const adapter = createNativeContentAdapter<SampleNativeValue>({ resolve: async (
 void adapter;
 `);
 cpSync(resolve(here, "../../../fixtures/compat/graph-v1"), join(directory, "graph"), { recursive: true });
-writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true }, include: ["types.ts", "native-types.ts"] }));
+writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true }, include: ["types.ts", "native-types.ts", "source.ts"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 writeFileSync(join(directory, "node.mjs"), `
 import { readFile } from "node:fs/promises";
@@ -109,11 +110,13 @@ import { loadAuthoring } from "@rezics/narrata/server";
 import { openBook } from "@rezics/narrata/reader";
 import { shortStorySource, shortStoryOutline } from "@rezics/narrata/testing";
 import { author, read } from "./journey.mjs";
+import { constructAndEdit } from "./source.ts";
 const wasm = new URL("./node_modules/@rezics/narrata/dist/authoring-wasm/narrata_authoring_wasm_bg.wasm", import.meta.url);
 const mode = process.argv[2];
 // "browser-entry" proves the browser subpath also locates its Wasm from a file URL.
 const api = mode === "browser-entry" ? await (await import("@rezics/narrata/authoring")).loadAuthoring()
   : await loadAuthoring(mode === "bytes" ? new Uint8Array(await readFile(wasm)) : mode === "url" ? wasm : undefined);
+constructAndEdit(api);
 const published = await author(api, { shortStorySource, shortStoryOutline });
 const journeys = await read(openBook, ${JSON.stringify(execution)}, published);
 assert.equal(journeys.firstScreen, 1, "A's first screen fetches only the entry chunk");

@@ -8,9 +8,7 @@ use narrata_authoring::{
     CheckedPublication, CheckedRecord, CheckedRecords, ComposeMode, Diagnostic, DraftIndexes,
     Minter, PublicationReport, Report, compose_records, derive_draft_indexes, mint_ids,
     objects::Digest,
-    publication::{
-        MAX_DESCRIPTION_BYTES, ObjectReference, PublicationDescription, read_publication,
-    },
+    publication::{ObjectReference, read_description, read_publication},
     publish_records, split_source, validate_records,
 };
 use narrata_kernel::content::ProviderId;
@@ -362,23 +360,10 @@ pub struct Loader {
 }
 
 impl Loader {
+    /// Rejects bad descriptions, including any object claiming more than its role's byte
+    /// budget, before a single object is requested or retained.
     pub fn new(description: &[u8], expected: Digest) -> Result<Self> {
-        let actual = Digest::from_bytes(narrata_kernel::codec::digest_bytes(
-            "narrata.nodes.publication",
-            1,
-            description,
-        ));
-        if actual != expected {
-            return Err(Error::new(
-                "publication",
-                expected.to_string(),
-                "description bytes do not have this publication ID",
-            ));
-        }
-        let text = std::str::from_utf8(description)
-            .map_err(|error| Error::new("json", "$", error.to_string()))?;
-        let decoded: PublicationDescription =
-            narrata_nodes::parse_json_limited(text, MAX_DESCRIPTION_BYTES)?;
+        let decoded = read_description(description, expected)?;
         Ok(Self {
             description: description.to_vec(),
             expected,
@@ -497,6 +482,14 @@ impl Occupancy {
         random: impl FnMut(&mut [u8]) -> Result<()>,
     ) -> Result<RecordSet> {
         let edit = mint_ids(source, self.taken.iter().copied(), clock, random)?;
+        // The source's own live and deleted IDs stay occupied for later mints, even when
+        // filling minted nothing.
+        self.taken.extend(
+            source
+                .packages
+                .values()
+                .flat_map(narrata_authoring::ids::package_ids),
+        );
         self.taken.extend(edit.minted.iter().copied());
         Ok(RecordSet::split(
             Report {

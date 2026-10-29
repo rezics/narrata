@@ -176,6 +176,122 @@ fn previous_publications_restore_from_individual_objects_with_checked_identity()
 }
 
 #[test]
+fn loader_rejects_over_budget_descriptors_before_requesting_any_objects() {
+    use narrata_authoring::{objects::Digest, publication::PublicationDescription};
+    let original: PublicationDescription =
+        serde_json::from_slice(&product("story.publication.json")).unwrap();
+    for index in 0..original.objects.len() {
+        let mut description = original.clone();
+        // Includes a 128 MiB Chunk claim; no object payload is allocated or supplied.
+        description.objects[index].bytes = if description.objects[index].role
+            == narrata_authoring::publication::ObjectRole::Chunk
+        {
+            128 * 1024 * 1024
+        } else {
+            u64::MAX
+        };
+        let bytes = narrata_nodes::canonical_json(&description).unwrap();
+        let expected = Digest::from_bytes(narrata_kernel::codec::digest_bytes(
+            "narrata.nodes.publication",
+            1,
+            &bytes,
+        ));
+        assert!(Loader::new(&bytes, expected).is_err());
+        let mut fetched = false;
+        assert!(
+            narrata_authoring::publication::read_publication(&bytes, expected, |_| {
+                fetched = true;
+                Ok(Vec::new())
+            })
+            .is_err()
+        );
+        assert!(!fetched, "metadata rejection precedes object loading");
+    }
+}
+
+#[test]
+#[ignore = "allocates more than 64 MiB; run through a heavy Goal slot"]
+fn binding_publishes_and_reopens_individual_objects_above_the_pack_limit() {
+    use narrata_nodes::NodeId;
+    use serde_json::json;
+
+    // Same legal scalar-argument scale pattern as the authoring core's publication test.
+    let padding = "x".repeat(60_000);
+    let mut paths = BTreeMap::new();
+    let mut packages = Vec::new();
+    for package in 0..19 {
+        let alias = format!("p{package:02}");
+        paths.insert(alias.clone(), format!("{alias}.json"));
+        let mut nodes = BTreeMap::new();
+        for index in 0..60 {
+            nodes.insert(format!("n{index}"), json!({
+                "id": NodeId::from_bytes(((package * 100 + index + 1) as u128).to_be_bytes()),
+                "type_id": "narrata.passage",
+                "data": {"args": {"padding": {"kind": "literal", "value": padding}},
+                    "next": if index == 59 { "end".to_owned() } else { format!("n{}", index + 1) }}
+            }));
+        }
+        nodes.insert(
+            "end".into(),
+            json!({
+                "id": NodeId::from_bytes(((package * 100 + 99) as u128).to_be_bytes()),
+                "type_id": "narrata.return", "data": {"outcome": "done"}
+            }),
+        );
+        packages.push((
+            alias.clone(),
+            serde_json::from_value(json!({
+                "id": alias, "version": "1", "exports": ["main"],
+                "graphs": {"main": {"entry": "n0", "outcomes": ["done"], "nodes": nodes}}
+            }))
+            .unwrap(),
+        ));
+    }
+    let mut builder = SourceBuilder::new(serde_json::from_value(json!({
+        "format_version": 2, "packages": paths,
+        "product": {"id": "large", "entry": {"package": "p00", "graph": "main"}, "endings": {"done": {}}}
+    })).unwrap());
+    for (alias, package) in packages {
+        builder.add_package(&alias, package).unwrap();
+    }
+    let split = builder.split();
+    drop(builder);
+    assert!(split.report.complete && split.report.diagnostics.is_empty());
+    let mut drafts = DraftSet::default();
+    for record in &split.records {
+        drafts.add(record.bytes());
+    }
+    drop(split);
+    let published = drafts.publish(None, None);
+    drop(drafts);
+    let publication = published.publication.unwrap();
+    let total = publication
+        .objects()
+        .map(|(_, bytes)| bytes.len())
+        .sum::<usize>();
+    assert!(total > narrata_nodes::MAX_PACK_BYTES);
+    assert!(publication.pack().is_err());
+    let mut loader = Loader::new(
+        publication.description_bytes(),
+        publication.publication_id(),
+    )
+    .unwrap();
+    for (reference, bytes) in publication.objects() {
+        loader.supply(reference.object_id, bytes).unwrap();
+    }
+    let reopened = loader.finish().unwrap();
+    assert_eq!(reopened.publication_id(), publication.publication_id());
+    assert_eq!(
+        reopened.program().artifact_id(),
+        publication.program().artifact_id()
+    );
+    println!(
+        "binding_publication_bytes={total}; objects={}",
+        reopened.description().objects.len()
+    );
+}
+
+#[test]
 fn preview_objects_open_by_reader_ids_without_a_pack() {
     let records = source_records();
     let preview = drafts(&records).compose(None, None).unwrap();
@@ -296,4 +412,69 @@ fn minting_avoids_occupied_ids_and_fill_keeps_existing_ids() {
         .map(|record| (record.key(), record.bytes().len()))
         .collect();
     assert_eq!(records.len(), filled.records.len());
+}
+
+#[test]
+fn fill_keeps_live_and_deleted_source_ids_occupied_for_later_mints() {
+    let clock = || Ok(1_700_000_000_000);
+    let entropy = |byte: u8| {
+        move |bytes: &mut [u8]| {
+            bytes.fill(byte);
+            Ok(())
+        }
+    };
+    let never = || Err(Error::new("clock", "ids", "must not mint"));
+    let refuse = |_: &mut [u8]| Err(Error::new("random", "ids", "must not mint"));
+    // IDs a repeated entropy source would produce, placed into an already-minted source.
+    let live = Occupancy::default()
+        .mint(1, 0, 0, clock, entropy(7))
+        .unwrap()
+        .nodes[0];
+    let deleted = Occupancy::default()
+        .mint(0, 0, 1, clock, entropy(8))
+        .unwrap()
+        .options[0];
+    let mut source = demo();
+    let road = source.packages.get_mut("road").unwrap();
+    road.graphs
+        .get_mut("crossing")
+        .unwrap()
+        .nodes
+        .get_mut("fog")
+        .unwrap()
+        .id = Some(live);
+    road.tombstones.push(AuthoredId::Option(deleted));
+
+    let mut occupancy = Occupancy::default();
+    for _ in 0..2 {
+        let filled = occupancy.fill(&source, never, refuse).unwrap();
+        assert!(filled.report.minted.is_empty());
+        assert!(filled.report.diagnostics.is_empty());
+        // Neither kind may reuse the live node's bytes or the tombstoned option's bytes.
+        for (byte, counts) in [
+            (7, (1, 0, 0)),
+            (7, (0, 1, 0)),
+            (8, (0, 0, 1)),
+            (8, (1, 0, 0)),
+        ] {
+            let (nodes, points, options) = counts;
+            assert_eq!(
+                occupancy
+                    .mint(nodes, points, options, clock, entropy(byte))
+                    .unwrap_err()
+                    .code,
+                "random"
+            );
+        }
+    }
+    let fresh = occupancy.mint(1, 1, 1, clock, entropy(9)).unwrap_err();
+    assert_eq!(
+        fresh.code, "random",
+        "one fixed source yields one ID per call"
+    );
+    let minted = occupancy.mint(0, 0, 1, clock, entropy(9)).unwrap();
+    assert_ne!(
+        AuthoredId::Option(minted.options[0]),
+        AuthoredId::Option(deleted)
+    );
 }
