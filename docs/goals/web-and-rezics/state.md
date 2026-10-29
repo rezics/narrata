@@ -22,6 +22,7 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
    attempt 1 的客户端/真实正文/A-B 故障旅程已通过，Web 评审接受。Rust 评审要求把保留证明从重试间二次工作改为有界进度，并修复 native reopen 删除竞争；M1 冷读取和同篇复合叙事也仍需验收。已用 .temp/review-g035-repair.md 在原任务 attempt 2 / high 接续；当前还需看正式交接，不能提前合入。
    attempt 2 已有 82e78ea / 2a59bc3：Rust/high 接受进度缓存、累计预算及无写入 reopen；medium 验收接受 `/?reference` 自身冷读取（2 对象、1,660 字节、reader only）、同篇局部汇合/延迟后果/参数 7/两个结局及实际 A/B/故障旅程。完整 gate 仍在收尾。G5 旧协议绑定测试栈审计失败已在 main f1c6052 / 49930a5 修复，Vitest 5.0.3、Vite 8.2.4，零漏洞、生成无漂移、构建及 4 测试通过；worker 也在做等价修复，rebase 时保留统一版本并补完整 G5 证据，不跳过 gate。
    attempt 2 已正式 done：web/r1/g5、脚本/文档均通过，截图已由 manager 查看。整合到含演化代码的 main 时仅 size-budget.json 冲突，goalctl 已中止 rebase 并标 conflict；已在同一任务 attempt 3 / high 授权 rebase、保留 main 作者端预算并测量组合产物/复验。原文件与复合旅程不重做；正式合入前仍不关闭。main 协议工具栈已与 worker 统一，后续可能有冗余补丁需正确跳过。
+   attempt 3 已完成 rebase（基于 cfe3447），参考与安装聚焦测试通过，但 CLI 容量错误退出。manager 已接手，无存活 worker；在该 worktree 提交 c65b29e 的组合预算，再以 20594cf 修复作者测试依赖缺版本的 cargo-deny bans 错误，四项 deny 均通过。组合完整检查正在 .temp/rebase-integration/manager-r1.log、manager-web.log、manager-g5-final.log 串行运行；前一次 manager-g5.log 是已解释失败，不算通过。注意主线尚未快进到该分支，不丢弃预算/精确版本修复，也不重启已退出 worker来重复实现。
    已查看公共包桌面/移动端插槽截图，其 HOST CONTENT 内容只证明渲染接线。M1 最终模拟旅程须接公共创作输出、宿主真实正文/标签与在线保存恢复，已加入在线任务；不以占位截图代替完整旅程。
    Sol/medium 对接续前基线另确认参考 App 默认 full pack，以及最小 shortStorySource 缺复合叙事机制。最终交接后按 .temp/m1-reference-acceptance-review.md 核对同一公共创作作品的局部汇合/延迟后果/参数化调用/结局、真实页面和冷首屏；先看新分支是否已解决，不重复派发或误报仍在编写的代码。
 3. M1 完成后交付固定 tarball 与模拟宿主旅程。M2 仍需 visits/读者地图、真实 PostgreSQL 关系装载、阅读器跨构件与演化确认接线，以及导入导出/浅历史/GC/配额维护公共接口。
