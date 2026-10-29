@@ -47,13 +47,17 @@ export type StoredEvolutionApply = ApplyV1 | { readonly kind: "storage_conflict"
  * execution cursor; they never create a missing execution or write a save slot.
  */
 export class Evolution {
-  #raw: RawEvolution | undefined = new RawEvolution();
+  #raw: RawEvolution | undefined;
   #host: StorageHost | undefined;
   #queue: Promise<unknown> = Promise.resolve();
   #pendingResult: ApplyV1 | undefined;
+  /** @internal Hosts normally use Authoring.createEvolution(). */
+  constructor(raw: RawEvolution = new RawEvolution()) { this.#raw = raw; }
   get connected(): boolean { return this.#host !== undefined; }
   get pendingSave(): boolean { return this.#host !== undefined && this.#pendingResult !== undefined; }
   get #handle(): RawEvolution { if (!this.#raw) throw new Error("The evolution context was freed."); return this.#raw; }
+  /** Shares trusted metadata with an isolated context. Close forks before registering more publications. */
+  fork(): Promise<Evolution> { return this.#enqueue(() => new Evolution(this.#handle.fork())); }
   /** Register programs required by an exact save or historical migration segments. */
   registerPublication(publication: Publication): Promise<void> { return this.#enqueue(() => checked(() => this.#handle.registerPublication(publication.handle))); }
   /** Register only a descriptor obtained from a trusted publication's evolution role. */
@@ -120,6 +124,11 @@ export class Evolution {
     });
   }
   exportSave(): Promise<string> { return this.#run(() => checked(() => this.#handle.export())); }
+  /** Existing shallow checkpoint encoding, for a save whose older ancestors are absent. */
+  exportShallow(ancestors = 1): Promise<string> {
+    if (!Number.isSafeInteger(ancestors) || ancestors < 0 || ancestors > 10_000) return Promise.reject(new RangeError("Invalid shallow ancestor limit"));
+    return this.#run(() => [...checked(() => this.#handle.exportShallow(ancestors))].map(byte => byte.toString(16).padStart(2,"0")).join(""));
+  }
   /** Release after queued operations finish. The host retains ownership of its storage connection. */
   close(): Promise<void> { return this.#enqueue(() => { this.#raw?.free(); this.#raw = undefined; }); }
   #enqueue<T>(operation: () => T | Promise<T>): Promise<T> {

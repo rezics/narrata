@@ -117,6 +117,8 @@ test("impact sampling is deterministic, counts duplicate Refs once per commit, a
     let loads = 0;
     const both = await assessImpact({evolution:c.evolution,heads:[head,head],options:c.options,loadSave:async () => { loads++; return c.v.save; }});
     expect(loads).toBe(1); expect(both.counts.automatic).toBe(2); expect(both.distinct_counts.automatic).toBe(1);
+    const contradictory = await assessImpact({evolution:c.evolution,heads:[head,{...head,artifact:`artifact:${"0".repeat(64)}`}],options:c.options,loadSave:async () => { throw new Error("contradictory heads must not load"); }});
+    expect(contradictory.rejected_heads).toBe(2); expect(contradictory.examined).toBe(0);
     const others = [head,...["0","1","2"].map(digit => ({...head,commit:`commit:${digit.repeat(64)}`}))];
     const selected: string[][] = [];
     for (const heads of [others,[...others].reverse()]) {
@@ -146,6 +148,25 @@ async function stored() {
   const source = await book.exportSave(); await book.close();
   return { ...c, store, source, async close() { await c.close(); store.close(); await IndexedDbStore.delete(name,factory); } };
 }
+
+test("impact jobs load authorized stored objects without writer capability and skip moved heads",async () => {
+  const c = await stored();
+  try {
+    const exact = await c.evolution.assessSave(c.source,{target:c.previous.artifactId,migrationIds:[]});
+    if (exact.kind !== "exact") throw new Error("exact source expected");
+    const head = {commit:exact.source.source_commit,artifact:exact.source.artifact_id};
+    const before = await c.store.export(); let reads = 0;
+    const loadSave = async () => ({kind:"store" as const,execution,storage:{load:async (request: Uint8Array) => { reads++; return c.store.load(request); }}});
+    const report = await assessImpact({evolution:c.evolution,heads:[head,head],options:c.options,loadSave});
+    expect(report.counts.automatic).toBe(2); expect(report.distinct_counts.automatic).toBe(1); expect(reads).toBeGreaterThan(0);
+    expect(report.read_bytes).toBeGreaterThan(0); expect(await c.store.export()).toEqual(before);
+    const limited = await assessImpact({evolution:c.evolution,heads:[head],options:c.options,loadSave,limits:{saves:1,totalBytes:8,saveBytes:8}});
+    expect(limited.skipped.limit).toBe(1); expect(limited.counts.invalid_save).toBe(0);
+    const moved = await assessImpact({evolution:c.evolution,heads:[{...head,commit:`commit:${"0".repeat(64)}`}],options:c.options,loadSave});
+    expect(moved.skipped.stale_scan).toBe(1); expect(moved.evaluated_refs).toBe(0);
+    expect(await c.store.export()).toEqual(before);
+  } finally { await c.close(); }
+});
 
 test("the controller reports upgraded only after persistence and stale cursors return conflicts",async () => {
   const c = await stored();

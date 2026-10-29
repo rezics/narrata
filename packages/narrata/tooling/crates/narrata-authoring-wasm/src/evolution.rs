@@ -8,6 +8,7 @@ use narrata_nodes::{ArtifactId, Error, ExecutionId, Result, Session};
 use narrata_storage_host::{CacheBackend, LoadRequest};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Per-assessment limits, also bound to the confirmation in this driver. Values may only
 /// tighten the core's limits. JSON integers fit exactly in JavaScript.
@@ -53,7 +54,7 @@ impl ComparisonBudgetV1 {
 
 #[derive(Default)]
 pub struct Engine {
-    pub registry: EvolutionRegistry,
+    pub registry: Arc<EvolutionRegistry>,
     pub cache: CacheBackend,
     snapshot: Option<Session>,
     execution: Option<ExecutionId>,
@@ -61,9 +62,27 @@ pub struct Engine {
     request: Option<LoadRequest>,
 }
 impl Engine {
+    /// Read-only jobs share verified programs and descriptors, while cursors, approvals and
+    /// storage caches remain isolated. No full-work cloning or re-verification per reader.
+    pub fn fork(&self) -> Self {
+        Self {
+            registry: self.registry.clone(),
+            ..Self::default()
+        }
+    }
+    fn registry_mut(&mut self) -> Result<&mut EvolutionRegistry> {
+        Arc::get_mut(&mut self.registry).ok_or_else(|| {
+            Error::new(
+                "registry_in_use",
+                "evolution",
+                "close assessment forks before changing trusted publications",
+            )
+        })
+    }
     pub fn register_publication(&mut self, publication: &CheckedPublication) -> Result<()> {
         self.approved = None;
-        self.registry.register_program(publication.shared_program())
+        self.registry_mut()?
+            .register_program(publication.shared_program())
     }
     /// The host must obtain this publication from its trusted publication collection.
     /// Saves cannot register their own descriptors.
@@ -81,7 +100,7 @@ impl Engine {
         })?;
         self.register_publication(previous)?;
         self.register_publication(candidate)?;
-        self.registry
+        self.registry_mut()?
             .register_descriptor(checked.descriptor().clone())
     }
     pub fn restore(&mut self, save: &str) -> Result<()> {
@@ -201,6 +220,52 @@ impl Engine {
         };
         self.settle(result)
     }
+    /// Explicitly preserve a shallow history boundary using the existing kernel container.
+    pub fn export_shallow(&mut self, ancestors: u32) -> Result<Vec<u8>> {
+        if ancestors > 10_000 {
+            return Err(Error::new("limit", "checkpoint", "at most 10000 ancestors"));
+        }
+        let result = if let Some(execution) = self.execution {
+            Session::open_with_registry(&self.registry, execution, self.cache.share())
+                .and_then(|session| shallow(&session, ancestors))
+        } else {
+            self.snapshot
+                .as_ref()
+                .ok_or_else(|| Error::new("save", "evolution", "open a save first"))
+                .and_then(|session| shallow(session, ancestors))
+        };
+        self.settle(result)
+    }
+}
+
+fn shallow<B: narrata_storage::StorageBackend>(
+    session: &Session<B>,
+    ancestors: u32,
+) -> Result<Vec<u8>> {
+    let root = narrata_history::ObjectId::from_bytes(*session.cursor()?.as_bytes());
+    let bundle = session
+        .history()
+        .export_shallow(root, u64::from(ancestors), &Default::default())
+        .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
+    let total = bundle
+        .manifest
+        .checkpoint
+        .objects
+        .iter()
+        .fold(0_u64, |total, object| total.saturating_add(object.bytes))
+        .saturating_add(bundle.manifest.encode().len() as u64 + 80)
+        .saturating_add(bundle.manifest.checkpoint.objects.len() as u64 * 44);
+    // Match the existing node save transport's 64 MiB hex limit before allocation.
+    if total > 32 * 1024 * 1024 {
+        return Err(Error::new(
+            "limit",
+            "checkpoint",
+            "checkpoint exceeds 64 MiB of hex",
+        ));
+    }
+    bundle
+        .to_bytes()
+        .map_err(|e| Error::new("save", "checkpoint", e.to_string()))
 }
 
 fn unavailable(error: Error) -> AssessmentV1 {

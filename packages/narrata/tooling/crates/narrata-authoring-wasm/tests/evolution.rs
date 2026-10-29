@@ -110,12 +110,13 @@ fn public_driver_reuses_frozen_assessments_reports_and_migration_bytes() {
                 serde_json::from_slice::<serde_json::Value>(&corpus(case, "apply.json")).unwrap(),
                 "{case}"
             );
-            if case != "shallow-history" {
-                assert_eq!(
-                    hex::decode(engine.export().unwrap()).unwrap(),
-                    corpus(case, "target.checkpoint"),
-                    "{case}"
-                );
+            {
+                let bytes = if case == "shallow-history" {
+                    engine.export_shallow(1).unwrap()
+                } else {
+                    hex::decode(engine.export().unwrap()).unwrap()
+                };
+                assert_eq!(bytes, corpus(case, "target.checkpoint"), "{case}");
             }
         }
     }
@@ -189,6 +190,24 @@ fn snapshot_failures_are_redacted_and_missing_objects_are_retryable_without_hidi
         )
         .is_err()
     );
+}
+
+#[test]
+fn assessment_forks_share_trust_but_never_approvals_or_mutable_cursors() {
+    let (mut e, target, ids) = engine("unseen-rule");
+    let p = plan(e.assess(target, &ids, budget()).unwrap());
+    let mut fork = e.fork();
+    assert_eq!(fork.apply(&p, budget()).unwrap(), ApplyV1::PlanChanged);
+    let source = publication("unseen-rule", "source.narpack");
+    assert!(e.register_publication(&source).is_err());
+    fork.restore(&hex::encode(corpus("unseen-rule", "source.checkpoint")))
+        .unwrap();
+    assert!(matches!(
+        fork.assess(target, &ids, budget()).unwrap(),
+        AssessmentV1::Automatic { .. }
+    ));
+    drop(fork);
+    e.register_publication(&source).unwrap();
 }
 
 fn drive<T>(

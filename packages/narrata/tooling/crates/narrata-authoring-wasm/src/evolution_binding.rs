@@ -104,6 +104,11 @@ impl Evolution {
     pub fn new() -> Self {
         Self::default()
     }
+    pub fn fork(&self) -> Self {
+        Self {
+            inner: self.inner.fork(),
+        }
+    }
     #[wasm_bindgen(js_name = registerPublication)]
     pub fn register_publication(&mut self, publication: &Publication) -> Result<(), JsError> {
         self.inner
@@ -164,6 +169,10 @@ impl Evolution {
     }
     pub fn export(&mut self) -> Result<String, JsError> {
         self.inner.export().map_err(js_error)
+    }
+    #[wasm_bindgen(js_name = exportShallow)]
+    pub fn export_shallow(&mut self, ancestors: u32) -> Result<Vec<u8>, JsError> {
+        self.inner.export_shallow(ancestors).map_err(js_error)
     }
     #[wasm_bindgen(js_name = takeRequest)]
     pub fn take_request(&mut self) -> Option<Vec<u8>> {

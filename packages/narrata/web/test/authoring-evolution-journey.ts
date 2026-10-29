@@ -72,7 +72,7 @@ export async function evolutionJourney(api: Authoring, vector: EvolutionVector, 
       }
       const result = controller ? await (assessment.kind === "needs_confirmation" ? controller.confirm() : controller.applyAutomatic()) : await evolution.apply(approved);
       equal(result,vector.applied,`${vector.name}: apply`);
-      if (vector.targetSave && vector.name !== "shallow-history") equal(await evolution.exportSave(),vector.targetSave,`${vector.name}: checkpoint bytes`);
+      if (vector.targetSave) equal(await (vector.name === "shallow-history" ? evolution.exportShallow(1) : evolution.exportSave()),vector.targetSave,`${vector.name}: checkpoint bytes`);
     }
     return assessment.kind;
   } finally {

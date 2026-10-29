@@ -15,6 +15,8 @@ narrata-authoring = { path = "../narrata-authoring", version = "=0.1.0-alpha.1" 
 narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
 narrata-nodes = { path = "../../../nodes/crates/narrata-nodes", version = "=0.1.0-alpha.1", features = ["trace"] }
 narrata-storage-host = { path = "../../../kernel/crates/narrata-storage-host", version = "=0.1.0-alpha.1" }
+narrata-storage = { path = "../../../kernel/crates/narrata-storage", version = "=0.1.0-alpha.1" }
+narrata-history = { path = "../../../kernel/crates/narrata-history", version = "=0.1.0-alpha.1" }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

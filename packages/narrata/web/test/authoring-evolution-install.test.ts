@@ -32,7 +32,7 @@ test("an unpacked tarball executes the Rust evolution journeys in Node, Bun and 
   mkdirSync(join(directory,"public")); writeFileSync(join(directory,"public/vectors.json"),JSON.stringify(vectors));
   cpSync(join(here,"test/authoring-evolution-journey.ts"),join(directory,"journey.ts"));
   const impact = `
-async function impact(api, assessImpact, v) {
+async function impact(api, assessImpact, v, stored) {
   const source = api.publicationFromPack(Uint8Array.from(v.source));
   let target = api.publicationFromPack(Uint8Array.from(v.target));
   const planned = api.planEvolution(source,target,v.declarations), e = api.createEvolution();
@@ -45,6 +45,13 @@ async function impact(api, assessImpact, v) {
     if (loads !== 1 || report.counts.automatic !== 2 || report.distinct_counts.automatic !== 1 || !report.complete) throw new Error("impact Ref weighting");
     const limited = await assessImpact({evolution:e,heads:[head],options:{target:target.artifactId,migrationIds:[id]},loadSave:async () => v.save,limits:{saves:1,totalBytes:8,saveBytes:8}});
     if (limited.skipped.limit !== 1 || limited.complete) throw new Error("impact budget");
+    if (stored) {
+      const host = await stored(v);
+      try {
+        const objectReport = await assessImpact({evolution:e,heads:[host.head],options:{target:target.artifactId,migrationIds:[id]},loadSave:async () => ({kind:"store",execution:host.execution,storage:{load:request => host.storage.load(request)}})});
+        if (objectReport.counts.automatic !== 1 || !objectReport.complete || objectReport.read_bytes === 0) throw new Error("object-loader impact");
+      } finally {await host.close();}
+    }
   } finally {await e.close(); planned.free(); source.free(); target.free();}
 }`;
   writeFileSync(join(directory,"node.mjs"),`
@@ -80,7 +87,20 @@ window.evolve = async () => {
   const {loadAuthoring,assessImpact,EvolutionController} = await import("@rezics/narrata/authoring");
   const api = await loadAuthoring(), kinds = [];
   for (const vector of vectors) kinds.push(await evolutionJourney(api,vector,EvolutionController));
-  await impact(api,assessImpact,vectors.find(v => v.name === "unseen-rule"));
+  const {IndexedDbStore} = await import("@rezics/narrata/storage");
+  await impact(api,assessImpact,vectors.find(v => v.name === "unseen-rule"),async v => {
+    const name = "installed-impact-" + crypto.randomUUID(), storage = await IndexedDbStore.open(name);
+    const execution = "execution:0190f2a0000070008000000000000001";
+    const book = await openBook({pack:Uint8Array.from(v.source),execution,storage});
+    const view = (await book.inspect()).view, head = {commit:view.cursor,artifact:book.artifactId}; await book.close();
+    const before = await storage.export();
+    return {head,execution,storage,close:async () => {
+      try {
+        const after = await storage.export();
+        if (before.length !== after.length || before.some((b,i) => b !== after[i])) throw new Error("impact wrote storage");
+      } finally {storage.close(); await IndexedDbStore.delete(name);}
+    }};
+  });
   return kinds;
 };
 `);
