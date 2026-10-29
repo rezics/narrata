@@ -16,9 +16,9 @@
 
 | 任务 | 保留位置与分支头 | 证据边界与下一步 |
 | --- | --- | --- |
-| [作者图](tasks/G-031.md) | 已合入 main；完整保留三提交，重放后头 df86d34 | 正式交接已补。check:web（40 单测与 tarball）、kernel JS 检查、23 浏览器测试及桌面/390px 移动端三层图旅程通过；check:r1 仅审计失败，不能记成全通过。manager 已看新截图 |
-| [发布集合与关系投影](tasks/G-032.md) | .temp/worktrees/g-032，goal/g-032，8ef71de | 正式交接已补；221 Rust 测试、Clippy、Wasm 与两项规模测试通过。68,469,768 字节程序块的 88 对象集合可重开；100k 选择点为 44,083 行、15,640,925 字节/10 片。check:r1 仅审计失败；其余 19 浏览器测试另跑通过。待合入 |
-| [节点构件演化](tasks/G-033.md) | .temp/worktrees/g-033，goal/g-033，原核心 802dbfc 后追加修复 | 发现并修复 checkpoint import 的 incompatible_save 诊断退化，新增两项回归；正在补最终检查和交接，不能提前计作完成 |
+| [作者图](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-031.md) | 已合入 main；完整保留三提交，重放后头 df86d34 | 正式交接已补。check:web（40 单测与 tarball）、kernel JS 检查、23 浏览器测试及桌面/390px 移动端三层图旅程通过；check:r1 仅审计失败，不能记成全通过。manager 已看新截图 |
+| [发布集合与关系投影](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-032.md) | .temp/worktrees/g-032，goal/g-032，8ef71de | 正式交接已补；221 Rust 测试、Clippy、Wasm 与两项规模测试通过。68,469,768 字节程序块的 88 对象集合可重开；100k 选择点为 44,083 行、15,640,925 字节/10 片。check:r1 仅审计失败；其余 19 浏览器测试另跑通过。待合入 |
+| [节点构件演化](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-033.md) | .temp/worktrees/g-033，goal/g-033，原核心 802dbfc 后追加修复 | 发现并修复 checkpoint import 的 incompatible_save 诊断退化，新增两项回归；正在补最终检查和交接，不能提前计作完成 |
 | [公共创作与精简 reader](tasks/G-034.md) | 简报已生成、未派发 | 等作者图与发布集合的认领经整批验证关闭后再启动；复用对象发布核心，不重做作者核心 |
 
 所有日志/截图留在对应 worktree 的 .temp 下；close 会保存到任务 run 目录再移除 worktree。旧冻结语料保持不变；新发布/关系/演化语料分别有既有 ADR 0022/0023。
