@@ -17,7 +17,7 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 ## 当前与下一步
 
 1. [公共创作与精简 reader](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-034.md)已合入至 04aca6a 并 verified 关闭，分支保留。五项独立评审缺陷均修复并复核；合并后 check:r1（23 浏览器）、check:web（56 单测及 tarball）、test:scripts（53）与 docs:check 通过。忽略的重型绑定测试已另行执行并通过：88 对象、68,985,624 字节，旧 pack 上限仍被拒绝。
-   reader Wasm 为 1,677,387 / 431,589 字节 raw/gzip，authoring 独立加载，旧 raw 模块兼容。候选包 SHA-256 为 7327e2e659a68667607b6a878e23aeace46d7a3def6b466b43acc052207bf320，固定副本与元数据在 .temp/delivery/authoring-candidate.json；这还不是完整 M1 交付。合并后的日志在 .temp/manager-sdk-*.log；宿主说明已更新。已推送 2d45844，[新 CI](https://github.com/rezics/narrata/actions/runs/40895469616)正在验证含 check:web 的完整流程。
+   reader Wasm 为 1,677,387 / 431,589 字节 raw/gzip，authoring 独立加载，旧 raw 模块兼容。候选包 SHA-256 为 7327e2e659a68667607b6a878e23aeace46d7a3def6b466b43acc052207bf320，固定副本与元数据在 .temp/delivery/authoring-candidate.json；这还不是完整 M1 交付。合并后的日志在 .temp/manager-sdk-*.log；宿主说明已更新。已推送 2d45844 的[新 CI](https://github.com/rezics/narrata/actions/runs/40895469616)全部通过，含 Windows/Linux check:web、Gamebook、三平台 kernel 与服务器存档；后续在线/演化代码仍需自己的检查。
 2. [在线会话与精确构件恢复](tasks/G-035.md)已启动 Codex/high worker；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
    已查看公共包桌面/移动端插槽截图，其 HOST CONTENT 内容只证明渲染接线。M1 最终模拟旅程须接公共创作输出、宿主真实正文/标签与在线保存恢复，已加入在线任务；不以占位截图代替完整旅程。
    Sol/medium 对接续前基线另确认参考 App 默认 full pack，以及最小 shortStorySource 缺复合叙事机制。最终交接后按 .temp/m1-reference-acceptance-review.md 核对同一公共创作作品的局部汇合/延迟后果/参数化调用/结局、真实页面和冷首屏；先看新分支是否已解决，不重复派发或误报仍在编写的代码。
