@@ -50,5 +50,13 @@ Goal worker 通过 `task goal -- slot [--heavy] -- <命令>` 运行检查，以�
 `cargo check -p narrata-graph --target wasm32-unknown-unknown`，也经 Goal 槽位运行。
 原生 release 规模基准与 Windows 峰值工作集采样的命令见[图布局基准](benchmarks/graph-layout.md)。
 
+M1 的冷读参考入口是 `examples/gamebook-web` 的 `/?reference`：Node 测试宿主通过公共 server API
+创作、编辑、预览与发布复合故事，浏览器仅按不可变对象协议读取。`/` 是保留导入兼容性的 legacy pack
+示例，`/?online` 是浏览器内创作的最小示例，二者不充当冷读验收证据。聚焦命令为
+`task goal -- slot --heavy -- npm --prefix examples/gamebook-web run test:e2e -- online-cold.spec.ts`；
+`check:web` 把同一宿主、入口与旅程复制到 tarball 安装工程，在新浏览器上下文核对实际清单/入口块/Wasm
+字节身份，并验证合流、延后后果、传参、两个结局及在线故障。开发证据在 `.temp/cold-reference-evidence/`，
+安装证据在系统临时目录的 `.temp/narrata-web-install-*/cold-reference/`。
+
 每个 git worktree 有自己的 `target/`（主 checkout 约 20 GB），并发 worker 的磁盘与编译开销
 按 worktree 数线性增长。

@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import { strict as assert } from "node:assert";
 import { chromium } from "@playwright/test";
 import { createServer } from "node:http";
+import { pathToFileURL } from "node:url";
+import { verifyReferenceJourney } from "../../../../examples/gamebook-web/scripts/reference-journey.ts";
 import { demoPack, execution, splitPack } from "../test/fixture.ts";
 import { npmCli, tarball } from "./pack.mjs";
 
@@ -142,7 +144,9 @@ cpSync(resolve(here, "test/reader-types.tsx"), join(directory, "reader-types.tsx
 cpSync(resolve(here, "test/graph-types.tsx"), join(directory, "graph-types.tsx"));
 // Run the reference host unchanged against the unpacked public tarball.
 cpSync(resolve(here, "../../../examples/gamebook-web/src/online.tsx"), join(directory, "online.tsx"));
-writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, jsx: "react-jsx" }, include: ["types.ts", "native-types.ts", "reader-types.tsx", "graph-types.tsx"] }));
+cpSync(resolve(here, "../../../examples/gamebook-web/src/reference.tsx"), join(directory, "reference.tsx"));
+for (const name of ["reference-host.ts", "reference-story.ts", "reference-content.ts"]) cpSync(resolve(here, "../../../examples/gamebook-web/scripts", name), join(directory, name));
+writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, allowImportingTsExtensions: true, jsx: "react-jsx" }, include: ["types.ts", "native-types.ts", "reader-types.tsx", "graph-types.tsx", "reference-host.ts", "reference-story.ts", "reference-content.ts", "online.tsx", "reference.tsx"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 
 writeFileSync(join(directory, "vite.config.js"), 'export default { worker: { format: "es" } };\n');
@@ -164,7 +168,12 @@ import { IndexedDbStore } from "@rezics/narrata/storage";
 import { Reader } from "@rezics/narrata/react";
 import { createRoot } from "react-dom/client";
 async function bytes(url) { const response = await fetch(url); if (!response.ok) throw new Error("HTTP " + response.status); return new Uint8Array(await response.arrayBuffer()); }
-window.ready = (async () => {
+window.ready = new URLSearchParams(location.search).has("reference") ? (async () => {
+  document.title = "Narrata cold reference journey";
+  document.querySelector("#status")?.remove();
+  const { mountColdReference } = await import("./reference.tsx");
+  await mountColdReference(document.querySelector("#reader"));
+})() : (async () => {
   const store = await IndexedDbStore.open("installed-package-session");
   const book = await openBook({ manifest: await bytes("/manifest.cbor"), execution: ${JSON.stringify(execution)}, storage: store,
     fetchChunk: id => bytes("/objects/" + id.slice(7) + ".cbor") });
@@ -220,8 +229,12 @@ const emitted = (await import("node:fs/promises")).readdir;
 assert.ok((await emitted(join(directory, "dist/assets"))).some(name => name.endsWith(".wasm")), "Wasm must remain a separate request");
 const port = 4193;
 const served = [];
+// Loaded from the unpacked consumer, this Node host publishes through its installed server API.
+const { createReferenceHost } = await import(pathToFileURL(join(directory, "reference-host.ts")).href);
+const referenceHost = await createReferenceHost();
 const server = createServer(async (request, response) => {
   try {
+    if (await referenceHost.handle(request, response)) return;
     const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
     if (path.includes("..")) { response.writeHead(400).end(); return; }
     const file = join(directory, "dist", path === "/" ? "index.html" : path);
@@ -263,6 +276,11 @@ try {
   assert.equal(before.view.depth, 1);
   const save = await page.evaluate(() => window.installed.save());
   await page.evaluate(() => window.installed.close());
+  const coldContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const bytes = readFileSync(join(installed, "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"));
+    await verifyReferenceJourney(await coldContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "cold-reference"), { bytes: bytes.length, sha256: sha256(bytes) });
+  } finally { await coldContext.close(); }
   await page.reload();
   await page.waitForFunction(() => document.querySelector("#status")?.textContent === "ready", { timeout: 30_000 });
   await page.evaluate(() => window.ready);
@@ -356,5 +374,6 @@ try {
 } finally {
   await browser?.close();
   await new Promise(done => server.close(done));
+  referenceHost.close();
 }
 console.log(`Install evidence: ${directory}`);

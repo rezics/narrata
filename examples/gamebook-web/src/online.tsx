@@ -1,7 +1,7 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { AuthenticatedLibrary, createOnlineSession, createReader, LibraryClosed, openBook, WriteRejected } from "@rezics/narrata";
-import type { ArtifactSource, ContentResolver, OnlineSession, ReaderController } from "@rezics/narrata";
+import type { ArtifactSource, ContentResolver, OnlineSession, ReaderController, Resolution } from "@rezics/narrata";
 import { Reader } from "@rezics/narrata/react";
 import type { ContentSlotProps } from "@rezics/narrata/react";
 import { decodeLoaded, encodeLoadRequest, equalBytes, IndexedDbStore } from "@rezics/narrata/storage";
@@ -83,11 +83,19 @@ type Fault = "none" | "lost" | "quota" | "late";
 interface LibraryRecord { store: IndexedDbStore; state: StoreState; active: boolean; database: string }
 interface Binding { session: OnlineSession; controller: ReaderController }
 interface HostSnapshot { binding: Binding; account: string; publication: "A" | "B" }
+export interface OnlineReferenceSource {
+  currentArtifact(): Promise<string>;
+  loadArtifact(artifact: string): Promise<ArtifactSource>;
+  resolve: ContentResolver["resolve"];
+  publishB(): Promise<string>;
+}
 
 /** Simulated authenticated host. Replace its CacheStore with an authenticated server transport. */
-export async function createOnlineReference() {
-  const published = await publications();
-  const artifacts = new Map([[published.a.artifact, published.a.source]]);
+export async function createOnlineReference(remote?: OnlineReferenceSource) {
+  const published = remote ? undefined : await publications();
+  const artifacts = new Map(published ? [[published.a.artifact, published.a.source]] : []);
+  const artifactA = remote ? await remote.currentArtifact() : published?.a.artifact;
+  if (!artifactA) throw new Error("Reference publication unavailable");
   const records = new Map<string, LibraryRecord>();
   const journeys = new Map<string, string>();
   const listeners = new Set<() => void>();
@@ -95,7 +103,7 @@ export async function createOnlineReference() {
   const writes: Uint8Array[] = [];
   const chunkRequests: { artifact: string; chunk: string }[] = [];
   const late: (() => void)[] = [];
-  let current = published.a.artifact; let fault: Fault = "none"; let snapshot: HostSnapshot;
+  let current = artifactA; let fault: Fault = "none"; let snapshot: HostSnapshot;
   let connectionGeneration = 0;
   function notify() { for (const listener of listeners) listener(); }
   function close(binding: Binding) {
@@ -135,13 +143,15 @@ export async function createOnlineReference() {
       const generation = contentGeneration;
       await Promise.resolve();
       if (generation !== contentGeneration) throw new LibraryClosed();
-      return request.items.map(item => {
+      const result = remote ? await remote.resolve(request) : request.items.map((item): Resolution => {
         const reference = "unit" in item.content ? item.content.unit : item.content;
         if (reference.provider !== "story" || request.context.viewer !== account) return { status: "unavailable" };
         const value = text[reference.key]; if (!value) return { status: "unavailable" };
         cache.set(reference.key, value);
         return { status: "ok", revision: "lantern:1", payload: "unit" in item.content ? { blocks: [{ id: "p1", text: value }] } : { text: value } };
       });
+      if (generation !== contentGeneration) throw new LibraryClosed();
+      return result;
     } };
     const library = new AuthenticatedLibrary({ store: transport, storeId: fixed.state.id,
       release: () => undefined, clearContent: () => { contentGeneration++; cache.clear(); controller?.dispose(); },
@@ -152,9 +162,9 @@ export async function createOnlineReference() {
         await new Promise<void>((done, fail) => { const request = indexedDB.deleteDatabase(fixed.database); request.onsuccess = () => done(); request.onerror = () => fail(request.error); });
       } });
     let id = journeys.get(account); if (fresh || !id) { id = execution(); journeys.set(account, id); }
-    const session = createOnlineSession({ library, execution: id, currentArtifact: async () => current,
+    const session = createOnlineSession({ library, execution: id, currentArtifact: () => remote ? remote.currentArtifact() : Promise.resolve(current),
       loadArtifact: async artifact => {
-        const source = artifacts.get(artifact); if (!source) throw new Error("Saved artifact unavailable");
+        const source = remote ? await remote.loadArtifact(artifact) : artifacts.get(artifact); if (!source) throw new Error("Saved artifact unavailable");
         return { ...source, fetchChunk: chunk => { chunkRequests.push({ artifact, chunk }); return source.fetchChunk(chunk); } };
       } });
     await session.start();
@@ -162,7 +172,7 @@ export async function createOnlineReference() {
     controller = createReader(session, resolver, { online: session, context: { languages: ["en"], viewer: account } });
     await controller.start();
     if (generation !== connectionGeneration) { await session.close(); return; }
-    snapshot = { binding: { session, controller }, account, publication: current === published.a.artifact ? "A" : "B" };
+    snapshot = { binding: { session, controller }, account, publication: current === artifactA ? "A" : "B" };
     notify();
   }
   await connect("reader-one");
@@ -173,18 +183,38 @@ export async function createOnlineReference() {
     releaseLate: () => { for (const done of late.splice(0)) done(); },
     hasLate: () => late.length > 0,
     libraryId: () => Array.from(records.get(snapshot.account)?.state.id ?? []),
-    evidence: () => ({ writes: writes.map(bytes => Array.from(bytes)), chunkRequests: [...chunkRequests], artifactA: published.a.artifact, current }),
-    publishB: () => { const b = published.publishB(); artifacts.set(b.artifact, b.source); current = b.artifact; snapshot = { ...snapshot, publication: "B" }; notify(); },
+    evidence: () => ({ writes: writes.map(bytes => Array.from(bytes)), chunkRequests: [...chunkRequests], artifactA, current }),
+    publishB: async () => {
+      if (remote) current = await remote.publishB();
+      else if (published) { const b = published.publishB(); artifacts.set(b.artifact, b.source); current = b.artifact; }
+      snapshot = { ...snapshot, publication: "B" }; notify();
+    },
     reopen: () => connect(snapshot.account),
     newJourney: () => connect(snapshot.account, true),
     switchAccount: () => connect(snapshot.account === "reader-one" ? "reader-two" : "reader-one"),
+    otherDeviceChoose: async (labelKey: string) => {
+      const record = records.get(snapshot.account); const id = journeys.get(snapshot.account);
+      if (!record?.active || !id) throw new Error("No active reference library");
+      const peer = createOnlineSession({ execution: id, library: new AuthenticatedLibrary({ store: record.store, storeId: record.state.id,
+        clearContent: () => undefined, release: () => undefined, remove: async () => { throw new Error("Peer cannot delete this library"); } }),
+        currentArtifact: () => remote ? remote.currentArtifact() : Promise.resolve(current),
+        loadArtifact: async artifact => { const source = remote ? await remote.loadArtifact(artifact) : artifacts.get(artifact); if (!source) throw new Error("Historic artifact unavailable"); return source; },
+      });
+      try {
+        await peer.start(); const view = (await peer.inspect()).view;
+        if (view.interaction.kind !== "choose") throw new Error("Peer expected a choice");
+        const option = view.interaction.options.find(option => option.label?.key === labelKey);
+        if (!option) throw new Error("Peer option unavailable");
+        await peer.choose(view.cursor, view.interaction.choice_point, [option.id]);
+      } finally { await peer.close(); }
+    },
     remove: async () => { const account = snapshot.account; await snapshot.binding.session.remove(); await connect(account, true); },
     dispose: async () => {
       connectionGeneration++;
       for (const done of late.splice(0)) done();
       await snapshot.binding.session.close(); await Promise.allSettled(closing);
       for (const record of records.values()) record.store.close();
-      published.free(); listeners.clear();
+      published?.free(); listeners.clear();
     },
   };
 }
@@ -198,16 +228,23 @@ const slots = { body: slot, option: slot, reference: slot };
 function OnlineReference({ host }: { host: ReferenceHost }) {
   const state = useSyncExternalStore(host.subscribe, host.getSnapshot);
   const save = useSyncExternalStore(state.binding.session.subscribe, state.binding.session.getSnapshot);
-  const busy = save.status === "saving";
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState(false);
+  const busy = save.status === "saving" || pending;
+  async function action(operation: () => Promise<unknown>) {
+    setPending(true); setError(false);
+    try { await operation(); } catch { setError(true); } finally { setPending(false); }
+  }
   return <main style={{ maxWidth: 760, margin: "32px auto", padding: 24, lineHeight: 1.7 }}>
     <h1>Online story journey</h1>
     <p>Account: {state.account} · Current publication: {state.publication}</p>
     <nav aria-label="Online host actions" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-      <button disabled={busy || state.publication === "B"} onClick={() => host.publishB()}>Publish B</button>
-      <button disabled={busy || save.status === "unknown"} onClick={() => { void host.reopen(); }}>Reopen this journey</button>
-      <button disabled={busy} onClick={() => { void host.newJourney(); }}>Start a new journey</button>
-      <button onClick={() => { void host.switchAccount(); }}>Switch account</button>
+      <button disabled={busy || state.publication === "B"} onClick={() => { void action(host.publishB); }}>Publish B</button>
+      <button disabled={busy || save.status === "unknown"} onClick={() => { void action(host.reopen); }}>Reopen this journey</button>
+      <button disabled={busy} onClick={() => { void action(host.newJourney); }}>Start a new journey</button>
+      <button disabled={pending} onClick={() => { void action(host.switchAccount); }}>Switch account</button>
     </nav>
+    {error ? <p role="alert">The host action failed. Your saved journey is preserved; try the action again.</p> : null}
     <details><summary>Simulate a save failure</summary>
       <button onClick={() => host.setFault("lost")}>Lose the next save response</button>{" "}
       <button onClick={() => host.setFault("quota")}>Reject the next save: storage full</button>
@@ -215,8 +252,8 @@ function OnlineReference({ host }: { host: ReferenceHost }) {
     <Reader controller={state.binding.controller} slots={slots} showPath={false} showState={false} />
   </main>;
 }
-export async function mountOnlineReference(element: HTMLElement) {
-  const host = await createOnlineReference(); const root = createRoot(element);
+export async function mountOnlineReference(element: HTMLElement, source?: OnlineReferenceSource) {
+  const host = await createOnlineReference(source); const root = createRoot(element);
   root.render(<OnlineReference host={host} />);
   return { ...host, dispose: async () => { root.unmount(); await host.dispose(); } };
 }

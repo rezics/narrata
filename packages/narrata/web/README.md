@@ -97,9 +97,23 @@ then map quota or explicit unavailability to `WriteRejected`. A later rejection 
 earlier unknown attempt. The server reference host remains the storage transaction authority;
 this coordinator adds no HTTP protocol, database schema or login/offline synchronization.
 
-The reference reader's `?online` route creates, edits and previews the public short story, publishes
-A, resolves host-owned prose and option labels, simulates save failures and publishes B. Its
-IndexedDB transport isolates client behavior; it does not implement server authentication.
+The accepted cold reading reference is the example's **`/?reference`** route. Its thin Node host
+creates the separate Signal Lantern work through the public server API, edits the call parameter
+from 3 to 7, previews the journey and publishes A. A fresh reader realm fetches only the exact
+manifest, necessary entry chunk and reader Wasm. Compilation, whole-publication enumeration and
+immutable-object serving stay in the Node host. The browser never initializes the compiler or
+assembles a pack for persistence.
+
+This one work contains a local reply/rejoin, a later consequence of that choice, a parameterized
+keeper subgraph and both endings. The same rendered journey exercises A/B restoration and online
+failures. Its body blocks and distinct labels come from the example's content host, outside the
+program and save. `online-cold.spec.ts` and the installed-tarball suite run the same route and check
+its actual response identities and lengths, including unavailable chunks and recovery. Screenshots
+and request/byte evidence accompany those checks.
+
+`/` remains the legacy pack demo with custom-pack import compatibility. `/?online` remains the
+minimal in-browser authoring sample; neither is the evidence for cold M1 loading. These reference
+hosts use IndexedDB to isolate client behavior and do not implement server authentication.
 
 `@rezics/narrata/reader` exports the same reader surface as the root entry. Both load only the
 reader Wasm, without compiler, publication, layout or trace code. The raw
