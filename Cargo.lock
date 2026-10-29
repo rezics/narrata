@@ -503,6 +503,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "narrata-authoring-wasm"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "narrata-authoring",
+ "narrata-content-local",
+ "narrata-kernel",
+ "narrata-node-tools",
+ "narrata-nodes",
+ "schemars",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "narrata-cli"
 version = "0.1.0-alpha.1"
 dependencies = [

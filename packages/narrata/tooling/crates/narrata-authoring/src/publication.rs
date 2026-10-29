@@ -181,7 +181,7 @@ impl CheckedPublication {
 
 /// Compiled candidates can be retained and inspected even when their outlines prevent
 /// switching. Topology warnings do not prevent switching; missing/defective outlines do.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PublicationStatus {
     Compiled,

@@ -418,7 +418,17 @@ pub(crate) fn warning(diagnostic: &narrata_nodes::Diagnostic) -> Diagnostic {
     }
 }
 
-pub(crate) fn validate_records_with_budget(
+/// Record, assembly and semantic checks without compilation: the editor's project check.
+/// A checked set yields normalized records and derived indexes.
+pub fn validate_records(records: &[&[u8]]) -> Report<CheckedRecords> {
+    validate_records_with_budget(
+        records,
+        &NodeRegistry::gamebook(),
+        ValidationBudget::default(),
+    )
+}
+
+pub fn validate_records_with_budget(
     records: &[&[u8]],
     registry: &NodeRegistry,
     budget: ValidationBudget,

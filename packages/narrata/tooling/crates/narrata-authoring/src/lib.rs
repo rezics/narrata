@@ -13,7 +13,9 @@ pub mod records;
 pub mod relations;
 pub mod validate;
 
-pub use compose::{ComposeMode, ComposedSource, compose_source};
+pub use compose::{
+    ComposeMode, ComposedObjects, ComposedRecords, ComposedSource, compose_records, compose_source,
+};
 pub use ids::{MintedEdit, Minter, mint_ids};
 pub use publication::{
     CheckedPublication, PublicationReport, PublicationStatus, PublishedRecords, publish_records,
@@ -25,6 +27,7 @@ pub use records::{
 pub use relations::{CheckedRelations, project_relations};
 pub use validate::{
     Diagnostic, Report, Severity, ValidationBudget, validate_project, validate_record,
+    validate_records,
 };
 
 pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {

@@ -1,5 +1,7 @@
 //! Thin Wasm binding. Pack decoding, state transitions, validation, save restoration, R1 save
 //! migration and content resolution stay in Rust; values cross the boundary as JSON text.
+//! The default `legacy-publish` feature adds the raw module's `publishGraph`; the reader
+//! build omits it.
 
 #![forbid(unsafe_code)]
 
@@ -11,9 +13,8 @@ use std::{
 use narrata_content_local::{ContentPack, ResolveRequest};
 use narrata_kernel::content::ProviderId;
 use narrata_nodes::{
-    Analysis, AuthoredId, BookView, ChunkSource, Error, Lookup, MAX_REQUEST_BYTES,
-    MAX_SOURCE_BYTES, MemorySource, NameTable, ObjectId, Program, ProposalRequest, Session,
-    analyze, parse_json_limited, r1,
+    Analysis, AuthoredId, BookView, ChunkSource, Error, Lookup, MAX_REQUEST_BYTES, MemorySource,
+    NameTable, ObjectId, Program, ProposalRequest, Session, analyze, parse_json_limited, r1,
 };
 use narrata_storage_host::{CacheBackend, FlushReply, HostError, Loaded, StoreId, StoreState};
 use wasm_bindgen::prelude::*;
@@ -36,12 +37,14 @@ fn json<T: serde::Serialize>(value: &T) -> Result<String, JsError> {
     serde_json::to_string(value).map_err(|error| JsError::new(&error.to_string()))
 }
 
+#[cfg(feature = "legacy-publish")]
 #[derive(serde::Serialize)]
 struct PublicationObject<'a> {
     object_id: String,
     bytes: &'a [u8],
 }
 
+#[cfg(feature = "legacy-publish")]
 #[derive(serde::Serialize)]
 struct GraphPublication<'a> {
     index: PublicationObject<'a>,
@@ -57,13 +60,14 @@ struct GraphPublication<'a> {
 /// diagnostics. `outlines` is an optional JSON array of provider outlines. Object bytes
 /// are arrays of u8; JSON files are strings preserving the CLI's exact output bytes.
 /// This is a host API value, not a new stored artifact format.
+#[cfg(feature = "legacy-publish")]
 #[wasm_bindgen(js_name = publishGraph)]
 pub fn publish_graph(pack: &[u8], outlines: Option<String>) -> Result<String, JsError> {
     let (program, names) = Program::from_pack(pack).map_err(js_error)?;
     program.verify_artifact().map_err(js_error)?;
     let outlines: Vec<narrata_nodes::ContentOutline> = outlines
         .as_deref()
-        .map(|text| parse_json_limited(text, MAX_SOURCE_BYTES))
+        .map(|text| parse_json_limited(text, narrata_nodes::MAX_SOURCE_BYTES))
         .transpose()
         .map_err(js_error)?
         .unwrap_or_default();

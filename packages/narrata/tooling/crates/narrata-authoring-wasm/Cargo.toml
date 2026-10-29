@@ -1,0 +1,27 @@
+[package]
+name = "narrata-authoring-wasm"
+description = "Wasm binding of Narrata's checked authoring and publication core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+narrata-authoring = { path = "../narrata-authoring", version = "=0.1.0-alpha.1" }
+narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
+narrata-nodes = { path = "../../../nodes/crates/narrata-nodes", version = "=0.1.0-alpha.1" }
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+wasm-bindgen.workspace = true
+
+[dev-dependencies]
+narrata-node-tools = { path = "../narrata-node-tools", version = "=0.1.0-alpha.1" }
+narrata-content-local = { path = "../narrata-content-local", version = "=0.1.0-alpha.1" }
+
+[lints]
+workspace = true

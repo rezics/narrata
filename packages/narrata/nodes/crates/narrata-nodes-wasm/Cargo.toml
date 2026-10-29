@@ -10,13 +10,19 @@ repository.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# The raw module's publishGraph. The reader build disables it so the first screen carries no
+# compiler, layout or publication code; authoring hosts use narrata-authoring-wasm instead.
+default = ["legacy-publish"]
+legacy-publish = ["dep:narrata-node-tools", "dep:hex"]
+
 [dependencies]
-narrata-node-tools = { path = "../../../tooling/crates/narrata-node-tools", version = "=0.1.0-alpha.1" }
+narrata-node-tools = { path = "../../../tooling/crates/narrata-node-tools", version = "=0.1.0-alpha.1", optional = true }
 narrata-storage-host = { path = "../../../kernel/crates/narrata-storage-host", version = "=0.1.0-alpha.1" }
 narrata-content-local = { path = "../../../tooling/crates/narrata-content-local", version = "=0.1.0-alpha.1" }
 narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
 narrata-nodes = { path = "../narrata-nodes", version = "=0.1.0-alpha.1" }
-hex.workspace = true
+hex = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 wasm-bindgen.workspace = true

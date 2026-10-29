@@ -1024,7 +1024,7 @@ pub(crate) fn locate_diagnostics(records: &[CheckedRecord], diagnostics: &mut [D
         }
     }
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, JsonSchema, Serialize)]
 pub struct OwnershipIndex {
     pub record: String,
     pub kind: String,
@@ -1033,7 +1033,7 @@ pub struct OwnershipIndex {
     pub node: Option<NodeId>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetStatus {
     Local,
@@ -1042,7 +1042,7 @@ pub enum TargetStatus {
     Unresolved,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, JsonSchema, Serialize)]
 pub struct OptionIndex {
     pub record: String,
     pub package: String,
@@ -1062,7 +1062,7 @@ pub struct OptionIndex {
     pub tags: Vec<ContentRef>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, JsonSchema, Serialize)]
 pub struct DraftIndexes {
     pub ownership: Vec<OwnershipIndex>,
     pub options: Vec<OptionIndex>,
