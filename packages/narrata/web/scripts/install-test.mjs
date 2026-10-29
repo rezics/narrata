@@ -21,12 +21,18 @@ npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", ta
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./storage", "./react", "./testing", "./graph", "./graph/react", "./content/native"]);
+assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./content/native"]);
 assert.deepEqual(manifest.dependencies, { graphology: "0.26.0", sigma: "3.0.3" }, "Only the lazy graph entry uses runtime dependencies");
 assert.deepEqual(manifest.peerDependenciesMeta, { react: { optional: true } });
 assert.equal(existsSync(join(directory, "node_modules/react")), false, "Framework-free hosts must not install React");
-assert.equal(createHash("sha256").update(readFileSync(join(installed, "dist/wasm/narrata_nodes_wasm_bg.wasm"))).digest("hex"),
-  createHash("sha256").update(readFileSync(join(here, "dist/wasm/narrata_nodes_wasm_bg.wasm"))).digest("hex"));
+const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
+// Served Wasm is identified by content: reader, raw compatibility module or authoring.
+const wasmKinds = new Map();
+for (const [kind, path] of [["reader", "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"], ["compat", "dist/wasm/narrata_nodes_wasm_bg.wasm"], ["authoring", "dist/authoring-wasm/narrata_authoring_wasm_bg.wasm"]]) {
+  const hash = sha256(readFileSync(join(installed, path)));
+  assert.equal(hash, sha256(readFileSync(join(here, path))), `${kind} Wasm differs from the build`);
+  wasmKinds.set(hash, kind);
+}
 const publicDirectory = join(directory, "public");
 mkdirSync(join(publicDirectory, "objects"), { recursive: true });
 writeFileSync(join(publicDirectory, "manifest.cbor"), parts.manifest);
@@ -95,9 +101,33 @@ try {
 finally { await book.close(); }
 console.log("Installed package opened in " + process.argv[2]);
 `);
-for (const mode of ["default", "url", "bytes"]) execFileSync(process.execPath, [join(directory, "node.mjs"), mode], { cwd: directory, stdio: "inherit" });
-// Bun is already part of the repository toolchain; test its file-URL loader too.
+cpSync(resolve(here, "scripts/install/journey.mjs"), join(directory, "journey.mjs"));
+writeFileSync(join(directory, "authoring.mjs"), `
+import { readFile } from "node:fs/promises";
+import { strict as assert } from "node:assert";
+import { loadAuthoring } from "@rezics/narrata/server";
+import { openBook } from "@rezics/narrata/reader";
+import { shortStorySource, shortStoryOutline } from "@rezics/narrata/testing";
+import { author, read } from "./journey.mjs";
+const wasm = new URL("./node_modules/@rezics/narrata/dist/authoring-wasm/narrata_authoring_wasm_bg.wasm", import.meta.url);
+const mode = process.argv[2];
+// "browser-entry" proves the browser subpath also locates its Wasm from a file URL.
+const api = mode === "browser-entry" ? await (await import("@rezics/narrata/authoring")).loadAuthoring()
+  : await loadAuthoring(mode === "bytes" ? new Uint8Array(await readFile(wasm)) : mode === "url" ? wasm : undefined);
+const published = await author(api, { shortStorySource, shortStoryOutline });
+const journeys = await read(openBook, ${JSON.stringify(execution)}, published);
+assert.equal(journeys.firstScreen, 1, "A's first screen fetches only the entry chunk");
+assert.notEqual(journeys.artifacts[0], journeys.artifacts[1]);
+console.log("Installed authoring published A and B in " + mode + ": " + JSON.stringify(journeys));
+`);
+for (const mode of ["default", "url", "bytes"]) {
+  execFileSync(process.execPath, [join(directory, "node.mjs"), mode], { cwd: directory, stdio: "inherit" });
+  execFileSync(process.execPath, [join(directory, "authoring.mjs"), mode], { cwd: directory, stdio: "inherit" });
+}
+execFileSync(process.execPath, [join(directory, "authoring.mjs"), "browser-entry"], { cwd: directory, stdio: "inherit" });
+// Bun is already part of the repository toolchain; test its file-URL loaders too.
 execFileSync("bun", [join(directory, "node.mjs"), "default"], { cwd: directory, stdio: "inherit" });
+execFileSync("bun", [join(directory, "authoring.mjs"), "default"], { cwd: directory, stdio: "inherit" });
 
 npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "react@19.2.8", "react-dom@19.2.8", "@types/react@^19.0.0", "@types/react-dom@^19.0.0");
 cpSync(resolve(here, "test/reader-types.tsx"), join(directory, "reader-types.tsx"));
@@ -105,9 +135,21 @@ cpSync(resolve(here, "test/graph-types.tsx"), join(directory, "graph-types.tsx")
 writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, jsx: "react-jsx" }, include: ["types.ts", "native-types.ts", "reader-types.tsx", "graph-types.tsx"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 
+writeFileSync(join(directory, "vite.config.js"), 'export default { worker: { format: "es" } };\n');
+writeFileSync(join(directory, "worker.js"), `
+import { author } from "./journey.mjs";
+self.onmessage = async () => {
+  try {
+    // The authoring subpath is imported only here, in the editing/publishing Worker.
+    const [{ loadAuthoring }, testing] = await Promise.all([import("@rezics/narrata/authoring"), import("@rezics/narrata/testing")]);
+    self.postMessage({ ok: true, published: await author(await loadAuthoring(), testing) });
+  } catch (error) { self.postMessage({ ok: false, error: String(error?.stack ?? error) }); }
+};
+`);
 writeFileSync(join(directory, "index.html"), '<!doctype html><html><head><title>Narrata install test</title></head><body><p id="status">loading</p><div id="reader"></div><script type="module" src="/main.tsx"></script></body></html>');
 writeFileSync(join(directory, "main.tsx"), `
 import { openBook, createReader } from "@rezics/narrata";
+import { read } from "./journey.mjs";
 import { IndexedDbStore } from "@rezics/narrata/storage";
 import { Reader } from "@rezics/narrata/react";
 import { createRoot } from "react-dom/client";
@@ -116,13 +158,28 @@ window.ready = (async () => {
   const store = await IndexedDbStore.open("installed-package-session");
   const book = await openBook({ manifest: await bytes("/manifest.cbor"), execution: ${JSON.stringify(execution)}, storage: store,
     fetchChunk: id => bytes("/objects/" + id.slice(7) + ".cbor") });
-  const controller = createReader(book, { resolve: async request => request.items.map(() => ({ status: "ok", revision: "host", payload: { text: "HOST CONTENT" } })) }, { persistence: "durable", context: { languages: ["en"] } });
+  let failContent = false;
+  const controller = createReader(book, { resolve: async request => {
+    if (failContent) { failContent = false; throw new Error("content service unavailable"); }
+    return request.items.map(() => ({ status: "ok", revision: "host", payload: { text: "HOST CONTENT" } }));
+  } }, { persistence: "durable", context: { languages: ["en"] } });
   const slot = props => <span data-host-role={props.role} data-realization={props.context.realization}>{props.resolution.status === "ok" ? props.resolution.payload.text : props.resolution.status}</span>;
   const root = createRoot(document.querySelector("#reader"));
   root.render(<Reader controller={controller} slots={{ body: slot, option: slot, reference: slot }} />);
   let firstScreenRequests;
   controller.subscribe(() => { if (firstScreenRequests === undefined && controller.getSnapshot().phase === "ready") firstScreenRequests = performance.getEntriesByType("resource").filter(entry => entry.name.endsWith(".cbor")).length; });
   window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), firstScreen: () => firstScreenRequests,
+    failContentOnce: async () => { failContent = true; const failed = await controller.refresh(); const phase = controller.getSnapshot().phase; const retried = await controller.retry(); return { failed, phase, retried, after: controller.getSnapshot().phase }; },
+    author: () => new Promise((done, fail) => {
+      const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
+      worker.onerror = event => { worker.terminate(); fail(new Error(event.message)); };
+      worker.onmessage = async ({ data }) => {
+        worker.terminate();
+        if (!data.ok) { fail(new Error(data.error)); return; }
+        try { done(await read(openBook, ${JSON.stringify(execution)}, data.published)); } catch (error) { fail(error); }
+      };
+      worker.postMessage("publish");
+    }),
     native: async () => {
       const { createNativeContentAdapter, nativeContentOutline } = await import("@rezics/narrata/content/native");
       const { nativeDocumentSample } = await import("@rezics/narrata/testing");
@@ -144,12 +201,14 @@ execFileSync(process.execPath, [join(directory, "node_modules/vite/bin/vite.js")
 const emitted = (await import("node:fs/promises")).readdir;
 assert.ok((await emitted(join(directory, "dist/assets"))).some(name => name.endsWith(".wasm")), "Wasm must remain a separate request");
 const port = 4193;
+const served = [];
 const server = createServer(async (request, response) => {
   try {
     const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
     if (path.includes("..")) { response.writeHead(400).end(); return; }
     const file = join(directory, "dist", path === "/" ? "index.html" : path);
     const body = await (await import("node:fs/promises")).readFile(file);
+    if (file.endsWith(".wasm")) served.push(wasmKinds.get(sha256(body)) ?? "unknown");
     response.setHeader("Content-Type", file.endsWith(".wasm") ? "application/wasm" : file.endsWith(".js") ? "text/javascript" : file.endsWith(".html") ? "text/html" : "application/octet-stream");
     response.end(body);
   } catch { response.writeHead(404).end(); }
@@ -170,6 +229,8 @@ try {
   assert.equal((await page.evaluate(() => window.installed.inspect())).view.depth, 0);
   assert.equal(await page.evaluate(() => window.installed.firstScreen()), 2, "First screen requests only the manifest and entry chunk before speculative prefetch");
   assert.equal(requests.filter(path => path.endsWith(".wasm")).length, 1);
+  assert.deepEqual(served, ["reader"], "The reader route fetches only the reader Wasm: no authoring or compatibility module");
+  assert.deepEqual(requests.filter(path => /sigma|graphology|renderer|graph/i.test(path)), [], "The first screen loads no graph code or tiles");
   assert.deepEqual(await page.evaluate(() => window.installed.native()), { status: "ok", ids: ["arrival", "map"], image: "image", marker: "choice-point:" + "1".repeat(32) });
   const beforePrefetch = await page.evaluate(() => window.installed.save());
   const units = await page.evaluate(() => window.installed.prefetch());
@@ -189,11 +250,18 @@ try {
   assert.equal(after.view.cursor, before.view.cursor);
   assert.equal(await page.evaluate(() => window.installed.save()), save);
   assert.deepEqual(errors, []);
+  assert.deepEqual(await page.evaluate(() => window.installed.failContentOnce()), { failed: false, phase: "error", retried: true, after: "ready" }, "A failed content load is retried without losing progress");
+  assert.equal((await page.evaluate(() => window.installed.inspect())).view.cursor, after.view.cursor);
+  const authored = await page.evaluate(() => window.installed.author());
+  assert.equal(authored.firstScreen, 1, "Published A's first screen fetches only the entry chunk");
+  assert.ok(served.includes("authoring") && !served.includes("compat"), "The Worker loads the authoring Wasm on demand; nothing loads the compatibility module");
+  assert.deepEqual(errors, []);
+  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored }, null, 2));
   await page.screenshot({ path: join(directory, "desktop-reader.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: join(directory, "mobile-reader.png"), fullPage: true });
   await page.evaluate(() => window.installed.close());
-  console.log("Installed package: optional React peer, React slots, production Vite, first-screen requests, keyboard choice, durable save and reopen passed");
+  console.log("Installed package: optional React peer, React slots, production Vite, first-screen requests and Wasm, content retry, Worker authoring and A/B publication, keyboard choice, durable save and reopen passed");
 } finally {
   await browser?.close();
   await new Promise(done => server.close(done));
