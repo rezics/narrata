@@ -15,7 +15,7 @@
 | React | 19.2.8（`@rezics/narrata/react` 的可选 peer，接受 React 18 与 19） | Web 包的 React 阅读器组件、参考阅读器 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json` |
 | Vitest、fake-indexeddb | 5.0.3、6.2.5 | Web 运行时包装与 IndexedDB 存储适配器的单元测试 | `packages/narrata/web/package.json`、`packages/narrata/kernel/js/package.json` |
 | PGlite、node-postgres / @types/pg | 0.5.8、8.23.1 / 8.23.1 | PostgreSQL 协议参考宿主的本机 SQL/事务一致性与 CI 双连接测试；仅开发依赖 | `packages/narrata/kernel/js/package-lock.json` |
-| PostgreSQL | CI 服务镜像 `postgres:18` | 服务器存档的真实行锁竞争与 REPEATABLE READ 快照检查；本机不安装服务 | `.github/workflows/ci.yml` |
+| PostgreSQL | CI 服务镜像 `postgres:18`；本机官方 EDB portable 18.6 | 服务器存档的真实行锁竞争与 REPEATABLE READ 快照检查；本机在 `.temp/postgresql/` 创建临时 cluster，仅监听 loopback，检查后停止，不注册服务 | `.github/workflows/ci.yml`；本机下载来源与校验和在 `.temp/postgresql/download.json` |
 | TypeScript、json-schema-to-typescript、Ajv | 5.9.3、16.0.0、8.x（lock 锁定） | Web 包 JS/声明、Rust BookView 类型与独立校验器 | `packages/narrata/web/package-lock.json` |
 | Sigma.js、graphology | 3.0.3、0.26.0（MIT） | 作者图子路径按需加载的 WebGL 绘制与图模型；独立计量，reader 首屏不加载 | `packages/narrata/web/package-lock.json` |
 | Zod | 4.6.7（lock 锁定） | 参考阅读器的宿主请求校验 | `examples/gamebook-web/package-lock.json` |

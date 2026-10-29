@@ -15,7 +15,7 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 
 ## 当前与下一步
 
-1. 派发[公共创作与精简 reader](tasks/G-034.md)，复用受检对象编译与发布核心，交付 authoring/server 与独立 reader Wasm；保留旧 raw Wasm 兼容入口。认领前置任务已关闭。
+1. [公共创作与精简 reader](tasks/G-034.md)已派发，Claude/xhigh 在原生 worker 实施。复用受检对象编译与发布核心，交付 authoring/server 与独立 reader Wasm；保留旧 raw Wasm 兼容入口。认领前置任务已关闭。
 2. [在线会话与精确构件恢复](tasks/G-035.md)已准备，依赖公共绑定完成；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
 3. M1 完成后交付固定 tarball 与模拟宿主旅程。M2 仍需 visits/读者地图、真实 PostgreSQL 关系装载、planEvolution/发布挂接/影响评估/Wasm 与阅读器确认，以及导入导出/浅历史/GC/配额维护公共接口。
 4. 三类结果分别记录：包可交付、完整 Goal 关闭、REZICS 实际产品可用。未完成 M2/M3 不关闭 Goal，也不启动重叠的 Web VN 实施。
@@ -24,6 +24,6 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 
 Claude Code 2.1.289 的空 OAuth 刷新锁在无 CLI 进程、无 owner metadata 的证据下非递归清理，最小无工具调用已验证成功；没有代维护者登录。公共创作任务改用 Claude，Codex 仍可作备用。
 
-为 M2 本地真实数据库验证准备了官方 EDB PostgreSQL 18.6 portable，位于 .temp/postgresql/18.6-5/pgsql/bin；版本及下载来源记录在 .temp/postgresql/download.json。没有启动服务器、注册服务或更改 PATH；实际使用时同步记录工具链。
+官方 EDB PostgreSQL 18.6 portable 位于 .temp/postgresql/18.6-5/pgsql/bin，来源/校验和在 .temp/postgresql/download.json，版本已记入工具链。已在临时 loopback cluster（fsync/synchronous_commit 均 on）运行 check:server-storage，PGlite/真实数据库共 46 测试通过；日志 .temp/manager-check-server-storage.log。服务器已停止，没有注册服务或更改 PATH。该证据覆盖既有存档宿主，不冒充尚未实现的关系投影装载。
 
 REZICS 的实现只留在[能力请求](../../integrations/rezics.md)，本仓库未改 REZICS。真实联合验收等待宿主准备，未通过前不声称上线。[Web VN](../web-vn/GOAL.md)仍为待启动计划，areas 为空、无 manager。
