@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { readerContent } from "../reader/index.js";
-import type { ReaderController, ReaderResolution, ReaderScreen, ReaderSnapshot } from "../reader/index.js";
+import { readerContent } from "../reader/controller.js";
+import type { ReaderController, ReaderResolution, ReaderScreen, ReaderSnapshot } from "../reader/controller.js";
 import type { Content, ResolveContext, ResolveItem } from "../content/index.js";
 import type { PresentationItem, VariableView, ViewScalar } from "../generated/book-view.js";
 

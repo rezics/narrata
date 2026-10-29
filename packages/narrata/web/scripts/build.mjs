@@ -8,6 +8,7 @@ import standalone from "ajv/dist/standalone/index.js";
 export const here = resolve(import.meta.dirname, "..");
 export const root = resolve(here, "../../..");
 const check = process.argv.includes("--check");
+const interfaceSchema = "packages/narrata/tooling/crates/narrata-authoring-wasm/schemas/authoring-interface.schema.json";
 const stage = resolve(root, ".temp/web-build");
 const dist = resolve(here, "dist");
 // Clear only this package's output and this worktree's dedicated staging directory.
@@ -23,17 +24,28 @@ if (!check) {
   const executable = resolve(root, ".temp/wasm-tools/bin", process.platform === "win32" ? "wasm-bindgen.exe" : "wasm-bindgen");
   const installed = existsSync(executable) ? execFileSync(executable, ["--version"], { encoding: "utf8" }).trim() : "";
   if (installed !== `wasm-bindgen ${version}`) cargo("install", "wasm-bindgen-cli", "--version", version, "--locked", "--root", ".temp/wasm-tools");
-  cargo("build", "--release", "-p", "narrata-nodes-wasm", "--target", "wasm32-unknown-unknown", "--locked");
-  execFileSync(executable, [resolve(root, "target/wasm32-unknown-unknown/release/narrata_nodes_wasm.wasm"), "--target", "web", "--out-dir", resolve(dist, "wasm")], { cwd: root, stdio: "inherit" });
+  // Separate invocations keep Cargo from unifying the authoring crate's features into the
+  // reader. The raw dist/wasm module keeps its default legacy publishGraph for compatibility.
+  const bindgen = (crate, features, directory) => {
+    cargo("build", "--profile", "wasm", "-p", crate, ...features, "--target", "wasm32-unknown-unknown", "--locked");
+    execFileSync(executable, [resolve(root, `target/wasm32-unknown-unknown/wasm/${crate.replaceAll("-", "_")}.wasm`), "--target", "web", "--remove-name-section", "--out-dir", resolve(dist, directory)], { cwd: root, stdio: "inherit" });
+  };
+  bindgen("narrata-nodes-wasm", ["--no-default-features"], "reader-wasm");
+  bindgen("narrata-nodes-wasm", [], "wasm");
+  bindgen("narrata-authoring-wasm", [], "authoring-wasm");
   cargo("run", "--quiet", "--locked", "-p", "narrata-node-tools", "--", "schemas", "--out", resolve(stage, "schemas"));
+  cargo("run", "--quiet", "--locked", "-p", "narrata-authoring-wasm", "--example", "interface_schema", "--", resolve(root, interfaceSchema));
 }
 const schemaPath = resolve(check ? root : stage, check ? "packages/narrata/nodes/schemas/book-view.schema.json" : "schemas/book-view.schema.json");
-const types = await compileFromFile(schemaPath, { bannerComment: "/* Generated from Rust BookView JSON Schema. Run task web:build. */", additionalProperties: false });
-const typePath = resolve(here, "src/generated/book-view.ts");
 mkdirSync(resolve(here, "src/generated"), { recursive: true });
-if (check) {
-  if (readFileSync(typePath, "utf8") !== types) throw new Error("BookView declarations drifted; run task web:build");
-} else writeFileSync(typePath, types);
+// Declarations are generated from Rust schemas; check mode compares them with the committed ones.
+for (const [schema, name, title] of [[schemaPath, "book-view.ts", "BookView"], [resolve(root, interfaceSchema), "authoring.ts", "authoring interface"]]) {
+  const types = await compileFromFile(schema, { bannerComment: `/* Generated from Rust ${title} JSON Schema. Run task web:build. */`, additionalProperties: false });
+  const typePath = resolve(here, "src/generated", name);
+  if (check) {
+    if (readFileSync(typePath, "utf8") !== types) throw new Error(`${title} declarations drifted; run task web:build`);
+  } else writeFileSync(typePath, types);
+}
 mkdirSync(resolve(stage, "src"), { recursive: true });
 // Resolve optional peer types from this package while compiling the copied source tree.
 symlinkSync(resolve(here, "node_modules"), resolve(stage, "node_modules"), "junction");
@@ -44,7 +56,7 @@ for (const name of readdirSync(resolve(stage, "src/storage"))) {
   const path = resolve(stage, "src/storage", name);
   writeFileSync(path, readFileSync(path, "utf8").replace(/from "(\.\/[^"]+)"/g, (_, path) => `from "${path}.js"`));
 }
-cpSync(resolve(dist, "wasm"), resolve(stage, "src/wasm"), { recursive: true });
+for (const directory of ["wasm", "reader-wasm", "authoring-wasm"]) cpSync(resolve(dist, directory), resolve(stage, "src", directory), { recursive: true });
 const ajv = new Ajv2020({ strict: true, validateFormats: false, code: { source: true, esm: true } });
 const validator = ajv.compile(JSON.parse(readFileSync(schemaPath, "utf8")));
 // Ajv's Unicode length helper would introduce a runtime dependency; inline the equivalent

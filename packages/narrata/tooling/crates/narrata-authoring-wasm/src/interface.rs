@@ -23,7 +23,6 @@ pub struct RecordReport {
     pub diagnostics: Vec<Diagnostic>,
     pub records: u32,
     /// IDs this operation minted, in allocation order.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub minted: Vec<AuthoredId>,
 }
 

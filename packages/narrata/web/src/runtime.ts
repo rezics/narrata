@@ -1,4 +1,4 @@
-import init, { NodeBook, LocalContent } from "./wasm/narrata_nodes_wasm.js";
+import init, { NodeBook, LocalContent } from "./reader-wasm/narrata_nodes_wasm.js";
 import { StorageHost, type CacheStore } from "./storage.js";
 import validate from "./generated/validate-book.js";
 import type { BookView, ChoicePointId, CommitId, ExecutionId, OptionId } from "./generated/book-view.js";
@@ -12,7 +12,7 @@ let initialized: Promise<unknown> | undefined;
 export function initialize(source?: WasmSource): Promise<void> {
   if (!initialized) {
     initialized = (async () => {
-      let input = source ?? new URL("./wasm/narrata_nodes_wasm_bg.wasm", import.meta.url);
+      let input = source ?? new URL("./reader-wasm/narrata_nodes_wasm_bg.wasm", import.meta.url);
       const url = input instanceof URL ? input : typeof input === "string" ? new URL(input, import.meta.url) : undefined;
       if (url?.protocol === "file:") {
         // A variable specifier keeps browser bundlers from importing a Node-only module.

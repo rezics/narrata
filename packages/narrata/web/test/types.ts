@@ -11,3 +11,17 @@ const open: (options: OpenBookOptions) => Promise<Book> = openBook;
 const inspect: (book: Book) => Promise<BookView> = book => book.inspect();
 const storage: Promise<CacheStore> = IndexedDbStore.open("type-example");
 void [missingSource, mixed, open, inspect, storage];
+
+// The reader subpath is the root's reader surface; authoring and server share one API.
+import { openBook as readerOpenBook } from "@rezics/narrata/reader";
+import { loadAuthoring, type Authoring, type ComposeOptions, type DraftRecord, type Publication } from "@rezics/narrata/authoring";
+import { loadAuthoring as loadServerAuthoring } from "@rezics/narrata/server";
+const sameRuntime: typeof openBook = readerOpenBook;
+const browserAuthoring: Promise<Authoring> = loadAuthoring();
+const serverAuthoring: Promise<Authoring> = loadServerAuthoring(new Uint8Array());
+// @ts-expect-error A lock is a CompositionLock, not its JSON text.
+const textLock: ComposeOptions = { lock: "{}" };
+// @ts-expect-error Draft records are discriminated by kind.
+const unknownKind: DraftRecord = { format_version: 1, kind: "chapter", payload: {} };
+const previous = (publication: Publication): ComposeOptions => ({ previous: publication });
+void [sameRuntime, browserAuthoring, serverAuthoring, textLock, unknownKind, previous];

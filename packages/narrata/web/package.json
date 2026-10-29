@@ -2,7 +2,7 @@
   "name": "@rezics/narrata",
   "version": "0.1.0-alpha.1",
   "type": "module",
-  "description": "Narrata's Gamebook Wasm runtime and IndexedDB save host.",
+  "description": "Narrata's Gamebook reader runtime, authoring and publication Wasm, and IndexedDB save host.",
   "license": "AGPL-3.0-only",
   "files": [
     "dist",
@@ -12,6 +12,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./reader": {
+      "types": "./dist/reader/index.d.ts",
+      "import": "./dist/reader/index.js"
+    },
+    "./authoring": {
+      "types": "./dist/authoring/index.d.ts",
+      "import": "./dist/authoring/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
     },
     "./storage": {
       "types": "./dist/storage.d.ts",
