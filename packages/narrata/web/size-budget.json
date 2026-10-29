@@ -1,10 +1,10 @@
 {
   "measurement": "Wasm and dist/**/*.js; gzip level 9 per module. Web Wasm uses the size-optimized Cargo `wasm` profile without a name section. readerWasm is the slim runtime the root and ./reader entries load (no legacy publishGraph, compiler, layout or trace); compatWasm is the raw dist/wasm module that keeps publishGraph and no entry imports; authoringWasm serves ./authoring and ./server. runtime counts reader-route modules including the reader Wasm glue and shared storage codec; authoring counts the authoring and server entries, their Wasm glue, generated authoring types and the testing short story; compat counts the raw module's glue. nativeContent counts content/native.js and testing/native-document.js separately. Graph is a separate minified Vite ESM library build of both graph entry points, including lazy Sigma/graphology and transitive dependencies with the optional React peer external. javascript aggregates ordinary dist modules plus that graph build. Authoring, compat Wasm, native content and graph never enter the reader's first-screen import chain.",
   "baseline": {
-    "readerWasm": { "raw": 1689654, "gzip": 436814 },
-    "compatWasm": { "raw": 2025287, "gzip": 513049 },
-    "authoringWasm": { "raw": 3191309, "gzip": 778742 },
-    "javascript": { "raw": 591661, "gzip": 125328 },
+    "readerWasm": { "raw": 1698404, "gzip": 439644 },
+    "compatWasm": { "raw": 2034021, "gzip": 516202 },
+    "authoringWasm": { "raw": 3195327, "gzip": 780529 },
+    "javascript": { "raw": 622018, "gzip": 131593 },
     "runtime": { "raw": 243025, "gzip": 44095 },
     "authoring": { "raw": 86376, "gzip": 18866 },
     "compat": { "raw": 32397, "gzip": 5924 },
@@ -17,7 +17,7 @@
     "readerWasm": { "raw": 1730000, "gzip": 445000 },
     "compatWasm": { "raw": 2075000, "gzip": 523000 },
     "authoringWasm": { "raw": 3300000, "gzip": 810000 },
-    "javascript": { "raw": 620000, "gzip": 132000 },
+    "javascript": { "raw": 653200, "gzip": 138200 },
     "runtime": { "raw": 250000, "gzip": 45500 },
     "authoring": { "raw": 91000, "gzip": 20000 },
     "compat": { "raw": 33000, "gzip": 6100 },
