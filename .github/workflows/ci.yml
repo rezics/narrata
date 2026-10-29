@@ -45,7 +45,13 @@ jobs:
         with:
           version: 3.52.0
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # The tarball install test also runs the package under Bun.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
       - run: task check:r1
+      # Package types, unit tests, Wasm/JS budgets and tarball install in Node, Bun and Chromium.
+      - run: task check:web
   server-storage:
     runs-on: ubuntu-latest
     services:

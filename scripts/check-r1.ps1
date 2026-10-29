@@ -6,11 +6,15 @@ if ($IsWindows -and (Get-NetTCPConnection -State Listen -LocalPort 4173 -ErrorAc
 }
 
 cargo fmt --all --check
-cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring --all-targets --all-features -- -D warnings
-cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring
+cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring -p narrata-authoring-wasm --all-targets --all-features -- -D warnings
+# The reader Wasm build omits the legacy publishGraph feature; lint that configuration on its own.
+cargo clippy -p narrata-nodes-wasm --no-default-features --all-targets -- -D warnings
+cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring -p narrata-authoring-wasm
 cargo test -p narrata-nodes --all-features
 cargo check -p narrata-nodes-wasm --target wasm32-unknown-unknown
+cargo check -p narrata-nodes-wasm --no-default-features --target wasm32-unknown-unknown
 cargo check -p narrata-authoring --target wasm32-unknown-unknown
+cargo check -p narrata-authoring-wasm --target wasm32-unknown-unknown
 
 Push-Location examples/gamebook-web
 try {
@@ -25,7 +29,7 @@ try {
 
 # The product directory includes analysis/summary JSON and object-id-named graph/label CBOR.
 # Generated files must be committed as generated: changed and new untracked files both count.
-$drift = git status --porcelain --untracked-files=all -- packages/narrata/nodes/schemas examples/gamebook-web/src/generated products/gamebook-demo
+$drift = git status --porcelain --untracked-files=all -- packages/narrata/nodes/schemas packages/narrata/tooling/crates/narrata-authoring-wasm/schemas packages/narrata/web/src/generated examples/gamebook-web/src/generated products/gamebook-demo
 if ($drift) {
     $drift
     throw "Generated files differ from the committed ones; regenerate and commit them."

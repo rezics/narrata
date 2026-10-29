@@ -49,6 +49,11 @@ only after the storage host persists and confirms their batches. A failed write 
 use `reload()` to discard unconfirmed changes before continuing. Another writer's newer state
 is rejected rather than overwritten. Without `storage`, the session stays in memory.
 
+`@rezics/narrata/reader` exports the same reader surface as the root entry. Both load only the
+reader Wasm, without compiler, publication, layout or trace code. The raw
+`dist/wasm/narrata_nodes_wasm.js` module keeps its default build and `publishGraph` for existing
+callers; no package entry imports it.
+
 Wasm initializes once per JS realm. The default `new URL(..., import.meta.url)` asset works in
 Vite production builds and the package's Node/Bun file loader. To supply an asset yourself,
 pass `wasm` to the first `openBook` call or call `initialize(urlOrBytes)` first. `LocalContent`
@@ -135,6 +140,51 @@ and `useReader`. Set `disabled` while a host-owned import or export is pending. 
 server requires the same prepared controller snapshot during
 hydration. Disposing the controller remains the host's responsibility.
 
+## Authoring and publication
+
+`@rezics/narrata/authoring` (browser) and `@rezics/narrata/server` (Node/Bun) expose one API over a
+separate authoring Wasm. Import the browser entry dynamically, preferably in an editing or
+publishing Worker; the server entry reads the same Wasm bytes from the installed package.
+`loadAuthoring(urlOrBytes?)` initializes it once per realm and resolves to the API.
+
+```ts
+const { loadAuthoring } = await import("@rezics/narrata/authoring");
+const authoring = await loadAuthoring();
+
+// New nodes, choice points and options get IDs from an explicit mint; existing IDs never change.
+const minter = authoring.createMinter(); // Date.now and Web Crypto; tests may inject Entropy.
+minter.occupy(liveAndDeletedIds);         // In batches: every live ID and every tombstone.
+const { choice_points, options } = minter.mint({ choicePoints: 1, options: 2 });
+
+const drafts = authoring.createDrafts();
+for (const record of storedRecordBytes) drafts.add(record);  // One record at a time.
+for (const batch of outlineBatches) drafts.addOutline(batch); // Units of one provider assemble.
+const check = drafts.check();      // Located diagnostics; canonical bytes and index rows per record.
+const preview = drafts.preview();  // Program objects for openBook({ manifest, names, fetchChunk }).
+
+const previous = await authoring.readPublication(currentDescription, currentPublicationId,
+  reference => hostObjects.get(reference.object_id));
+const { report, records, publication } = drafts.publish({ previous });
+if (report.status === "switchable" && publication) {
+  for (const [reference, bytes] of publication.objects()) await host.putImmutable(reference, bytes);
+  await host.persistRecords(records);  // Includes appended tombstones, with their index rows.
+  await host.switchPublication(publication.publicationId, publication.artifactId);
+}
+publication?.free(); previous.free(); preview.free(); drafts.free(); minter.free();
+```
+
+Diagnostics locate `records[<insertion index>]`, the record key, JSON pointer and node, choice
+point and option IDs. `check`, `preview` and `publish` report diagnostics instead of throwing; API
+misuse and corrupt objects throw `AuthoringError` with `code` and `path`. A `compiled` result is
+inspectable but fails the outline policy; only `switchable` candidates may become current.
+Pass `lock` for locked composition: it fails rather than append tombstones. Every publication
+after a work's first passes the current one as `previous`, restored from its description and
+individual objects (`openPublication` supplies them one at a time; `publicationFromPack` reads a
+legacy pack of at most 64 MiB). Handles hold Wasm memory until `free()`. Reader chunk IDs are
+`object:` plus the publication's hex object ID; `object()` accepts either form. Existing saves
+stay bound to their artifact: reopen an old journey on its own publication. `splitSource` and
+`minter.fill` convert R2 project files, given as the manifest and one package per alias.
+
 ## Author graph
 
 Open this full-structure view only for an audience allowed to see unrevealed routes. It uses
@@ -185,8 +235,11 @@ artifact; the reference reader checks this before displaying the demo's graph.
 `task check:web` verifies declarations, controller behavior, slot contracts, the fixed
 [size budget](size-budget.json), and external tarball installation. The production Vite install
 test uses the React entry, checks first-screen manifest/entry-chunk requests before speculative
-prefetch, makes a keyboard choice, and reopens its durable save. The tarball checks also decode
-frozen graph objects without React installed. JavaScript budgets separate the runtime, React
-binding, testing fixtures, and the graph build including Sigma/graphology. React itself belongs
+prefetch and that only the reader Wasm loads, retries a failed content load, makes a keyboard
+choice, and reopens its durable save. Node, Bun and a browser Worker author, preview and publish
+a short story twice through the installed entries. The tarball checks also decode
+frozen graph objects without React installed. Reader, compatibility and authoring Wasm have separate
+budgets; JavaScript budgets separate the runtime, authoring, React binding, testing fixtures, and
+the graph build including Sigma/graphology. React itself belongs
 to the host's bundle budget. The existing first-screen limits are retained. Limits
 and measured baselines record the remaining headroom in `size-budget.json`.

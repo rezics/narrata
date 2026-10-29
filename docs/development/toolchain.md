@@ -20,7 +20,7 @@
 | Sigma.js、graphology | 3.0.3、0.26.0（MIT） | 作者图子路径按需加载的 WebGL 绘制与图模型；独立计量，reader 首屏不加载 | `packages/narrata/web/package-lock.json` |
 | Zod | 4.6.7（lock 锁定） | 参考阅读器的宿主请求校验 | `examples/gamebook-web/package-lock.json` |
 | wasm-bindgen CLI | 与 `Cargo.lock` 中的 `wasm-bindgen` 相同 | 为 Web 生成 Wasm 的 JS 绑定；构建脚本按需装进 `.temp/wasm-tools` | `Cargo.lock` |
-| Bun | 1.4.0 | `goalctl`、文档检查及其测试 | 本页 |
+| Bun | 1.4.0 | `goalctl`、文档检查及其测试；`check:web` 的 tarball 安装测试 | 本页、`.github/workflows/ci.yml` |
 | Windows Terminal | 本机安装 | `task goal:manager` 为每个 manager 开一个标签页 | [manager 章程](../goals/manager.md#启动-manager) |
 | Task（go-task） | 3.52.0 | 统一命令入口；CI 的 `gamebook-r1` 用 `arduino/setup-task` 安装同一版本 | `Taskfile.yml`、`.github/workflows/ci.yml` |
 | cargo-deny、wasmtime | CI 安装 | 依赖审计、Wasm 一致性 | `.github/workflows/ci.yml` |
@@ -31,12 +31,12 @@
 | 命令 | 内容 | 何时运行 |
 | --- | --- | --- |
 | `task check:g1` … `task check:g5` | 累进的 Stage 1–5 gate：fmt、clippy、全 workspace 测试，逐级加上存储、Effect、Statechart、迁移与协议测试 | 改动 `crates/**` 时运行到受影响的级别；合并前 `g5` |
-| `task check:r1` | 节点栈与 Web Gamebook：节点默认/全部 feature 与 authoring Rust 测试、运行时和 authoring Wasm 目标检查、浏览器回归、生成文件漂移 | 改动 `packages/narrata/**`、`products/**`、`examples/gamebook-web/**` |
+| `task check:r1` | 节点栈与 Web Gamebook：节点默认/全部 feature、authoring 与 authoring Wasm 绑定的 Rust 测试和 clippy（含无 `legacy-publish` 的 reader 配置）、运行时/reader/authoring Wasm 目标检查、浏览器回归、生成文件漂移（含 authoring 接口 schema 与 Web 生成类型） | 改动 `packages/narrata/**`、`products/**`、`examples/gamebook-web/**` |
 | `task check:web-storage` | IndexedDB 存储适配器：类型检查、Vitest、计数器 Wasm 模块上的 Chromium 回归（端口 4183） | 改动 `packages/narrata/kernel/js/**` 或 `narrata-storage-host` |
 | `task check:server-storage` | PostgreSQL 参考宿主：类型检查、PGlite 一致性/DDL/回滚/配额/重开、可选实库相同套件与双连接屏障 | 改动 `packages/narrata/kernel/js/server/**` 或服务器测试；实库用 `NARRATA_POSTGRES_URL` 指向可建临时 schema 的测试库，未配置明确跳过、不算上线通过；CI 必跑 |
-| `task web:build` | 构建 `@rezics/narrata` 的 ESM、声明与独立 Wasm；从 Rust schema 生成 BookView 类型/校验器，并复制现有 IndexedDB 宿主 | 准备宿主安装的包；产物为 `packages/narrata/web/dist/` |
+| `task web:build` | 构建 `@rezics/narrata` 的 ESM、声明与三个独立 Wasm：reader（`narrata-nodes-wasm --no-default-features`）、保留 `publishGraph` 的原始 `dist/wasm`（默认 feature）与 authoring（`narrata-authoring-wasm`），分别调用 cargo 以免 feature 合并，用 Cargo `wasm` profile（opt-level s、LTO）并去掉 name section；从 Rust schema 生成 BookView 与 authoring 接口类型/校验器，并复制现有 IndexedDB 宿主 | 准备宿主安装的包；产物为 `packages/narrata/web/dist/` |
 | `task web:pack` | 构建后 `npm pack`，tarball 在 `.temp/web-pack/`，打印 sha256 与 sha512 | 安装与发布前审查产物 |
-| `task check:web` | 类型/生成类型漂移、Vitest、固定 JS/Wasm 原始与 gzip 预算、仓库外 tarball 安装；Node/Bun 加载及 Vite 生产构建的 Chromium 首屏、选择、保存重开（端口 4193） | 改动 Web npm 包；需空闲 4193；安装证据保留在系统临时目录 `.temp/narrata-web-install-*` |
+| `task check:web` | 类型/生成类型漂移、Vitest（含 authoring 与 CLI、旧 publishGraph 的字节一致）、reader/兼容/authoring Wasm 与 JS 分别的原始与 gzip 预算、仓库外 tarball 安装；Node/Bun 的 reader 加载与 authoring 发布 A/B，Vite 生产构建的 Chromium 首屏只取 reader Wasm、内容失败重试、Worker 创作发布、选择、保存重开（端口 4193） | 改动 Web npm 包；需空闲 4193；CI 的 `gamebook-r1` 在 `check:r1` 后运行；安装证据保留在系统临时目录 `.temp/narrata-web-install-*` |
 | `task bench:g2` | 持久化与内核基准 | 改动存储或快照路径时对比 |
 | `task bench:nodes` | 合成 10 万选择点作品、首屏按块加载、选择耗时与有界缓存分配计数 | 改动节点运行时或程序块加载时对比；结果与边界见[节点规模基准](benchmarks/nodes-scale.md) |
 | `task docs:check` | Markdown 相对链接与标题锚点 | 任何文档改动 |
