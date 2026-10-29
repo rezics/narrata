@@ -147,8 +147,10 @@ publication_id，随发布永久保留，无需另一套保留机制；描述符
 抽出的 compose / publish 核心；读者 crate 不依赖它们。接口带版本，schema 与 TS 声明由 Rust
 生成并检查漂移。作者模块也导出下节投影重建与地图纯函数；不再另外实现服务器编译器。
 既有 `NodeBook` 与 `publishGraph` 入口保留兼容，新编译、记录与投影功能只进入作者模块；
-当前读者模块约 960 KB 未压缩的基线不因本工作增加 compiler / authoring 依赖。
-后续是否移除旧 publishGraph 依赖单独决定，不在这里破坏已有调用。
+读者首屏不因本工作增加 compiler / authoring 依赖。原决策时约 960 KB 的未压缩读数不再作为当前产物基线；
+2026-10-29 已把精简 reader 与保留 publishGraph 的原始兼容模块分开构建，实际读数和上限以
+[可执行预算](../../packages/narrata/web/size-budget.json)及独立安装测试为准。
+后续是否删除原始兼容模块仍单独决定，不在这里破坏已有调用。
 
 浏览器用 npm 的独立 authoring 子路径动态 import，在编辑 / 发布 Web Worker 中显式初始化 Wasm；
 互动小说读者路由只初始化 reader 子路径。默认读者地图由服务器生成；离线地图可另行懒加载
