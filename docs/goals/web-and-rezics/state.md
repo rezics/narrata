@@ -17,7 +17,7 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 ## 当前与下一步
 
 1. [公共创作与精简 reader](tasks/G-034.md)已派发；按维护者 2026-10-29 的新指示，保留现场 stop/resume 为 Claude/high。复用受检对象编译与发布核心，交付 authoring/server 与独立 reader Wasm；保留旧 raw Wasm 兼容入口。认领前置任务已关闭。
-   当前已提交至 worker 分支 6c86d9d，安装旅程与 gate 接线已补。Sol/high 独立评审发现 loader 入口预算、发布诊断定位、decodeRecord 类型证明、minter 占用集合及 readPublication 接收者依赖问题；交接后先核对最终差异，再用 .temp/review-g034-repair.md 在原任务 high resume 修复，验收前不合入。旧评审已关闭被后续安装提交解决的缺口。
+   当前已提交至 worker 分支 6c86d9d，53 项包测试、23 项浏览器测试、tarball 与 gate 接线通过。Sol/high 独立评审发现 loader 入口预算、发布诊断定位、decodeRecord 类型证明、minter 占用集合及 readPublication 接收者依赖问题；已用 .temp/review-g034-repair.md 在原任务 attempt 3 / high resume 修复，验收前不合入。旧评审已关闭被后续安装提交解决的缺口。manager 接受独立 size-optimized wasm profile、移除生产 name section 和 CI 增加 check:web 的方向；最终仍需当前提交验证。
 2. [在线会话与精确构件恢复](tasks/G-035.md)已准备，依赖公共绑定完成；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
 3. M1 完成后交付固定 tarball 与模拟宿主旅程。M2 仍需 visits/读者地图、真实 PostgreSQL 关系装载、planEvolution/发布挂接/影响评估/Wasm 与阅读器确认，以及导入导出/浅历史/GC/配额维护公共接口。
    [公共演化链路](tasks/G-036.md)已准备，待公共绑定关闭后与在线会话按互斥路径推进。
