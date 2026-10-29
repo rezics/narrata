@@ -21,6 +21,7 @@ export class EvolutionController {
   get state(): EvolutionControllerState { return this.#state; }
   async assess(options: EvolutionOptions): Promise<AssessmentV1> {
     return this.#exclusive(async () => {
+      if (this.evolution.pendingSave) throw new Error("A write has an unknown outcome; retry saving or reload before reassessing.");
       this.#state = { kind: "idle" };
       this.#options = { target: options.target, migrationIds: [...options.migrationIds], ...(options.budget ? { budget: { ...options.budget } } : {}) };
       const assessment = await this.evolution.assess(this.#options);

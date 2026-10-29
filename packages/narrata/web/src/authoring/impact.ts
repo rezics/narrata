@@ -1,21 +1,26 @@
 import { evolutionSampleKey } from "../authoring-wasm/narrata_authoring_wasm.js";
 import { defaultComparisonBudget, type AssessmentV1, type ComparisonBudgetV1, type Evolution, type EvolutionOptions } from "./evolution.js";
-import type { CacheStore } from "../storage.js";
 
 /** Authorized lookup hints; only the loaded, checked commit proves their meaning. */
 export interface AuthorizedSaveHead { readonly commit: string; readonly artifact: string }
+/** Advisory allowances for the next host load. A callback can ignore them; received bytes
+ * are still charged and an excess stops further loads, rather than proving a network cap. */
+export interface ImpactLoadBudget {
+  readonly remainingBytes: number;
+  readonly remainingSaveBytes: number;
+}
 /** Host-authorized object/ref loads using ADR 0017/0021. The job receives no writer. */
 export interface ImpactStoreSource {
   readonly kind: "store";
   readonly execution: string;
-  readonly storage: Pick<CacheStore, "load">;
+  readonly storage: { load(request: Uint8Array, budget: ImpactLoadBudget): Promise<Uint8Array> };
 }
 class ImpactReadLimit extends Error { constructor(readonly reason: "input_bytes" | "job_bytes") { super(reason); } }
 export interface ImpactLimits {
   /** Distinct commits to assess, at most 10,000. */
   readonly saves: number;
   readonly totalBytes: number;
-  /** Each input is bounded to ADR 0023's 16 MiB, independently of the whole job. */
+  /** UTF-8 save bytes or cumulative encoded store replies for one save, at most 16 MiB. */
   readonly saveBytes: number;
   /** Maximum Ref heads to enumerate; no extra head is pulled to test exhaustion. */
   readonly scanHeads?: number;
@@ -40,6 +45,8 @@ export interface ImpactReportV1 {
   readonly coverage: { readonly equivalent_refs: number; readonly diverged_refs: number; readonly unverified_refs: number };
   readonly skipped: { readonly sampled_out: number; readonly stale_scan: number; readonly limit: number; readonly invalid_head: number };
   readonly examples: readonly { readonly kind: "divergence" | "recovery" | "unverified"; readonly reason?: string; readonly discarded_frames?: number; readonly differing_fields?: readonly string[] }[];
+  /** Returned UTF-8 save bytes and encoded store replies, including rejected inputs.
+   * May exceed the requested limits when a host callback returns an oversized payload. */
   readonly read_bytes: number;
   readonly missing_saves: number;
   readonly rejected_heads: number;
@@ -51,6 +58,20 @@ const counts = (): Counts => ({ exact: 0, automatic: 0, needs_confirmation: 0, o
 const defaults: Required<ImpactLimits> = { saves: 1000, totalBytes: 64 * 1024 * 1024, saveBytes: 16 * 1024 * 1024, scanHeads: 100_000 };
 const hex = (bytes: Uint8Array) => [...bytes].map(b => b.toString(16).padStart(2,"0")).join("");
 
+// Match TextEncoder's UTF-8 length, including replacement of unpaired surrogates, without
+// allocating a second body-sized buffer for an already oversized host result.
+function utf8Bytes(text: string): number {
+  let bytes = 0;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code <= 0x7f) bytes++;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && text.charCodeAt(index+1) >= 0xdc00 && text.charCodeAt(index+1) <= 0xdfff) { bytes += 4; index++; }
+    else bytes += 3;
+  }
+  return bytes;
+}
+
 /**
  * Read-only authorized impact job. One head/save crosses each call (below the 256-head
  * maximum). Programs are registered once and shared by every snapshot. A bounded scan
@@ -61,7 +82,7 @@ const hex = (bytes: Uint8Array) => [...bytes].map(b => b.toString(16).padStart(2
 export async function assessImpact(input: {
   readonly evolution: Evolution;
   readonly heads: AsyncIterable<AuthorizedSaveHead> | Iterable<AuthorizedSaveHead>;
-  readonly loadSave: (head: AuthorizedSaveHead) => Promise<string | undefined | ImpactStoreSource | { readonly kind: "stale_scan" }>;
+  readonly loadSave: (head: AuthorizedSaveHead, budget: ImpactLoadBudget) => Promise<string | undefined | ImpactStoreSource | { readonly kind: "stale_scan" }>;
   readonly options: EvolutionOptions;
   readonly limits?: ImpactLimits;
   readonly scan?: { readonly revision_start: string; readonly revision_end: string };
@@ -106,26 +127,31 @@ export async function assessImpact(input: {
   const selectedRefs = selected.reduce((sum,row) => sum+row.weight,0);
   const sampledOut = [...population.values()].reduce((sum,row) => sum+row.weight,0)-selectedRefs;
   if (sampledOut && stopped !== "cancelled") stopped = "limit";
-  const encoder = new TextEncoder();
   for (const {head,weight} of selected) {
     if (input.signal?.aborted || stopped === "cancelled") { stopped = "cancelled"; break; }
     if (bytes >= limits.totalBytes) { limited += weight; limitReasons.job_bytes += weight; stopped = "limit"; continue; }
-    const save = await input.loadSave({ ...head });
+    const save = await input.loadSave({ ...head },{remainingBytes:limits.totalBytes-bytes,remainingSaveBytes:limits.saveBytes});
+    const size = typeof save === "string" ? utf8Bytes(save) : 0;
+    bytes += size;
     if (input.signal?.aborted) { stopped = "cancelled"; break; }
     if (typeof save === "object" && save.kind === "stale_scan") { stale += weight; continue; }
     examined++;
     if (save === undefined) { missing += weight; weighted.needs_objects += weight; distinct.needs_objects++; evaluated += weight; continue; }
     let result: AssessmentV1;
     if (typeof save === "object") {
+      let saveReadBytes = 0;
       const fork = await input.evolution.fork();
       try {
         await fork.connectStore(save.execution,{
           load:async request => {
             if (input.signal?.aborted || bytes >= limits.totalBytes) throw new ImpactReadLimit("job_bytes");
-            const reply = await save.storage.load(request);
-            if (reply.byteLength > limits.saveBytes) throw new ImpactReadLimit("input_bytes");
-            if (reply.byteLength > limits.totalBytes-bytes) throw new ImpactReadLimit("job_bytes");
+            if (saveReadBytes >= limits.saveBytes) throw new ImpactReadLimit("input_bytes");
+            const reply = await save.storage.load(request,{remainingBytes:limits.totalBytes-bytes,remainingSaveBytes:limits.saveBytes-saveReadBytes});
             bytes += reply.byteLength;
+            saveReadBytes += reply.byteLength;
+            if (input.signal?.aborted) throw new ImpactReadLimit("job_bytes");
+            if (saveReadBytes > limits.saveBytes) throw new ImpactReadLimit("input_bytes");
+            if (bytes > limits.totalBytes) throw new ImpactReadLimit("job_bytes");
             return reply;
           },
           // No writer capability is accepted from the host. The existing-cursor assessment
@@ -136,14 +162,11 @@ export async function assessImpact(input: {
       } catch (error) {
         if (!(error instanceof ImpactReadLimit)) throw error;
         if (input.signal?.aborted) { stopped = "cancelled"; break; }
-        limited += weight; limitReasons[error.reason] += weight; stopped = "limit"; continue;
+        limited += weight; limitReasons[error.reason] += weight; stopped = "limit"; break;
       } finally { await fork.close(); }
     } else {
-      if (save.length > limits.saveBytes) { oversized += weight; limited += weight; limitReasons.input_bytes += weight; stopped = "limit"; continue; }
-      const size = encoder.encode(save).byteLength;
-      if (size > limits.saveBytes) { oversized += weight; limited += weight; limitReasons.input_bytes += weight; stopped = "limit"; continue; }
-      if (size > limits.totalBytes-bytes) { limited += weight; limitReasons.job_bytes += weight; stopped = "limit"; continue; }
-      bytes += size;
+      if (size > limits.saveBytes) { oversized += weight; limited += weight; limitReasons.input_bytes += weight; stopped = "limit"; break; }
+      if (bytes > limits.totalBytes) { limited += weight; limitReasons.job_bytes += weight; stopped = "limit"; break; }
       result = await input.evolution.assessSave(save,options);
     }
     const source = result.kind === "exact" || result.kind === "old_version_only" ? result.source

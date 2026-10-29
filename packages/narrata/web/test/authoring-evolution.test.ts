@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { beforeAll, expect, test } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import "fake-indexeddb/auto";
-import { loadAuthoring, assessImpact, EvolutionController, defaultComparisonBudget, type Authoring, type AssessmentV1, type PlanV1 } from "@rezics/narrata/server";
+import { loadAuthoring, assessImpact, EvolutionController, defaultComparisonBudget, type Authoring, type AssessmentV1, type ImpactLoadBudget, type PlanV1 } from "@rezics/narrata/server";
 import { openBook } from "@rezics/narrata/reader";
 import { IndexedDbStore, type CacheStore } from "@rezics/narrata/storage";
 import { evolutionJourney, type EvolutionVector } from "./authoring-evolution-journey.js";
@@ -139,6 +139,43 @@ test("impact sampling is deterministic, counts duplicate Refs once per commit, a
   } finally { await c.close(); }
 });
 
+test.each(["x".repeat(20),"私😺\ud800","é\udc00"])("impact jobs charge rejected returned save bytes and stop subsequent oversized loads (%j)",async body => {
+  const c = await context("unseen-rule");
+  try {
+    const heads = ["0","1","2","3"].map(digit => ({commit:`commit:${digit.repeat(64)}`,artifact:c.previous.artifactId}));
+    const budgets: ImpactLoadBudget[] = [];
+    const report = await assessImpact({evolution:c.evolution,heads,options:c.options,
+      loadSave:async (_head,budget) => { budgets.push(budget); return body; },
+      limits:{saves:4,totalBytes:100,saveBytes:4},
+    });
+    expect(budgets).toEqual([{remainingBytes:100,remainingSaveBytes:4}]);
+    expect(report.read_bytes).toBe(new TextEncoder().encode(body).byteLength);
+    expect(report.oversized_saves).toBe(1); expect(report.skipped.limit).toBe(1);
+    expect(report.limit_reasons.input_bytes).toBe(1); expect(report.evaluated_refs).toBe(0);
+    expect(report.stopped).toBe("limit"); expect(report.complete).toBe(false);
+    expect(JSON.stringify(report)).not.toContain(body);
+  } finally { await c.close(); }
+});
+
+test.each([5,6])("impact jobs account for remaining job bytes and stop further loads (body bytes=%i)",async size => {
+  const c = await context("unseen-rule");
+  try {
+    const heads = ["0","1","2"].map(digit => ({commit:`commit:${digit.repeat(64)}`,artifact:c.previous.artifactId}));
+    const budgets: ImpactLoadBudget[] = [];
+    const report = await assessImpact({evolution:c.evolution,heads,options:c.options,
+      loadSave:async (_head,budget) => { budgets.push(budget); return "x".repeat(size); },
+      limits:{saves:3,totalBytes:10,saveBytes:8},
+    });
+    expect(budgets).toEqual([{remainingBytes:10,remainingSaveBytes:8},{remainingBytes:10-size,remainingSaveBytes:8}]);
+    // A host ignoring its second request's allowance can return more than the limit.
+    // The report records those received bytes instead of presenting the quota as enforced.
+    expect(report.read_bytes).toBe(size*2); expect(report.examined).toBe(2);
+    expect(report.counts.invalid_save).toBe(size === 5 ? 2 : 1);
+    expect(report.limit_reasons.job_bytes).toBe(1);
+    expect(report.stopped).toBe("limit"); expect(report.complete).toBe(false);
+  } finally { await c.close(); }
+});
+
 async function stored() {
   const c = await context("content-reference");
   const factory = new IDBFactory();
@@ -168,6 +205,48 @@ test("impact jobs load authorized stored objects without writer capability and s
   } finally { await c.close(); }
 });
 
+test.each(["save","job"] as const)("impact jobs charge every store reply and enforce cumulative %s bytes",async bound => {
+  const c = await stored();
+  try {
+    const exact = await c.evolution.assessSave(c.source,{target:c.previous.artifactId,migrationIds:[]});
+    if (exact.kind !== "exact") throw new Error("exact source expected");
+    const head = {commit:exact.source.source_commit,artifact:exact.source.artifact_id};
+    const before = await c.store.export();
+    const fullSizes: number[] = [];
+    const full = await assessImpact({evolution:c.evolution,heads:[head],options:c.options,loadSave:async () => ({kind:"store",execution,
+      storage:{load:async request => { const reply = await c.store.load(request); fullSizes.push(reply.byteLength); return reply; }},
+    })});
+    expect(full.counts.automatic).toBe(1); expect(fullSizes.length).toBeGreaterThan(1);
+    expect(full.read_bytes).toBe(fullSizes.reduce((sum,size) => sum+size,0));
+    const limit = Math.max(...fullSizes);
+    expect(full.read_bytes).toBeGreaterThan(limit);
+    const received: number[] = [], budgets: ImpactLoadBudget[] = []; let saves = 0;
+    const totalBytes = bound === "job" ? limit : 100_000, saveBytes = bound === "save" ? limit : 100_000;
+    const limited = await assessImpact({evolution:c.evolution,heads:[head,{...head,commit:`commit:${"0".repeat(64)}`}],options:c.options,
+      limits:{saves:2,totalBytes,saveBytes},loadSave:async () => {
+        saves++;
+        return {kind:"store",execution,storage:{load:async (request,budget) => {
+          budgets.push(budget);
+          const reply = await c.store.load(request); received.push(reply.byteLength); return reply;
+        }}};
+      },
+    });
+    expect(saves).toBe(1);
+    // Each reply fits individually; together they must consume this save's allowance.
+    expect(received.every(size => size <= limit)).toBe(true);
+    expect(limited.read_bytes).toBe(received.reduce((sum,size) => sum+size,0));
+    expect(limited.read_bytes).toBeGreaterThanOrEqual(limit);
+    let prior = 0;
+    for (const [index,budget] of budgets.entries()) {
+      expect(budget).toEqual({remainingBytes:totalBytes-prior,remainingSaveBytes:saveBytes-prior});
+      prior += received[index]!;
+    }
+    expect(limited.limit_reasons[bound === "save" ? "input_bytes" : "job_bytes"]).toBe(1);
+    expect(limited.stopped).toBe("limit"); expect(limited.complete).toBe(false);
+    expect(limited.evaluated_refs).toBe(0); expect(await c.store.export()).toEqual(before);
+  } finally { await c.close(); }
+});
+
 test("the controller reports upgraded only after persistence and stale cursors return conflicts",async () => {
   const c = await stored();
   try {
@@ -193,10 +272,10 @@ test("the controller reports upgraded only after persistence and stale cursors r
 test.each([false,true])("unknown writes retain old progress and recover without rerunning migration (committed=%s)",async committed => {
   const c = await stored();
   try {
-    const attempts: Uint8Array[] = []; let fail = true;
+    const attempts: Uint8Array[] = []; let failures = 2;
     const storage: CacheStore = { load:r => c.store.load(r),persist:async f => {
       attempts.push(Uint8Array.from(f));
-      if (fail) { fail = false; if (committed) await c.store.persist(f); throw new Error("connection lost"); }
+      if (failures-- > 0) { if (committed && attempts.length === 1) await c.store.persist(f); throw new Error("connection lost"); }
       return c.store.persist(f);
     } };
     await c.evolution.connectStore(execution,storage);
@@ -204,10 +283,18 @@ test.each([false,true])("unknown writes retain old progress and recover without 
     await controller.assess(c.options);
     await expect(controller.applyAutomatic()).rejects.toThrow("connection lost");
     expect(controller.state.kind).toBe("save_unknown");
+    const unknown = controller.state;
+    expect(c.evolution.pendingSave).toBe(true);
     await expect(c.evolution.assess(c.options)).rejects.toThrow("unknown outcome");
+    await expect(controller.assess({target:c.previous.artifactId,migrationIds:[]})).rejects.toThrow("unknown outcome");
+    expect(controller.state).toBe(unknown); expect(attempts).toHaveLength(1);
+    await expect(controller.retrySave()).rejects.toThrow("connection lost");
+    expect(controller.state).toBe(unknown); expect(c.evolution.pendingSave).toBe(true);
+    await expect(controller.assess(c.options)).rejects.toThrow("unknown outcome");
+    expect(controller.state).toBe(unknown); expect(attempts[1]).toEqual(attempts[0]);
     const retried = await controller.retrySave();
     expect(retried?.kind).toBe(committed ? "storage_conflict" : "migrated");
-    expect(attempts[1]).toEqual(attempts[0]);
+    expect(attempts).toHaveLength(3); expect(attempts[2]).toEqual(attempts[0]);
     if (committed) { await c.evolution.reload(); expect((await controller.assess(c.options)).kind).toBe("exact"); }
     // The source checkpoint always remains exactly restorable, even after cursor migration.
     const isolated = api.createEvolution();
