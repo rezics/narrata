@@ -9,7 +9,9 @@ cargo fmt --all --check
 cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring -p narrata-authoring-wasm --all-targets --all-features -- -D warnings
 # The reader Wasm build omits the legacy publishGraph feature; lint that configuration on its own.
 cargo clippy -p narrata-nodes-wasm --no-default-features --all-targets -- -D warnings
-cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring -p narrata-authoring-wasm
+cargo test -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring -p narrata-authoring-wasm
+# Authoring enables nodes/trace. Isolate nodes so feature unification cannot replace default coverage.
+cargo test -p narrata-nodes
 cargo test -p narrata-nodes --all-features
 cargo check -p narrata-nodes-wasm --target wasm32-unknown-unknown
 cargo check -p narrata-nodes-wasm --no-default-features --target wasm32-unknown-unknown
