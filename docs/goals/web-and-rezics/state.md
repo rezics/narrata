@@ -17,9 +17,11 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 ## 当前与下一步
 
 1. [公共创作与精简 reader](tasks/G-034.md)已派发；按维护者 2026-10-29 的新指示，保留现场 stop/resume 为 Claude/high。复用受检对象编译与发布核心，交付 authoring/server 与独立 reader Wasm；保留旧 raw Wasm 兼容入口。认领前置任务已关闭。
+   当前已提交至 worker 分支 6c86d9d，安装旅程与 gate 接线已补。Sol/high 独立评审发现 loader 入口预算、发布诊断定位、decodeRecord 类型证明、minter 占用集合及 readPublication 接收者依赖问题；交接后先核对最终差异，再用 .temp/review-g034-repair.md 在原任务 high resume 修复，验收前不合入。旧评审已关闭被后续安装提交解决的缺口。
 2. [在线会话与精确构件恢复](tasks/G-035.md)已准备，依赖公共绑定完成；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
 3. M1 完成后交付固定 tarball 与模拟宿主旅程。M2 仍需 visits/读者地图、真实 PostgreSQL 关系装载、planEvolution/发布挂接/影响评估/Wasm 与阅读器确认，以及导入导出/浅历史/GC/配额维护公共接口。
    [公共演化链路](tasks/G-036.md)已准备，待公共绑定关闭后与在线会话按互斥路径推进。
+   [visits/地图/关系宿主](tasks/G-037.md)与[维护/浅恢复](tasks/G-038.md)简报也已准备，按依赖顺序推进；不为准备简报提前认领实现路径。
 4. 三类结果分别记录：包可交付、完整 Goal 关闭、REZICS 实际产品可用。未完成 M2/M3 不关闭 Goal，也不启动重叠的 Web VN 实施。
 
 ## 主机与外部边界
