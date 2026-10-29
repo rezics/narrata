@@ -21,7 +21,8 @@ async function outcome<T>(operation: () => T): Promise<Outcome<T>> {
 
 const page: CounterPage = {
   async open() {
-    await host.run(() => saves.reload());
+    saves.reload();
+    await host.discardPendingAfterReload();
     return outcome(() => saves.open());
   },
   advance: (increment) => outcome(() => saves.advance(increment)),
