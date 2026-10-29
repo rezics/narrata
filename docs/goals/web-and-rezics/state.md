@@ -16,12 +16,12 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 
 ## 当前与下一步
 
-1. [公共创作与精简 reader](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-034.md)已派发；按维护者 2026-10-29 的新指示，保留现场 stop/resume 为 high（当前 Codex）。复用受检对象编译与发布核心，交付 authoring/server 与独立 reader Wasm；保留旧 raw Wasm 兼容入口。认领前置任务已关闭。
-   当前已提交至 worker 分支 6c86d9d，53 项包测试、23 项浏览器测试、tarball 与 gate 接线通过。Sol/high 独立评审发现 loader 入口预算、发布诊断定位、decodeRecord 类型证明、minter 占用集合及 readPublication 接收者依赖问题；已用 .temp/review-g034-repair.md 在原任务继续修复；Claude/high attempt 3 写下修复后 API403 退出，改由 Codex/high attempt 4 保留脏文件接续，验收前不合入。旧评审已关闭被后续安装提交解决的缺口。manager 接受独立 size-optimized wasm profile、移除生产 name section 和 CI 增加 check:web 的方向；最终仍需当前提交验证。
-2. [在线会话与精确构件恢复](tasks/G-035.md)已准备，依赖公共绑定完成；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
+1. [公共创作与精简 reader](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-034.md)已合入至 04aca6a 并 verified 关闭，分支保留。五项独立评审缺陷均修复并复核；合并后 check:r1（23 浏览器）、check:web（56 单测及 tarball）、test:scripts（53）与 docs:check 通过。忽略的重型绑定测试已另行执行并通过：88 对象、68,985,624 字节，旧 pack 上限仍被拒绝。
+   reader Wasm 为 1,677,387 / 431,589 字节 raw/gzip，authoring 独立加载，旧 raw 模块兼容。候选包 SHA-256 为 7327e2e659a68667607b6a878e23aeace46d7a3def6b466b43acc052207bf320，固定副本与元数据在 .temp/delivery/authoring-candidate.json；这还不是完整 M1 交付。合并后的日志在 .temp/manager-sdk-*.log；宿主说明已更新，当前提交的 GitHub CI 待推送核实。
+2. 下一步派发[在线会话与精确构件恢复](tasks/G-035.md)，公共绑定依赖已解除；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
    已查看公共包桌面/移动端插槽截图，其 HOST CONTENT 内容只证明渲染接线。M1 最终模拟旅程须接公共创作输出、宿主真实正文/标签与在线保存恢复，已加入在线任务；不以占位截图代替完整旅程。
 3. M1 完成后交付固定 tarball 与模拟宿主旅程。M2 仍需 visits/读者地图、真实 PostgreSQL 关系装载、planEvolution/发布挂接/影响评估/Wasm 与阅读器确认，以及导入导出/浅历史/GC/配额维护公共接口。
-   [公共演化链路](tasks/G-036.md)已准备，待公共绑定关闭后与在线会话按互斥路径推进。
+   [公共演化链路](tasks/G-036.md)的前置已关闭，将与在线会话按互斥路径推进；已用 goalctl 的 pathsOverlap 验证两份简报没有重叠认领。
    [visits/地图/关系宿主](tasks/G-037.md)与[维护/浅恢复](tasks/G-038.md)简报也已准备，按依赖顺序推进；不为准备简报提前认领实现路径。
 4. 三类结果分别记录：包可交付、完整 Goal 关闭、REZICS 实际产品可用。未完成 M2/M3 不关闭 Goal，也不启动重叠的 Web VN 实施。
 
@@ -29,7 +29,7 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 
 维护者 2026-10-29 要求本 Goal 的后续子代理和 worker 使用 high 或更低思考等级；默认 high，机械性工作可更低。当前任务也已调整；后续接续不恢复 xhigh。
 
-Claude Code 2.1.289 的空 OAuth 刷新锁在无 CLI 进程、无 owner metadata 的证据下非递归清理，最小无工具调用已验证成功；没有代维护者登录。公共创作任务改用 Claude，Codex 仍可作备用。
+Claude Code 2.1.289 的空 OAuth 刷新锁曾在无 CLI 进程、无 owner metadata 的证据下非递归清理并通过启动验证；后续请求仍出现 API403，未代维护者登录。现有及准备任务统一使用可用的 Codex/high，保留已完成的 Claude 工作。
 
 官方 EDB PostgreSQL 18.6 portable 位于 .temp/postgresql/18.6-5/pgsql/bin，来源/校验和在 .temp/postgresql/download.json，版本已记入工具链。已在临时 loopback cluster（fsync/synchronous_commit 均 on）运行 check:server-storage，PGlite/真实数据库共 46 测试通过；日志 .temp/manager-check-server-storage.log。服务器已停止，没有注册服务或更改 PATH。该证据覆盖既有存档宿主，不冒充尚未实现的关系投影装载。
 

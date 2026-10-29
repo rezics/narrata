@@ -22,4 +22,4 @@ Web VN 的计划已落地，尚未登记 manager 或认领实现路径。启动�
 
 [Goal 程序](docs/goals/README.md)说明登记、派发、合并与关闭；manager 遵循[章程](docs/goals/manager.md)，worker 遵循[协议](docs/goals/worker.md)。
 
-2026-10-29 已完成 M0：三个保留任务均已审查、合入、验证并归档，分支保留且认领释放；接着实施公共创作入口与精简 reader。读[检查点](docs/goals/web-and-rezics/state.md)恢复现场，不重新派发已完成工作。实时状态以 task goal -- status 为准。
+2026-10-29 已完成 M0，公共创作入口与精简 reader 也已合入并验证；接续在线会话及 M2 公共链路。已关闭任务分支保留、认领释放。读[检查点](docs/goals/web-and-rezics/state.md)恢复现场，不重新派发已完成工作。实时状态以 task goal -- status 为准。
