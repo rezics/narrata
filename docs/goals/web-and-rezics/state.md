@@ -16,7 +16,7 @@ manager gate 日志在 .temp/manager-check-*.log；旧 worker 的临时证据已
 
 ## 当前与下一步
 
-1. [公共创作与精简 reader](tasks/G-034.md)已派发；按维护者 2026-10-29 的新指示，保留现场 stop/resume 为 high（当前 Codex）。复用受检对象编译与发布核心，交付 authoring/server 与独立 reader Wasm；保留旧 raw Wasm 兼容入口。认领前置任务已关闭。
+1. [公共创作与精简 reader](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-034.md)已派发；按维护者 2026-10-29 的新指示，保留现场 stop/resume 为 high（当前 Codex）。复用受检对象编译与发布核心，交付 authoring/server 与独立 reader Wasm；保留旧 raw Wasm 兼容入口。认领前置任务已关闭。
    当前已提交至 worker 分支 6c86d9d，53 项包测试、23 项浏览器测试、tarball 与 gate 接线通过。Sol/high 独立评审发现 loader 入口预算、发布诊断定位、decodeRecord 类型证明、minter 占用集合及 readPublication 接收者依赖问题；已用 .temp/review-g034-repair.md 在原任务继续修复；Claude/high attempt 3 写下修复后 API403 退出，改由 Codex/high attempt 4 保留脏文件接续，验收前不合入。旧评审已关闭被后续安装提交解决的缺口。manager 接受独立 size-optimized wasm profile、移除生产 name section 和 CI 增加 check:web 的方向；最终仍需当前提交验证。
 2. [在线会话与精确构件恢复](tasks/G-035.md)已准备，依赖公共绑定完成；补 durable roots/history 核实、账号/关闭/删除生命周期和按存档 artifact 定位，不能以对象存在或 revision 增大代替保存证明。
    已查看公共包桌面/移动端插槽截图，其 HOST CONTENT 内容只证明渲染接线。M1 最终模拟旅程须接公共创作输出、宿主真实正文/标签与在线保存恢复，已加入在线任务；不以占位截图代替完整旅程。
