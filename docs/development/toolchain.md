@@ -29,7 +29,7 @@
 | 命令 | 内容 | 何时运行 |
 | --- | --- | --- |
 | `task check:g1` … `task check:g5` | 累进的 Stage 1–5 gate：fmt、clippy、全 workspace 测试，逐级加上存储、Effect、Statechart、迁移与协议测试 | 改动 `crates/**` 时运行到受影响的级别；合并前 `g5` |
-| `task check:r1` | 节点栈与 Web Gamebook：Rust 测试、Wasm 构建、浏览器回归、生成文件漂移 | 改动 `packages/narrata/**`、`products/**`、`examples/gamebook-web/**` |
+| `task check:r1` | 节点栈与 Web Gamebook：节点默认/全部 feature 与 authoring Rust 测试、运行时和 authoring Wasm 目标检查、浏览器回归、生成文件漂移 | 改动 `packages/narrata/**`、`products/**`、`examples/gamebook-web/**` |
 | `task check:web-storage` | IndexedDB 存储适配器：类型检查、Vitest、计数器 Wasm 模块上的 Chromium 回归（端口 4183） | 改动 `packages/narrata/kernel/js/**` 或 `narrata-storage-host` |
 | `task check:server-storage` | PostgreSQL 参考宿主：类型检查、PGlite 一致性/DDL/回滚/配额/重开、可选实库相同套件与双连接屏障 | 改动 `packages/narrata/kernel/js/server/**` 或服务器测试；实库用 `NARRATA_POSTGRES_URL` 指向可建临时 schema 的测试库，未配置明确跳过、不算上线通过；CI 必跑 |
 | `task web:build` | 构建 `@rezics/narrata` 的 ESM、声明与独立 Wasm；从 Rust schema 生成 BookView 类型/校验器，并复制现有 IndexedDB 宿主 | 准备宿主安装的包；产物为 `packages/narrata/web/dist/` |

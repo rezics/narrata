@@ -6,9 +6,11 @@ if ($IsWindows -and (Get-NetTCPConnection -State Listen -LocalPort 4173 -ErrorAc
 }
 
 cargo fmt --all --check
-cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph --all-targets --all-features -- -D warnings
-cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph
+cargo clippy -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring --all-targets --all-features -- -D warnings
+cargo test -p narrata-nodes -p narrata-nodes-wasm -p narrata-node-tools -p narrata-content-local -p narrata-graph -p narrata-authoring
+cargo test -p narrata-nodes --all-features
 cargo check -p narrata-nodes-wasm --target wasm32-unknown-unknown
+cargo check -p narrata-authoring --target wasm32-unknown-unknown
 
 Push-Location examples/gamebook-web
 try {
