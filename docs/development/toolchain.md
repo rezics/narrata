@@ -11,7 +11,7 @@
 | PowerShell | 7.x | 现有 gate 脚本 `scripts/check-*.ps1` | 本页 |
 | Node.js / npm | CI 用 24，本机 26 | Web npm 包、参考阅读器、TypeScript 绑定、IndexedDB 存储适配器 | `.github/workflows/ci.yml` |
 | Playwright | 1.63.0 | Web 包 tarball 安装、阅读器与 IndexedDB 存储适配器的浏览器回归 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json`、`packages/narrata/kernel/js/package.json` |
-| Vite | 8.2.4（Web 包/阅读器/存储）；8.3.5（协议绑定测试的 peer，lock 锁定） | Web 包安装测试的生产构建、阅读器构建、存储适配器浏览器测试页及协议测试运行器 | 同上；`bindings/typescript/package-lock.json` |
+| Vite | 8.2.4（各 Web/存储包及协议绑定测试统一固定） | Web 包安装测试的生产构建、阅读器构建、存储适配器浏览器测试页及协议测试运行器 | 同上；`bindings/typescript/package.json`、`bindings/typescript/package-lock.json` |
 | React | 19.2.8（`@rezics/narrata/react` 的可选 peer，接受 React 18 与 19） | Web 包的 React 阅读器组件、参考阅读器 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json` |
 | Vitest、fake-indexeddb | 5.0.3、6.2.5 | Web 运行时包装、IndexedDB 存储适配器及旧 TypeScript 协议绑定的单元测试；协议绑定已移除旧 worker-pool 审计阻碍 | `packages/narrata/web/package.json`、`packages/narrata/kernel/js/package.json`、`bindings/typescript/package.json` |
 | PGlite、node-postgres / @types/pg | 0.5.8、8.23.1 / 8.23.1 | PostgreSQL 协议参考宿主的本机 SQL/事务一致性与 CI 双连接测试；仅开发依赖 | `packages/narrata/kernel/js/package-lock.json` |
