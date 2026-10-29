@@ -153,6 +153,7 @@ impl ChunkSource for HostChunks {
 pub struct SaveLocator {
     cache: CacheBackend,
     execution: narrata_nodes::ExecutionId,
+    proof: Option<narrata_nodes::history::locator::RetentionProof>,
 }
 
 #[wasm_bindgen]
@@ -162,6 +163,7 @@ impl SaveLocator {
         Ok(Self {
             cache: CacheBackend::new(),
             execution: parse(execution, "execution", "execution:<32 hex digits>")?,
+            proof: None,
         })
     }
     pub fn locate(&self) -> Result<Option<String>, JsError> {
@@ -170,17 +172,36 @@ impl SaveLocator {
             .map(|location| json(&(location.cursor, location.artifact)))
             .transpose()
     }
-    pub fn retained(&self, candidate: &str, roots: u32, commits: u32) -> Result<bool, JsError> {
-        narrata_nodes::history::locator::retained(
-            &self.cache,
-            self.execution,
-            parse(candidate, "candidate", "commit:<64 hex digits>")?,
-            narrata_nodes::history::locator::Limits {
-                roots: roots as usize,
-                commits: commits as usize,
-            },
-        )
-        .map_err(|error| JsError::new(&error.to_string()))
+    pub fn retained(&mut self, candidate: &str, roots: u32, commits: u32) -> Result<bool, JsError> {
+        use narrata_nodes::history::locator::{Limits, ProofScope, RetentionProof};
+        let candidate = parse(candidate, "candidate", "commit:<64 hex digits>")?;
+        let limits = Limits {
+            roots: roots as usize,
+            commits: commits as usize,
+        };
+        if self
+            .proof
+            .as_ref()
+            .is_none_or(|proof| !proof.matches(candidate, limits))
+        {
+            self.proof = Some(RetentionProof::new(self.execution, candidate, limits));
+        }
+        let Some(store) = self.cache.store() else {
+            // Record a normal cache miss without manufacturing an unscoped proof snapshot.
+            self.locate()?;
+            return Err(JsError::new("load the store before verifying retention"));
+        };
+        self.proof
+            .as_mut()
+            .ok_or_else(|| JsError::new("missing retention query"))?
+            .poll(
+                &self.cache,
+                ProofScope {
+                    store: *store.id.as_bytes(),
+                    revision: store.revision,
+                },
+            )
+            .map_err(|error| JsError::new(&error.to_string()))
     }
     #[wasm_bindgen(js_name = takeRequest)]
     pub fn take_request(&self) -> Option<Vec<u8>> {

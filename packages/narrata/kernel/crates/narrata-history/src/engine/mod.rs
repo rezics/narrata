@@ -63,6 +63,24 @@ impl<R: Registry> History<MemoryBackend, R> {
 }
 
 impl<B: StorageBackend, R: Registry> History<B, R> {
+    /// Opens an existing layout without initializing or repairing any backend data.
+    pub fn open_existing(backend: B, registry: R) -> Result<Self, R::Error> {
+        if !backend.capabilities().atomic_multi_key() {
+            return Err(HistoryError::from(StorageError::Invalid(
+                "the history engine needs atomic multi-key batches",
+            ))
+            .into());
+        }
+        let marker = backend
+            .read_key(layout::META, layout::LAYOUT_KEY)
+            .map_err(HistoryError::from)?
+            .ok_or_else(|| HistoryError::CorruptStore("missing save layout".to_owned()))?;
+        if layout::decode_layout(&marker.value)? != layout::LAYOUT_VERSION {
+            return Err(HistoryError::CorruptStore("unsupported save layout".to_owned()).into());
+        }
+        Ok(Self::assemble(backend, registry))
+    }
+
     /// Opens a store in layout v1, initialising an empty backend. A backend holding anything
     /// else, including a newer layout, is refused with a format error and left untouched.
     pub fn open(mut backend: B, registry: R) -> Result<Self, R::Error> {

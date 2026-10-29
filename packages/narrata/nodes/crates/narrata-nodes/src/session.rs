@@ -194,11 +194,18 @@ impl<B: StorageBackend> Session<B> {
         let location = crate::history::locator::locate(&backend, execution)
             .map_err(history_error)?
             .ok_or_else(|| Error::new("save", "cursor", "missing active cursor"))?;
-        let mut session = Self::open(
+        let mut session = Self::resume(
             registry.program(location.artifact)?.clone(),
             execution,
             backend,
         )?;
+        if session.cursor()? != location.cursor {
+            return Err(Error::new(
+                "stale_input",
+                "cursor",
+                "active cursor moved during artifact discovery",
+            ));
+        }
         session.programs.extend(registry.programs.clone());
         Ok(session)
     }
@@ -299,13 +306,29 @@ impl<B: StorageBackend> Session<B> {
     }
     /// Reopens this execution's cursor without replay; creates its root only when absent.
     pub fn open(program: Arc<Program>, execution: ExecutionId, backend: B) -> Result<Self> {
-        let mut history =
-            History::open(backend, DomainKinds::<NodeDomain>::new()).map_err(history_error)?;
+        Self::open_mode(program, execution, backend, true)
+    }
+    /// Reopens only: missing metadata or cursor is an error and never causes a write.
+    pub fn resume(program: Arc<Program>, execution: ExecutionId, backend: B) -> Result<Self> {
+        Self::open_mode(program, execution, backend, false)
+    }
+    fn open_mode(
+        program: Arc<Program>,
+        execution: ExecutionId,
+        backend: B,
+        create: bool,
+    ) -> Result<Self> {
+        let mut history = if create {
+            History::open(backend, DomainKinds::<NodeDomain>::new())
+        } else {
+            History::open_existing(backend, DomainKinds::<NodeDomain>::new())
+        }
+        .map_err(history_error)?;
         let domain = NodeDomain(program.clone());
         let mut initial_pins = None;
         let (session, loaded) =
             match narrata_history::Session::open(&history, domain.clone(), name(execution)) {
-                Err(HistoryError::MissingRef(_)) => {
+                Err(HistoryError::MissingRef(_)) if create => {
                     let initial = Machine { program: &program }.initial()?;
                     initial_pins = Some(initial.pins);
                     narrata_history::Session::create(

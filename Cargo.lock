@@ -653,6 +653,7 @@ dependencies = [
  "narrata-history",
  "narrata-kernel",
  "narrata-storage",
+ "narrata-storage-host",
  "proptest",
  "schemars",
  "serde",
