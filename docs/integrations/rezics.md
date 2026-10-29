@@ -132,10 +132,11 @@ Narrata 负责场景依赖、推进与恢复语义；播放器负责资源准备
 - 浏览器 `@rezics/narrata/authoring`、Node/Bun `@rezics/narrata/server` 的 `loadAuthoring()`：逐条记录校验/组装、ID 铸造、诊断、预览、发布及按描述和单个对象受检重开。发布返回对象与规范记录/墓碑；宿主负责完整上传、原子保存草稿及最后的发布引用 CAS。
 - 根入口及 `@rezics/narrata/reader` 使用独立 reader Wasm，首屏不带编译、发布、布局或 trace；旧 raw Wasm 保留兼容入口。作者能力按需加载，部署需保留包内分别定位的 Wasm 资源。
 - `@rezics/narrata/content/native` 支持同一修订的原生文档片段与文字回退；内容大纲仍不含正文或 revision 字段，具体宿主模型转换与权限由 REZICS 实现。
+- 根入口的 `AuthenticatedLibrary` / `createOnlineSession` 提供固定库实例、未知保存原字节重试与保留证明、配额/冲突恢复、关闭/账号失效和删除重建接缝，并按存档的精确 artifact 打开。调用方式与宿主责任见[在线旅程](../../packages/narrata/web/README.md#authenticated-online-journeys)；宿主仍提供认证传输、库授权与对象保留。
 
-这些入口已有独立 tarball 的 Node/Bun/浏览器验证，但 M1 完整固定包仍待在线会话生命周期、按存档 artifact 定位和真实正文/标签的联合模拟旅程完成。未知保存结果暂停及原字节重试已有基础；durable roots/history 核实、账号切换和删除生命周期尚未作为完整公共流程交付，不能转嫁给宿主补 Narrata 语义。
+M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公开创作的同一复合短篇、真实正文/标签、冷读取、A/B 逻辑隔离与在线故障恢复均有证据。接受的参考入口为 `/?reference`，`/` 仅作旧兼容示例。固定输入为版本 `0.1.0-alpha.1`、[源码 fa0266b1063428e855efea1408768029818500d0](https://github.com/rezics/narrata/tree/fa0266b1063428e855efea1408768029818500d0)、tarball SHA-256 `524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19`；由维护者提供该文件，不把同版本其他构建或 `latest` 当同一输入。尚未发布 npm registry，本次主线 CI 另行核实。
 
-M2 的 visits/读者地图、关系投影数据库装载、作品演化公共评估/确认/应用和维护入口仍在实施。已有 Rust 核心或 ADR 不表示这些公开旅程已完成；真实 REZICS 联合验收另行记录。
+正文依宿主当前可用修订解析，同一画面/原生片段使用一次解析快照；固定旧逻辑构件不保证历史正文永久原样可得。M2 的 visits/读者地图、关系投影数据库装载和维护入口仍在实施。作者端演化规划、描述符、评估/应用控制器与只读影响作业已交付，但真实阅读器中的跨构件历史与确认接线尚未完成，不把后端测试当作完整 M2 旅程；REZICS 真实联合验收仍另行记录。
 
 [Gamebook Goal](../goals/web-and-rezics/GOAL.md) 已按 M1 首发包、M2 完整能力、M3 收敛排序；[Web VN Goal](../goals/web-vn/GOAL.md) 另列为待启动计划。Narrata 的模拟宿主和参考适配在本仓库实现，REZICS 专用实现仍只列为本页能力请求。
 
