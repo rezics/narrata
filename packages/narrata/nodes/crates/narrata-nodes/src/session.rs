@@ -191,23 +191,13 @@ impl<B: StorageBackend> Session<B> {
         execution: ExecutionId,
         backend: B,
     ) -> Result<Self> {
-        let history =
-            History::open(backend, DomainKinds::<NodeDomain>::new()).map_err(history_error)?;
-        let key = RefKey::active(name(execution))
-            .map_err(|e| Error::new("name", "cursor", e.to_string()))?;
-        let cursor = history
-            .read_ref(&key)
+        let location = crate::history::locator::locate(&backend, execution)
             .map_err(history_error)?
             .ok_or_else(|| Error::new("save", "cursor", "missing active cursor"))?;
-        let object = history
-            .reader()
-            .require(cursor.commit, Some(wire::KIND_COMMIT))
-            .map_err(history_error)?;
-        let header = Commit::decode(object.bytes())?;
         let mut session = Self::open(
-            registry.program(header.artifact)?.clone(),
+            registry.program(location.artifact)?.clone(),
             execution,
-            history.into_backend(),
+            backend,
         )?;
         session.programs.extend(registry.programs.clone());
         Ok(session)

@@ -148,6 +148,56 @@ impl ChunkSource for HostChunks {
     }
 }
 
+/// Read-only save discovery before the host has loaded an artifact.
+#[wasm_bindgen]
+pub struct SaveLocator {
+    cache: CacheBackend,
+    execution: narrata_nodes::ExecutionId,
+}
+
+#[wasm_bindgen]
+impl SaveLocator {
+    #[wasm_bindgen(constructor)]
+    pub fn new(execution: &str) -> Result<Self, JsError> {
+        Ok(Self {
+            cache: CacheBackend::new(),
+            execution: parse(execution, "execution", "execution:<32 hex digits>")?,
+        })
+    }
+    pub fn locate(&self) -> Result<Option<String>, JsError> {
+        narrata_nodes::history::locator::locate(&self.cache, self.execution)
+            .map_err(|error| JsError::new(&error.to_string()))?
+            .map(|location| json(&(location.cursor, location.artifact)))
+            .transpose()
+    }
+    pub fn retained(&self, candidate: &str, roots: u32, commits: u32) -> Result<bool, JsError> {
+        narrata_nodes::history::locator::retained(
+            &self.cache,
+            self.execution,
+            parse(candidate, "candidate", "commit:<64 hex digits>")?,
+            narrata_nodes::history::locator::Limits {
+                roots: roots as usize,
+                commits: commits as usize,
+            },
+        )
+        .map_err(|error| JsError::new(&error.to_string()))
+    }
+    #[wasm_bindgen(js_name = takeRequest)]
+    pub fn take_request(&self) -> Option<Vec<u8>> {
+        self.cache.take_request().map(|request| request.encode())
+    }
+    pub fn load(&self, bytes: &[u8]) -> Result<bool, JsError> {
+        self.cache.load(&Loaded::decode(bytes)?)?;
+        Ok(true)
+    }
+    pub fn unconfirmed(&self) -> Option<Vec<u8>> {
+        None
+    }
+    pub fn confirm(&self, _bytes: &[u8]) -> Result<bool, JsError> {
+        Err(JsError::new("read-only locator cannot confirm writes"))
+    }
+}
+
 /// A checked program and one session on it.
 #[wasm_bindgen]
 pub struct NodeBook {
@@ -289,6 +339,11 @@ impl NodeBook {
         self.program.artifact_id().to_string()
     }
 
+    /// Candidate identity is available to the host before persistence is acknowledged.
+    pub fn cursor(&self) -> Result<String, JsError> {
+        Ok(self.opened()?.cursor().map_err(js_error)?.to_string())
+    }
+
     /// Opens the kernel cursor, creating it only if absent. Retried after host loads.
     pub fn open(&mut self) -> Result<(), JsError> {
         self.session = None;
@@ -297,6 +352,18 @@ impl NodeBook {
                 .map_err(js_error)?,
         );
         self.finish(Ok(()))
+    }
+
+    /// Restores an existing execution without creating a replacement cursor if it disappears.
+    /// Repeating discovery on every cache retry prevents a miss from turning resume into create.
+    pub fn resume(&mut self) -> Result<(), JsError> {
+        if narrata_nodes::history::locator::locate(&self.cache, self.execution)
+            .map_err(|error| JsError::new(&error.to_string()))?
+            .is_none()
+        {
+            return Err(JsError::new("the saved execution has no active cursor"));
+        }
+        self.open()
     }
 
     fn finish<T>(&self, result: Result<T, JsError>) -> Result<T, JsError> {

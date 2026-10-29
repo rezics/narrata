@@ -1,6 +1,7 @@
 //! Registration of the existing node object bytes in the kernel history layer.
 
 pub mod evolution;
+pub mod locator;
 
 use std::sync::Arc;
 
