@@ -5,6 +5,8 @@ import type { Resolution } from "./resolution.js";
 export type { Content, ResolveContext, ResolveItem, ResolveRequest } from "./request.js";
 export type { Resolution, Payload, TextBlock } from "./resolution.js";
 export type { ContentOutline, UnitOutline } from "./outline.js";
+export { createNativeContentAdapter, nativeContentOutline } from "./native.js";
+export type { NativeBlock, NativeTextBlock, NativeChoiceMarker, NativeDocument, NativeSlice, NativeContentResult, NativeContentOptions, NativeContentAdapter } from "./native.js";
 
 /** Host implementation. Results correspond to request items in order, including failures. */
 export interface ContentResolver {
