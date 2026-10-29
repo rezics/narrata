@@ -11,12 +11,14 @@
 | PowerShell | 7.x | 现有 gate 脚本 `scripts/check-*.ps1` | 本页 |
 | Node.js / npm | CI 用 24，本机 26 | Web npm 包、参考阅读器、TypeScript 绑定、IndexedDB 存储适配器 | `.github/workflows/ci.yml` |
 | Playwright | 1.63.0 | Web 包 tarball 安装、阅读器与 IndexedDB 存储适配器的浏览器回归 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json`、`packages/narrata/kernel/js/package.json` |
-| Vite | 8.2.2 | Web 包安装测试的生产构建、阅读器构建、存储适配器浏览器测试页 | 同上 |
+| Vite | 8.2.4 | Web 包安装测试的生产构建、阅读器构建、存储适配器浏览器测试页 | 同上 |
 | React | 19.2.8（`@rezics/narrata/react` 的可选 peer，接受 React 18 与 19） | Web 包的 React 阅读器组件、参考阅读器 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json` |
 | Vitest、fake-indexeddb | 5.0.3、6.2.5 | Web 运行时包装与 IndexedDB 存储适配器的单元测试 | `packages/narrata/web/package.json`、`packages/narrata/kernel/js/package.json` |
 | PGlite、node-postgres / @types/pg | 0.5.8、8.23.1 / 8.23.1 | PostgreSQL 协议参考宿主的本机 SQL/事务一致性与 CI 双连接测试；仅开发依赖 | `packages/narrata/kernel/js/package-lock.json` |
 | PostgreSQL | CI 服务镜像 `postgres:18` | 服务器存档的真实行锁竞争与 REPEATABLE READ 快照检查；本机不安装服务 | `.github/workflows/ci.yml` |
-| TypeScript、json-schema-to-typescript、Ajv | 5.9.3、16.0.0、8.x（lock 锁定） | Web 包 JS/声明、Rust BookView 类型与独立校验器；发布包无运行时 npm 依赖 | `packages/narrata/web/package-lock.json` |
+| TypeScript、json-schema-to-typescript、Ajv | 5.9.3、16.0.0、8.x（lock 锁定） | Web 包 JS/声明、Rust BookView 类型与独立校验器 | `packages/narrata/web/package-lock.json` |
+| Sigma.js、graphology | 3.0.3、0.26.0（MIT） | 作者图子路径按需加载的 WebGL 绘制与图模型；独立计量，reader 首屏不加载 | `packages/narrata/web/package-lock.json` |
+| Zod | 4.6.7（lock 锁定） | 参考阅读器的宿主请求校验 | `examples/gamebook-web/package-lock.json` |
 | wasm-bindgen CLI | 与 `Cargo.lock` 中的 `wasm-bindgen` 相同 | 为 Web 生成 Wasm 的 JS 绑定；构建脚本按需装进 `.temp/wasm-tools` | `Cargo.lock` |
 | Bun | 1.4.0 | `goalctl`、文档检查及其测试 | 本页 |
 | Windows Terminal | 本机安装 | `task goal:manager` 为每个 manager 开一个标签页 | [manager 章程](../goals/manager.md#启动-manager) |

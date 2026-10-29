@@ -19,7 +19,7 @@
     "fake-indexeddb": "6.2.5",
     "pg": "8.23.1",
     "typescript": "~5.9.3",
-    "vite": "8.2.2",
+    "vite": "8.2.4",
     "vitest": "5.0.3"
   }
 }

@@ -10,17 +10,18 @@ import { demoPack, execution, splitPack } from "../test/fixture.ts";
 import { npmCli, tarball } from "./pack.mjs";
 
 const here = resolve(import.meta.dirname, "..");
+const packageMetadata = JSON.parse(readFileSync(join(here, "package.json")));
 const temporaryRoot = join(tmpdir(), ".temp");
 mkdirSync(temporaryRoot, { recursive: true });
 const directory = mkdtempSync(join(temporaryRoot, "narrata-web-install-"));
 const parts = splitPack(demoPack);
 const npm = (...args) => execFileSync(process.execPath, [npmCli, ...args], { cwd: directory, stdio: "inherit" });
 writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "narrata-install-test", private: true, type: "module" }));
-npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarball, "vite@8.2.2", "typescript@~5.9.3", "@types/node@^24.0.0");
+npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarball, `vite@${packageMetadata.devDependencies.vite}`, "typescript@~5.9.3", "@types/node@^24.0.0");
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./storage", "./react", "./testing", "./graph", "./graph/react"]);
+assert.deepEqual(Object.keys(manifest.exports), [".", "./storage", "./react", "./testing", "./graph", "./graph/react", "./content/native"]);
 assert.deepEqual(manifest.dependencies, { graphology: "0.26.0", sigma: "3.0.3" }, "Only the lazy graph entry uses runtime dependencies");
 assert.deepEqual(manifest.peerDependenciesMeta, { react: { optional: true } });
 assert.equal(existsSync(join(directory, "node_modules/react")), false, "Framework-free hosts must not install React");
@@ -33,15 +34,35 @@ for (const [id, bytes] of parts.objects) writeFileSync(join(publicDirectory, "ob
 writeFileSync(join(directory, "objects.json"), JSON.stringify(Object.fromEntries([...parts.objects].map(([id, bytes]) => [id, [...bytes]]))));
 writeFileSync(join(directory, "manifest.cbor"), parts.manifest);
 cpSync(resolve(here, "test/types.ts"), join(directory, "types.ts"));
+writeFileSync(join(directory, "native-types.ts"), `
+import { createNativeContentAdapter, type NativeDocument } from "@rezics/narrata/content/native";
+import { nativeDocumentSample, type SampleNativeValue } from "@rezics/narrata/testing";
+const document: NativeDocument<SampleNativeValue> = nativeDocumentSample();
+const adapter = createNativeContentAdapter<SampleNativeValue>({ resolve: async () => [{ status: "document", document }] });
+void adapter;
+`);
 cpSync(resolve(here, "../../../fixtures/compat/graph-v1"), join(directory, "graph"), { recursive: true });
-writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true }, include: ["types.ts"] }));
+writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true }, include: ["types.ts", "native-types.ts"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 writeFileSync(join(directory, "node.mjs"), `
 import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
 import { openBook, initialize, resolveContent } from "@rezics/narrata";
-import { MockRezicsContent, mountainLetterData, mountainLetterKeys } from "@rezics/narrata/testing";
+import { MockRezicsContent, mountainLetterData, mountainLetterKeys, nativeDocumentSample } from "@rezics/narrata/testing";
+import { createNativeContentAdapter, nativeContentOutline } from "@rezics/narrata/content/native";
 import { decodeIndex, decodeTile } from "@rezics/narrata/graph";
+const document = nativeDocumentSample("installed:1");
+const nativeAdapter = createNativeContentAdapter({ resolve: async () => [{ status: "document", document }] });
+const nativeRequest = { context: { languages: ["en"], realization: "edition:1", viewer: "reader:installed" }, items: [
+  { content: { unit: { provider: "native", key: "chapter" }, first: "arrival", last: "map" } },
+] };
+const [nativeResolution] = await nativeAdapter.resolve(nativeRequest);
+assert.equal(nativeResolution.status, "ok");
+assert.deepEqual(nativeResolution.payload.blocks.map(block => block.id), ["arrival", "map"]);
+assert.equal(nativeAdapter.lookup(nativeRequest.items[0], nativeRequest.context, nativeResolution).blocks[1].value.kind, "image");
+assert.equal(nativeContentOutline("native", { chapter: document }).units.chapter.markers.decision, "choice-point:" + "1".repeat(32));
+nativeAdapter.clear();
+assert.equal(nativeAdapter.lookup(nativeRequest.items[0], nativeRequest.context, nativeResolution), undefined);
 const graphManifest = JSON.parse(await readFile(new URL("./graph/manifest.json", import.meta.url), "utf8"));
 const index = await decodeIndex(new Uint8Array(await readFile(new URL("./graph/" + graphManifest.index_object_id + ".cbor", import.meta.url))), graphManifest.index_object_id);
 for (const [row, tile] of index.tiles.entries()) await decodeTile(new Uint8Array(await readFile(new URL("./graph/" + tile.objectId + ".cbor", import.meta.url))), index, row);
@@ -81,7 +102,7 @@ execFileSync("bun", [join(directory, "node.mjs"), "default"], { cwd: directory, 
 npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "react@19.2.8", "react-dom@19.2.8", "@types/react@^19.0.0", "@types/react-dom@^19.0.0");
 cpSync(resolve(here, "test/reader-types.tsx"), join(directory, "reader-types.tsx"));
 cpSync(resolve(here, "test/graph-types.tsx"), join(directory, "graph-types.tsx"));
-writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, jsx: "react-jsx" }, include: ["types.ts", "reader-types.tsx", "graph-types.tsx"] }));
+writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true, jsx: "react-jsx" }, include: ["types.ts", "native-types.ts", "reader-types.tsx", "graph-types.tsx"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 
 writeFileSync(join(directory, "index.html"), '<!doctype html><html><head><title>Narrata install test</title></head><body><p id="status">loading</p><div id="reader"></div><script type="module" src="/main.tsx"></script></body></html>');
@@ -102,6 +123,17 @@ window.ready = (async () => {
   let firstScreenRequests;
   controller.subscribe(() => { if (firstScreenRequests === undefined && controller.getSnapshot().phase === "ready") firstScreenRequests = performance.getEntriesByType("resource").filter(entry => entry.name.endsWith(".cbor")).length; });
   window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), firstScreen: () => firstScreenRequests,
+    native: async () => {
+      const { createNativeContentAdapter, nativeContentOutline } = await import("@rezics/narrata/content/native");
+      const { nativeDocumentSample } = await import("@rezics/narrata/testing");
+      const document = nativeDocumentSample("browser:1");
+      const adapter = createNativeContentAdapter({ resolve: async () => [{ status: "document", document }] });
+      const request = { context: { languages: ["en"] }, items: [{ content: { unit: { provider: "native", key: "chapter" }, first: "arrival", last: "map" } }] };
+      const [resolution] = await adapter.resolve(request);
+      const slice = adapter.lookup(request.items[0], request.context, resolution);
+      return { status: resolution.status, ids: slice?.blocks.map(block => block.id), image: slice?.blocks[1]?.value.kind,
+        marker: nativeContentOutline("native", { chapter: document }).units.chapter.markers.decision };
+    },
     close: async () => { controller.dispose(); root.unmount(); await book.close(); store.close(); } };
   if (!await controller.start()) throw new Error("Controller failed to open the screen");
   document.querySelector("#status").textContent = "ready";
@@ -138,6 +170,7 @@ try {
   assert.equal((await page.evaluate(() => window.installed.inspect())).view.depth, 0);
   assert.equal(await page.evaluate(() => window.installed.firstScreen()), 2, "First screen requests only the manifest and entry chunk before speculative prefetch");
   assert.equal(requests.filter(path => path.endsWith(".wasm")).length, 1);
+  assert.deepEqual(await page.evaluate(() => window.installed.native()), { status: "ok", ids: ["arrival", "map"], image: "image", marker: "choice-point:" + "1".repeat(32) });
   const beforePrefetch = await page.evaluate(() => window.installed.save());
   const units = await page.evaluate(() => window.installed.prefetch());
   assert.ok(units.some(reference => reference.key === "camp.fire"));

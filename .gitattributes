@@ -12,6 +12,8 @@ fixtures/compat/stage6-v0/** -text
 fixtures/compat/kernel-history-v2/** -text
 fixtures/compat/kernel-history-v3/** -text
 fixtures/compat/browser-storage-v1/** -text
+fixtures/compat/publication-v1/** -text
+fixtures/compat/relations-v1/** -text
 
 # Packed node artifacts are binary envelopes.
 *.narpack binary
