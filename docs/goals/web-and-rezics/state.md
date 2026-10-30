@@ -24,7 +24,7 @@
 ## 下一步
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
-2. [存档维护/浅恢复](tasks/G-038.md)已合入并完成主线固定包验收，接续归档/推送新 CI；复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
+2. [存档维护/浅恢复](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-038.md)已合入并完成主线固定包验收，接续归档/推送新 CI；复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
 3. 随后完成[阅读器跨构件/确认组合](tasks/G-039.md)：历史 A/B 程序与各自 loader 按需注册、时间线/checkout/再选择、确认及落盘故障在同一实际参考旅程可用，地图与维护需组合验证。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
