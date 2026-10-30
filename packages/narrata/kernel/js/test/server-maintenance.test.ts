@@ -8,6 +8,7 @@ import { ddl, generousQuota, pgliteDatabase, postgresDatabase, sqlFixture, type 
 const pack = new Uint8Array(readFileSync(new URL("../../../../../products/gamebook-demo/story.narpack", import.meta.url)));
 const execution = "execution:0190f2a0000070008000000000000001";
 const second = "execution:0190f2a0000070008000000000000002";
+const third = "execution:0190f2a0000070008000000000000003";
 const url = process.env.NARRATA_POSTGRES_URL;
 async function roots(m: Maintenance): Promise<ObservedRoot[]> {
   const result = await m.run({kind:"roots",after:null,limit:1024});
@@ -89,5 +90,47 @@ for (const real of [false,true]) describe.skipIf(real && !url)(`public maintenan
       expect(await collector.run({kind:"integrity"})).toEqual({kind:"integrity",issues:[]});
       const reopened=await openBook({pack,execution:second,storage:store});try{await choose(reopened);}finally{await reopened.close();}
     } finally {await Promise.all([book.close(),collector.close(),importer.close()]);await f.dispose();}
+  });
+
+  test("one unchanged quota preserves old progress, then permits retry after selected-root cleanup", async () => {
+    const f = await sqlFixture(db);
+    const store = new PostgresStore(db,f.id,generousQuota);
+    const book = await openBook({pack,execution,storage:store});
+    const exporting = await openLibraryMaintenance(store);
+    await exporting.registerPublication(publication);
+    let limited: Maintenance | undefined;
+    try {
+      await choose(book);
+      const cursor = (await book.inspect()).view.cursor, artifact = book.artifactId;
+      const bytes = await exporting.exportSave({execution,artifact,cursor});
+      // Seed the checked bundle manifest as well as ordinary session objects. Subsequent
+      // imports then add only their selected active root, rather than first-import indexes.
+      await exporting.importSave(bytes,{execution:second,artifact,cursor,expected_revision:null,now:100});
+      const used = await store.usage();
+      const constrained = new PostgresStore(db,f.id,{...generousQuota,keys:Number(used.used.keys)});
+      limited = await openLibraryMaintenance(constrained);
+      await limited.registerPublication(publication);
+      const selection = {execution:third,artifact,cursor,expected_revision:null,now:100};
+      // Objects already exist. The additional active root alone exceeds this fixed quota.
+      await expect(limited.importSave(bytes,selection)).rejects.toMatchObject({reason:"quota"});
+      expect(await locateSave(constrained,third)).toBeNull();
+      const old = await openBook({pack,execution,storage:constrained});
+      try {expect((await old.inspect()).view.cursor).toBe(cursor);}
+      finally {await old.close();}
+      await book.close();
+      await limited.run({kind:"delete_roots",roots:await roots(limited)});
+      const beforeDryRun = await constrained.usage();
+      await limited.run({kind:"collect",now:1000,grace_seconds:0,dry_run:true});
+      expect(await constrained.usage()).toEqual(beforeDryRun);
+      await limited.run({kind:"collect",now:1000,grace_seconds:0,dry_run:false});
+      await limited.importSave(bytes,{...selection,now:1001});
+      expect(await locateSave(constrained,execution)).toBeNull();
+      const restored = await openBook({pack,execution:third,storage:constrained});
+      try {
+        expect((await restored.inspect()).view.cursor).toBe(cursor);
+        expect(await restored.exportSave()).toBe(Buffer.from(bytes).toString("hex"));
+      } finally {await restored.close();}
+      expect((await constrained.usage()).quota.keys).toBe(Number(used.used.keys));
+    } finally {await Promise.all([book.close(),exporting.close(),limited?.close()]);await f.dispose();}
   });
 });
