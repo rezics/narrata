@@ -43,8 +43,12 @@ export class StorageHost {
   constructor(
     private readonly store: CacheStore,
     private readonly cache: CacheHandle,
-    private readonly attempts = 64,
-  ) {}
+    // Four values per transport load: a 10,000-op batch can require 2,500 absence
+    // loads plus a successful invocation. Keep a finite allowance for generic callers.
+    private readonly attempts = 4096,
+  ) {
+    if (!Number.isSafeInteger(attempts) || attempts < 1) throw new RangeError("Expected a positive finite attempt limit");
+  }
 
   /**
    * Runs `operation` until it no longer lacks data, persists what it wrote, and resolves with

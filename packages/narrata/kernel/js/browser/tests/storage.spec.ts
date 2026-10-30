@@ -16,6 +16,18 @@ const advance = (page: Page, increment: number) => page.evaluate((increment) => 
 const save = (page: Page) => page.evaluate(() => counter.save());
 const reads = (page: Page) => page.evaluate(() => counter.reads());
 
+test("default StorageHost completes stock cold pages, point reads and maximum checked batches", async ({page}) => {
+  test.setTimeout(60_000);
+  await visit(page, "default-retries");
+  const result = await page.evaluate(()=>counter.largeColdOperations());
+  expect(result).toEqual({scan:1024,points:256,absent:0,scanLoads:257,pointLoads:64,absenceLoads:64,batchLoads:2501});
+});
+
+test("real Wasm cache rejects a queued flush one byte above 64 MiB before persistence", async ({page})=>{
+  await visit(page,"aggregate-byte-limit");
+  expect(await page.evaluate(()=>counter.aggregateFlushBytes())).toEqual({queuedBytes:64*1024*1024,persists:0,reopened:0,rejected:true});
+});
+
 async function readsOf(page: Page, operation: () => Promise<unknown>) {
   const before = await reads(page);
   await operation();

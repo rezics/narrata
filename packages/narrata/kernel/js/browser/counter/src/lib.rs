@@ -10,6 +10,7 @@
 use narrata_history::{
     DomainKinds, History, HistoryError, RefKey, RefName, Session, testing::Counter,
 };
+use narrata_storage::{Batch, KeySpace, ObjectDigest, StorageBackend};
 use narrata_storage_host::{CacheBackend, FlushReply, HostError, Loaded};
 use wasm_bindgen::prelude::*;
 
@@ -39,6 +40,59 @@ impl CounterSaves {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Test probes use the stock cache, not a JavaScript imitation of its miss policy.
+    #[wasm_bindgen(js_name = scanKeys)]
+    pub fn scan_keys(&self) -> Result<u32, JsError> {
+        Ok(self
+            .cache
+            .scan_keys(KeySpace::new(9), &[], None, 1024)?
+            .entries
+            .len() as u32)
+    }
+
+    #[wasm_bindgen(js_name = getObjects)]
+    pub fn get_objects(&self) -> Result<u32, JsError> {
+        let ids = (0..256).map(probe_digest).collect::<Vec<_>>();
+        Ok(self.cache.get_objects(&ids)?.iter().flatten().count() as u32)
+    }
+
+    #[wasm_bindgen(js_name = queueBytes)]
+    pub fn queue_bytes(&mut self, index: u32, bytes: u32) -> Result<(), JsError> {
+        if index > 4 || bytes > 16 * 1024 * 1024 {
+            return Err(JsError::new("invalid byte probe"));
+        }
+        self.cache
+            .apply(&Batch::new().put_object(probe_digest(index), vec![1; bytes as usize]))?;
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = queuedBytes)]
+    pub fn queued_bytes(&self) -> u32 {
+        self.cache.unconfirmed().map_or(0, |flush| {
+            flush
+                .batches
+                .iter()
+                .flat_map(|b| &b.put_objects)
+                .map(|(_, bytes)| bytes.len() as u32)
+                .sum()
+        })
+    }
+
+    #[wasm_bindgen(js_name = discardCandidate)]
+    pub fn discard_candidate(&mut self) {
+        self.cache.invalidate();
+        self.session = None;
+    }
+
+    #[wasm_bindgen(js_name = checkedBatch)]
+    pub fn checked_batch(&mut self) -> Result<(), JsError> {
+        let batch = (0..10_000).fold(Batch::new(), |batch, id| {
+            batch.put_object(probe_digest(id), [1].to_vec())
+        });
+        self.cache.apply(&batch)?;
+        Ok(())
     }
 
     /// The encoded load request for what failed calls lacked, if anything.
@@ -139,4 +193,10 @@ impl CounterSaves {
             .ok_or_else(|| JsError::new("open the session first"))?;
         Ok((history, session))
     }
+}
+
+fn probe_digest(id: u32) -> ObjectDigest {
+    let mut digest = [0; 32];
+    digest[..4].copy_from_slice(&id.to_be_bytes());
+    ObjectDigest::from_bytes(digest)
 }

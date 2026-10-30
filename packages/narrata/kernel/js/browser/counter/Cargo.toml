@@ -12,6 +12,7 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+narrata-storage = { path = "../../../crates/narrata-storage", version = "=0.1.0-alpha.1" }
 narrata-history = { path = "../../../crates/narrata-history", version = "=0.1.0-alpha.1", features = ["testing"] }
 narrata-storage-host = { path = "../../../crates/narrata-storage-host", version = "=0.1.0-alpha.1" }
 wasm-bindgen.workspace = true

@@ -14,4 +14,6 @@ export interface CounterPage {
   /** Deletes the database, as an eviction does, and imports `exported` into a new one. */
   restore(exported: number[]): Promise<void>;
   requestPersistence(): Promise<boolean>;
+  largeColdOperations(): Promise<{scan: number; points: number; absent: number; scanLoads: number; pointLoads: number; absenceLoads: number; batchLoads: number}>;
+  aggregateFlushBytes(): Promise<{queuedBytes:number;persists:number;reopened:number;rejected:boolean}>;
 }

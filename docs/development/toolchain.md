@@ -46,6 +46,11 @@
 Goal worker 通过 `task goal -- slot [--heavy] -- <命令>` 运行检查，以限制并发；完整 gate 与
 浏览器回归属于重型检查。见 [Goal 程序](../goals/README.md)。
 
+`check:web-storage` 的计数器浏览器夹具直接调用 stock CacheBackend，验证默认 StorageHost 的
+冷键页、已存在/缺失对象点读、最大批次的缺失检查，以及跨批次的累计 flush 字节拒绝。
+`check:web` 的维护故障矩阵同时复制到独立 tarball 消费者，包含真实 Wasm 导入的累计 flush
+操作边界、回包丢失后的原字节重试、实际删除/重建库与迟到操作，以及按实际回包长度计费的接受边界。
+
 `narrata-graph` 的增量检查为 `cargo test -p narrata-graph --all-targets`、
 `cargo clippy -p narrata-graph --all-targets -- -D warnings` 和
 `cargo check -p narrata-graph --target wasm32-unknown-unknown`，也经 Goal 槽位运行。

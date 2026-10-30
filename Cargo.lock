@@ -706,6 +706,7 @@ name = "narrata-storage-browser-counter"
 version = "0.1.0-alpha.1"
 dependencies = [
  "narrata-history",
+ "narrata-storage",
  "narrata-storage-host",
  "wasm-bindgen",
 ]
