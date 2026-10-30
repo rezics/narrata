@@ -1,6 +1,6 @@
 # State
 
-2026-10-30 检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1、地图与维护增量已本地验收，M2 阅读器演化组合及 M3 收敛尚未完成。任务状态以 `task goal -- status` 为准。
+2026-10-31 检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1、地图与维护增量已本地验收，M2 阅读器演化组合及 M3 收敛尚未完成。任务状态以 `task goal -- status` 为准。
 
 ## 已验收
 
@@ -24,7 +24,7 @@
 ## 下一步
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
-2. [存档维护/浅恢复](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-038.md)已 verified 归档、保留分支并推送 2a92cc5；[维护增量 CI](https://github.com/rezics/narrata/actions/runs/41083435285)已排队，复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
+2. [存档维护/浅恢复](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-038.md)已 verified 归档、保留分支并推送 2a92cc5；[维护增量 CI](https://github.com/rezics/narrata/actions/runs/41083435285)八项全绿，复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
 3. [阅读器跨构件/确认组合](tasks/G-039.md)已从 2a92cc5 启动 Codex/high attempt 1，wait 已挂起：历史 A/B 程序与各自 loader 按需注册、时间线/checkout/再选择、确认及落盘故障在同一实际参考旅程可用，地图与维护需组合验证。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
@@ -38,6 +38,8 @@
 
 当前 B 根加完整历史 pack 的注册/重开已交付，复核记录在 `.temp/review-history-registration.md`；历史名字表、旧 A 根后 NodeBook/Session 一致性及各自懒 loader 仍归下一任务。不能把省略 timeline/identity/analysis 的断言、笼统 history_truncated 或终态相等算完整继续阅读。上述维护证据已齐备并完成本地验收，剩余历史组合在下一任务验证；不能据此声称完整 M2 或全 Goal 完成。
 维护最终 raw/gzip：reader Wasm 1,373,924/385,105，作者 Wasm 2,896,459/737,581，总 JS 631,853/135,714；reader/作者图原上限不变。SDK 三个 Wasm 采用 z 与按模块 ESM 压缩已写工具链。manager 证据在 `.temp/goal/runs/G-038/manager-preserved/` 与 `main-acceptance/`，原始失败实库日志由最终成功重跑覆盖，不作通过证据。
+
+M3 契约文档已在 f903f5d 按源码与 Accepted ADR0022 收敛：更新已揭示地图状态/坐标，不删章节锁/社区比例等后续意图；choices/content 的机械规则回指类型和测试，179 文件链接检查通过。最终 Goal 关闭还须处理 `.temp/final-contract-docs-audit.md` 列出的三条长期文档入链，不能只归档目录留下悬空链接。
 
 ## 接续约束与主机
 
