@@ -18,9 +18,11 @@
 ## 下一步
 
 1. M1 固定包的公开接口、本地与 CI 证据已就绪；保持宿主能力状态为“提出”，不声称 REZICS 上线。
-2. [visits/读者地图/SQL 宿主](tasks/G-037.md)首次 worker 异常退出（code 4，无 final），保留十二个未提交文件，已在原 worktree 以 Codex/high 恢复 attempt 2；补认领与作者清单一致的 Cargo.lock 依赖更新。先形成可审查的 Rust 提交，再完成公共绑定、SQL、真实地图与 gate；尚未验收。使用共用 trace、受检稀疏查询与真实 PostgreSQL，不从预取推断访问，不泄漏隐藏目标。
+2. [visits/读者地图/SQL 宿主](tasks/G-037.md)首次 worker 异常退出（code 4，无 final），保留十二个未提交文件，已在原 worktree 以 Codex/high 恢复 attempt 2；补认领与作者清单一致的 Cargo.lock 依赖更新。Rust 核心已有不可变检查点 1bd032f，high 子代理正独立评审；worker 继续公共绑定、SQL、真实地图与 gate，尚未验收。使用共用 trace、受检稀疏查询与真实 PostgreSQL，不从预取推断访问，不泄漏隐藏目标。
 3. 随后完成[存档维护/浅恢复](tasks/G-038.md)与[阅读器跨构件/确认组合](tasks/G-039.md)。浅历史必须保留精确当前页上下文或在移动根前拒绝；不能用迁移页伪造原页。跨版本时间线/checkout/确认 UI 必须实际可用，不能只凭脱离产品的控制器测试关闭。
 4. M2/M3 全项当前版本审计、固定交付证据和归位后才关闭本 Goal；Web VN 仍待启动，不占用其路径。
+
+medium 子代理的范围审计在 .temp/stage-coverage-audit.md：剩余能力都有上述任务或 manager 收敛归属；交接已明确 M1 快照导出/恢复与 M2 有界冷库导入导出、浅历史/GC 的边界，未缩小原 Goal。最终 M3 仍须用完成后的包、源码、CI 与桌面/移动端证据逐项证明；ADR 0022 的关系规模证据已有 100,000 选择点、44,083 行及 15,640,925-byte 分片生成读数，新 SQL loader 的真实 PostgreSQL 装载时间/体积需另行测量，不能沿用旧纯投影数据。
 
 ## 接续约束与主机
 
