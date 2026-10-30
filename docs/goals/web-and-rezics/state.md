@@ -15,7 +15,7 @@
 
 地图 manager 证据在 `.temp/goal/runs/G-037/manager-preserved/` 和 `main-acceptance/`，含复审、完整交接、候选/主线包差异、日志、网络与截图；候选原始源码 44a0641 在交接中保留。关闭时保留合入分支，worktree 临时证据由 goalctl 归入对应 run，固定包已独立保存在 `.temp/delivery/`。
 
-实际 100,000 选择点投影 44,083 行；真实 PG 18.6 装载 34.13 秒、精确重试 0.82 秒，源/SQL 页均最多 256 行、10 参数；表 6,692,864 bytes、索引 10,846,208 bytes。19,103 个发布对象载入/验证另计 156.62 秒。测量在 worker `.temp/postgresql/map-validation/scale-loading.json`，与范围修复无关的装载代码未变，未重复昂贵测量。
+实际 100,000 选择点投影 44,083 行；真实 PG 18.6 装载 34.13 秒、精确重试 0.82 秒，源/SQL 页均最多 256 行、10 参数；表 6,692,864 bytes、索引 10,846,208 bytes。19,103 个发布对象载入/验证另计 156.62 秒。测量在 `.temp/goal/runs/G-037/worktree-temp/postgresql/map-validation/scale-loading.json`，与范围修复无关的装载代码未变，未重复昂贵测量。
 
 地图最终计量 raw/gzip：reader Wasm 1,694,481/439,038，作者 Wasm 2,665,048/684,683，作者图 221,680/50,240，readerMap 56,925/7,904，总 JS 649,023/137,919。仅新增 readerMap 59,000/8,400 上限；原 reader/作者图/总量上限均未提高。
 
@@ -23,8 +23,8 @@
 
 ## 下一步
 
-1. 保留固定增量包和本地验收记录，推送地图主线并跟踪其实际 CI；M3 最终仍需当前全部能力与固定交付物对应的证据。
-2. 启动[存档维护/浅恢复](tasks/G-038.md)：复用 kernel，浅历史保留精确当前页上下文或在移动 durable roots 前拒绝；不以 migration_page 伪造原页，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
+1. 地图主线已推送至 a4d7ee2，[当前 CI](https://github.com/rezics/narrata/actions/runs/41053411590)运行中；固定包与本地验收已保留。M3 最终仍需当前全部能力与固定交付物对应的证据。
+2. [存档维护/浅恢复](tasks/G-038.md)已从 a4d7ee2 启动 Codex/high attempt 1，wait 已挂起：复用 kernel，浅历史保留精确当前页上下文或在移动 durable roots 前拒绝；不以 migration_page 伪造原页，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
 3. 随后完成[阅读器跨构件/确认组合](tasks/G-039.md)：历史 A/B 程序与各自 loader 按需注册、时间线/checkout/再选择、确认及落盘故障在同一实际参考旅程可用，地图与维护需组合验证。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
