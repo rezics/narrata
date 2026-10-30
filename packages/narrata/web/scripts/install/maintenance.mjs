@@ -1,5 +1,5 @@
 import { openBook, locateSave } from "@rezics/narrata";
-import { IndexedDbStore, decodeLoaded, encodeLoadRequest, WriteRejected } from "@rezics/narrata/storage";
+import { IndexedDbStore, decodeLoaded, encodeLoadRequest, encodeFlush, WriteRejected } from "@rezics/narrata/storage";
 
 function check(condition, message) { if (!condition) throw new Error(message); }
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -43,7 +43,29 @@ export async function verifyHistoricalMaintenance(api, load) {
       const current = publications.find(p=>p.artifactId === checked.artifact);
       check(current !== undefined, "Missing exact current artifact");
       const historyPacks = publications.filter(p=>p !== current).map(p=>p.pack());
-      await m.importSave(save,{execution,...checked,expected_revision:null,now:100});
+      let expectedRevision=null,legacyDestinationRejected=false;
+      if(name === "legacy") {
+        const active=await openBook({pack:current.pack(),historyPacks,execution,storage:stored});
+        try {
+          const original=(await active.inspect()).view.cursor;
+          check(original !== checked.cursor,"Legacy corruption probe needs a different incoming root");
+          const digest=checked.cursor.split(":").at(-1);
+          const id=Uint8Array.from({length:32},(_,i)=>Number.parseInt(digest.slice(i*2,i*2+2),16));
+          let state=decodeLoaded(await stored.load(empty)).store;
+          await stored.persist(encodeFlush({store:state.id,batches:[{base:state.revision,revision:state.revision+1,putObjects:[[id,new Uint8Array([1])]],deleteObjects:[],putKeys:[],deleteKeys:[]}]}));
+          expectedRevision=(await roots(m)).find(root=>root.key.namespace===3).revision;
+          try {await m.importSave(save,{execution,...checked,expected_revision:expectedRevision,now:100});throw new Error("Legacy poisoned destination accepted");}
+          catch(error) {check(error.code === "corrupt_save","Legacy corruption classification");}
+          await active.reload();
+          try {await active.restore(save);throw new Error("Legacy reader poisoned destination accepted");}
+          catch(error) {check(error.code === "corrupt_save" || /^corrupt_save at /.test(error.message),"Legacy reader corruption classification: "+error.message);}
+          check((await locateSave(stored,execution))?.cursor === original,"Legacy failure moved the original root");
+          state=decodeLoaded(await stored.load(empty)).store;
+          await stored.persist(encodeFlush({store:state.id,batches:[{base:state.revision,revision:state.revision+1,putObjects:[],deleteObjects:[id],putKeys:[],deleteKeys:[]}]}));
+          legacyDestinationRejected=true;
+        } finally {await active.close();}
+      }
+      await m.importSave(save,{execution,...checked,expected_revision:expectedRevision,now:100});
       reference = await openBook({pack:current.pack(),historyPacks,execution,storage:stored});
       const before = await reference.inspect();
       // Every enumerated fixture is an explicit current-artifact success case. Context
@@ -62,7 +84,7 @@ export async function verifyHistoricalMaintenance(api, load) {
       check((await continued.inspect()).view.cursor !== before.view.cursor,"Historical choice did not advance: "+name);
       check(same(exactPage(await continued.inspect()),exactPage(await reference.inspect())),"Historical continuation differs: " + name);
       retainedTimeline(await continued.inspect(),await reference.inspect());
-      results.push({name,outcome:"continued",currentArtifact:checked.artifact,retainedTimeline:true,bytes:shallow.length});
+      results.push({name,outcome:"continued",currentArtifact:checked.artifact,retainedTimeline:true,...(name === "legacy" ? {legacyDestinationRejected} : {}),bytes:shallow.length});
     } finally {
       await Promise.all([reference?.close(),continued?.close(),m.close(),receiving?.close()]);
       stored.close(); cold?.close(); for (const publication of publications) publication.free();

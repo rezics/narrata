@@ -277,16 +277,22 @@ test("positive public load and actual reply-byte budgets accumulate across cold 
     const first=sizes[0]!;
     for(const limits of [{...defaultMaintenanceLimits,loads:required-1},{...defaultMaintenanceLimits,load_bytes:0},{...defaultMaintenanceLimits,load_bytes:1},{...defaultMaintenanceLimits,load_bytes:first},{...defaultMaintenanceLimits,load_bytes:total-1}]) {
       sizes.length=0;const m=await make(limits);
-      try {await expect(scan(m)).rejects.toBeInstanceOf(MaintenanceLimit);}
-      finally {await m.close();}
-      expect(sizes.length).toBeLessThanOrEqual(required);
-      const received=sizes.reduce((a,b)=>a+b,0);
-      expect(Reflect.get(m,"readBytes")).toBe(received);
-      expect(accepted.get(m)!.count).toBe(sizes.length-Number(received>limits.load_bytes));
-      if(limits.load_bytes===0)expect(sizes).toHaveLength(0);
-      if(limits.load_bytes===1)expect(sizes).toHaveLength(1);
-      if(limits.load_bytes===first)expect(sizes).toHaveLength(1);
-      expect((await locateSave(f.store,execution))?.cursor).toBe(cursor);
+      try {
+        await expect(scan(m)).rejects.toBeInstanceOf(MaintenanceLimit);
+        expect(sizes.length).toBeLessThanOrEqual(required);
+        const received=sizes.reduce((a,b)=>a+b,0);
+        expect(Reflect.get(m,"readBytes")).toBe(received);
+        expect(accepted.get(m)!.count).toBe(sizes.length-Number(received>limits.load_bytes));
+        if(limits.load_bytes===0)expect(sizes).toHaveLength(0);
+        if(limits.load_bytes===1)expect(sizes).toHaveLength(1);
+        if(limits.load_bytes===first)expect(sizes).toHaveLength(1);
+        expect((await locateSave(f.store,execution))?.cursor).toBe(cursor);
+        if(limits.load_bytes===total-1) {
+          const boundary=sizes.length;
+          expect((await m.run({kind:"pins",after:null,limit:1,now:100})).kind).toBe("pins");
+          expect(Reflect.get(m,"readBytes")).toBe(sizes.slice(boundary).reduce((a,b)=>a+b,0));
+        }
+      } finally {await m.close();}
     }
     sizes.length=0;const exact=await make({...defaultMaintenanceLimits,loads:required,load_bytes:total});
     try {expect((await scan(exact)).kind).toBe("roots");expect(sizes.length).toBe(required);expect(accepted.get(exact)!.count).toBe(required);}
