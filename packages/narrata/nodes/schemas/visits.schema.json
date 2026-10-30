@@ -1,0 +1,475 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VisitReportV1",
+  "type": "object",
+  "properties": {
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/VisitSourceV1"
+      }
+    }
+  },
+  "required": [
+    "format_version",
+    "sources"
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ArtifactVisitsV1": {
+      "description": "Segments remain separate even if a later migration returns to the same artifact.",
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitEventV1"
+          }
+        }
+      },
+      "required": [
+        "artifact_id",
+        "events"
+      ]
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "CommitId": {
+      "type": "string",
+      "pattern": "^commit:[0-9a-f]{64}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "GraphRef": {
+      "description": "A graph of one package instance. Package aliases and graph names are composition\nstructure, so unlike node aliases they are part of the artifact identity.",
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "ObjectId": {
+      "type": "string",
+      "pattern": "^object:[0-9a-f]{64}$"
+    },
+    "OptionId": {
+      "type": "string",
+      "pattern": "^option:[0-9a-f]{32}$"
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "Role": {
+      "type": "string",
+      "enum": [
+        "title",
+        "body",
+        "reply"
+      ]
+    },
+    "Segment": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/ContentRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "unit"
+      ]
+    },
+    "VisitActionV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "visit"
+            },
+            "static_node": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "static_node"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "segment"
+            },
+            "role": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Role"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "segment": {
+              "$ref": "#/$defs/Segment"
+            }
+          },
+          "required": [
+            "kind",
+            "segment"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": "boolean"
+            },
+            "choice_point": {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "selected"
+            },
+            "option": {
+              "$ref": "#/$defs/OptionId"
+            }
+          },
+          "required": [
+            "kind",
+            "choice_point",
+            "option",
+            "branch"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "branch"
+            },
+            "target": {
+              "$ref": "#/$defs/NodeId"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "instance": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "call"
+            },
+            "node": {
+              "$ref": "#/$defs/NodeId"
+            }
+          },
+          "required": [
+            "kind",
+            "graph",
+            "node",
+            "instance"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "continuation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NodeId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "return"
+            },
+            "outcome": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "outcome"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "finished"
+            },
+            "outcome": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "outcome"
+          ]
+        }
+      ]
+    },
+    "VisitEventV1": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/VisitActionV1"
+        },
+        "commit": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "instance": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        }
+      },
+      "required": [
+        "commit",
+        "graph",
+        "node",
+        "instance",
+        "action"
+      ]
+    },
+    "VisitFrontierV1": {
+      "description": "The only information about an unvisited choice target that may leave the map core.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "option": {
+          "$ref": "#/$defs/OptionId"
+        }
+      },
+      "required": [
+        "option",
+        "enabled"
+      ]
+    },
+    "VisitMissingV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/ObjectId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/CommitId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "artifact"
+            }
+          },
+          "required": [
+            "kind",
+            "at"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/CommitId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "descriptor"
+            }
+          },
+          "required": [
+            "kind",
+            "at"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "limit"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "VisitSourceV1": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "description": "Established by the checked cursor header, even when ancestor replay cannot start.\nNone means that header itself was unavailable; no supplied projection can fill it in.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "frontier": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitFrontierV1"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitMissingV1"
+          }
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArtifactVisitsV1"
+          }
+        }
+      },
+      "required": [
+        "cursor",
+        "complete",
+        "missing",
+        "segments",
+        "frontier"
+      ]
+    }
+  }
+}

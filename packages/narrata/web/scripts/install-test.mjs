@@ -8,6 +8,7 @@ import { chromium } from "@playwright/test";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { verifyReferenceJourney } from "../../../../examples/gamebook-web/scripts/reference-journey.ts";
+import { verifyMapJourney } from "./install/map-journey.mjs";
 import { demoPack, execution, splitPack } from "../test/fixture.ts";
 import { npmCli, tarball } from "./pack.mjs";
 
@@ -105,6 +106,8 @@ finally { await book.close(); }
 console.log("Installed package opened in " + process.argv[2]);
 `);
 cpSync(resolve(here, "scripts/install/journey.mjs"), join(directory, "journey.mjs"));
+cpSync(resolve(here, "scripts/install/maps.mjs"), join(directory, "maps.mjs"));
+cpSync(resolve(here, "../../../fixtures/compat/reader-map-v1"), join(publicDirectory, "reader-map-fixtures"), { recursive: true });
 writeFileSync(join(directory, "authoring.mjs"), `
 import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
@@ -113,12 +116,14 @@ import { openBook } from "@rezics/narrata/reader";
 import { shortStorySource, shortStoryOutline } from "@rezics/narrata/testing";
 import { author, read } from "./journey.mjs";
 import { constructAndEdit } from "./source.ts";
+import { verifyMaps } from "./maps.mjs";
 const wasm = new URL("./node_modules/@rezics/narrata/dist/authoring-wasm/narrata_authoring_wasm_bg.wasm", import.meta.url);
 const mode = process.argv[2];
 // "browser-entry" proves the browser subpath also locates its Wasm from a file URL.
 const api = mode === "browser-entry" ? await (await import("@rezics/narrata/authoring")).loadAuthoring()
   : await loadAuthoring(mode === "bytes" ? new Uint8Array(await readFile(wasm)) : mode === "url" ? wasm : undefined);
 constructAndEdit(api);
+await verifyMaps(api, async name => new Uint8Array(await readFile(new URL("./public/reader-map-fixtures/" + name, import.meta.url))));
 const published = await author(api, { shortStorySource, shortStoryOutline });
 const journeys = await read(openBook, ${JSON.stringify(execution)}, published);
 assert.equal(journeys.firstScreen, 1, "A's first screen fetches only the entry chunk");
@@ -152,11 +157,14 @@ execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc
 writeFileSync(join(directory, "vite.config.js"), 'export default { worker: { format: "es" } };\n');
 writeFileSync(join(directory, "worker.js"), `
 import { author } from "./journey.mjs";
+import { verifyMaps } from "./maps.mjs";
 self.onmessage = async () => {
   try {
     // The authoring subpath is imported only here, in the editing/publishing Worker.
     const [{ loadAuthoring }, testing] = await Promise.all([import("@rezics/narrata/authoring"), import("@rezics/narrata/testing")]);
-    self.postMessage({ ok: true, published: await author(await loadAuthoring(), testing) });
+    const api = await loadAuthoring();
+    await verifyMaps(api, async name => new Uint8Array(await (await fetch("/reader-map-fixtures/" + name)).arrayBuffer()));
+    self.postMessage({ ok: true, published: await author(api, testing) });
   } catch (error) { self.postMessage({ ok: false, error: String(error?.stack ?? error) }); }
 };
 `);
@@ -280,6 +288,7 @@ try {
   try {
     const bytes = readFileSync(join(installed, "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"));
     await verifyReferenceJourney(await coldContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "cold-reference"), { bytes: bytes.length, sha256: sha256(bytes) });
+    await verifyMapJourney(await coldContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "reader-map"));
   } finally { await coldContext.close(); }
   await page.reload();
   await page.waitForFunction(() => document.querySelector("#status")?.textContent === "ready", { timeout: 30_000 });

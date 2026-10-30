@@ -121,6 +121,13 @@ export class OnlineSession {
       return this.checked(this.opened().inspect());
     });
   }
+  /** Exports only confirmed progress for host tools such as a server-generated reader map. */
+  exportSave(): Promise<string> {
+    return this.enqueue(async () => {
+      if (this.snapshot.status !== "saved") throw new Error("Resolve the online save before exporting.");
+      return this.checked(this.opened().exportSave());
+    });
+  }
   nextContentUnits(): Promise<ContentRef[]> {
     return this.enqueue(async () => {
       if (this.snapshot.status !== "saved") throw new Error("Resolve the online save first.");

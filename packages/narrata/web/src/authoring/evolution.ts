@@ -2,6 +2,7 @@ import { Evolution as RawEvolution, EvolutionPlan as RawPlan, planEvolution as r
 import { StorageHost, StoreSuperseded, type CacheStore } from "../storage.js";
 import { AuthoringError, type Publication } from "./core.js";
 import type { AssessmentV1, ApplyV1, ComparisonBudgetV1, EvolutionPlanningV1, PlanV1, RecoveryDeclarationsV1 } from "../generated/authoring.js";
+import { Visits } from "./maps.js";
 
 export type { AssessmentV1, ApplyV1, ComparisonBudgetV1, EvolutionDescriptorV1, EvolutionPlanningV1, MigrationId, MigrationReportV1, PathComparisonV1, PlanV1, RecoveryDeclarationsV1 } from "../generated/authoring.js";
 
@@ -47,6 +48,11 @@ export type StoredEvolutionApply = ApplyV1 | { readonly kind: "storage_conflict"
  * execution cursor; they never create a missing execution or write a save slot.
  */
 export class Evolution {
+  /** Replays the selected snapshot or authorized store cursor without writing. */
+  visits(budget: ComparisonBudgetV1 = defaultComparisonBudget): Promise<Visits> {
+    const text = JSON.stringify(budget);
+    return this.#run(() => new Visits(checked(() => this.#handle.visits(text))));
+  }
   #raw: RawEvolution | undefined;
   #host: StorageHost | undefined;
   #queue: Promise<unknown> = Promise.resolve();

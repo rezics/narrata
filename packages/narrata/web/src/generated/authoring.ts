@@ -211,7 +211,167 @@ export type ClusterId = string;
  * switching. Topology warnings do not prevent switching; missing/defective outlines do.
  */
 export type PublicationStatus = "compiled" | "switchable";
+export type VisitMissingV1 =
+  | {
+      id: ObjectId;
+      kind: "object";
+    }
+  | {
+      at: CommitId;
+      kind: "artifact";
+    }
+  | {
+      at: CommitId;
+      kind: "descriptor";
+    }
+  | {
+      kind: "limit";
+    };
 export type TargetStatus = "local" | "passage" | "control" | "unresolved";
+export type RelationKind = "unit" | "node" | "edge" | "entry" | "ending" | "route" | "cluster" | "first";
+export type RelationRow =
+  | {
+      artifact_id: ArtifactId;
+      content_key: ContentKey;
+      projection_version: Version1;
+      provider: ProviderId;
+      row_type: "unit";
+      unit_id: Digest;
+    }
+  | {
+      artifact_id: ArtifactId;
+      cluster_id: ClusterId;
+      first_anchor?: AnchorId | null;
+      graph: string;
+      kind: number;
+      last_anchor?: AnchorId | null;
+      node_id: NodeId;
+      package: string;
+      projection_version: Version1;
+      row_type: "node";
+      unit_id?: Digest | null;
+    }
+  | {
+      artifact_id: ArtifactId;
+      choice_point?: ChoicePointId | null;
+      edge_kind: number;
+      edge_no: number;
+      option?: OptionId | null;
+      projection_version: Version1;
+      row_type: "edge";
+      source_node: NodeId;
+      source_unit: Digest;
+      target_node: NodeId;
+      target_unit: Digest;
+    }
+  | {
+      artifact_id: ArtifactId;
+      node_id: NodeId;
+      projection_version: Version1;
+      row_type: "entry";
+    }
+  | {
+      artifact_id: ArtifactId;
+      class: EndingClass;
+      node_id: NodeId;
+      projection_version: Version1;
+      reachable: boolean;
+      row_type: "ending";
+    }
+  | {
+      artifact_id: ArtifactId;
+      cluster_id: ClusterId;
+      ending_node: NodeId;
+      projection_version: Version1;
+      row_type: "route";
+    }
+  | {
+      artifact_id: ArtifactId;
+      cluster_id: ClusterId;
+      graph?: string | null;
+      package?: string | null;
+      projection_version: Version1;
+      row_type: "cluster";
+      unit_id?: Digest | null;
+    }
+  | {
+      artifact_id: ArtifactId;
+      distance: number;
+      node_id: NodeId;
+      projection_version: Version1;
+      row_type: "first";
+      unit_id: Digest;
+    };
+export type EndingClass = "unspecified" | "success" | "failure" | "neutral";
+export type AuthorRelationQuery =
+  | {
+      kind: "content";
+      reference: ContentRef;
+    }
+  | {
+      kind: "node";
+      node: NodeId;
+    }
+  | {
+      cluster: ClusterId;
+      kind: "cluster";
+    }
+  | {
+      kind: "ending";
+      node: NodeId;
+    }
+  | {
+      ending: NodeId;
+      kind: "route";
+    }
+  | {
+      kind: "first";
+      unit: Digest;
+    }
+  | {
+      kind: "forward";
+      unit: Digest;
+    }
+  | {
+      kind: "reverse";
+      unit: Digest;
+    };
+export type VisitActionV1 =
+  | {
+      kind: "visit";
+      static_node: boolean;
+    }
+  | {
+      kind: "segment";
+      role?: Role | null;
+      segment: Segment;
+    }
+  | {
+      branch: boolean;
+      choice_point: ChoicePointId;
+      kind: "selected";
+      option: OptionId;
+    }
+  | {
+      kind: "branch";
+      target: NodeId;
+    }
+  | {
+      graph: GraphRef;
+      instance: number;
+      kind: "call";
+      node: NodeId;
+    }
+  | {
+      continuation?: NodeId | null;
+      kind: "return";
+      outcome: string;
+    }
+  | {
+      kind: "finished";
+      outcome: string;
+    };
+export type Role = "title" | "body" | "reply";
 
 /**
  * Every exchanged shape, so one generated declaration file shares its definitions.
@@ -232,9 +392,15 @@ export interface AuthoringInterface {
   preview_report: PreviewReport;
   publication: PublicationDescription;
   publish_report: PublishReport;
+  reader_map: ReaderMapV1;
   record: DraftRecord;
   record_indexes: RecordIndexes;
   record_report: RecordReport;
+  relation_index: RelationIndex;
+  relation_page: AuthorRelationPage;
+  relation_part: RelationPart;
+  relation_query: AuthorRelationQuery;
+  visits: VisitReportV1;
 }
 /**
  * Per-assessment limits, also bound to the confirmation in this driver. Values may only
@@ -632,6 +798,49 @@ export interface PublishReport {
   status?: PublicationStatus | null;
   tombstones: DraftRecord[];
 }
+export interface ReaderMapV1 {
+  artifact_id: ArtifactId;
+  edges: ReaderEdgeV1[];
+  endings: NodeId[];
+  format_version: number;
+  nodes: ReaderNodeV1[];
+  projection_version: Version1;
+  sources: ReaderMapSourceV1[];
+  units: ReaderUnitV1[];
+}
+export interface ReaderEdgeV1 {
+  choice_point?: ChoicePointId | null;
+  option?: OptionId | null;
+  source: NodeId;
+  target: NodeId;
+}
+export interface ReaderNodeV1 {
+  node: NodeId;
+  unit_id?: Digest | null;
+  x: number;
+  y: number;
+}
+export interface ReaderMapSourceV1 {
+  complete: boolean;
+  cursor: CommitId;
+  frontier: VisitFrontierV1[];
+  missing: VisitMissingV1[];
+}
+/**
+ * The only information about an unvisited choice target that may leave the map core.
+ */
+export interface VisitFrontierV1 {
+  enabled: boolean;
+  label?: ContentRef | null;
+  option: OptionId;
+}
+export interface ReaderUnitV1 {
+  content: ContentRef;
+  segments: Segment[];
+  unit_id: Digest;
+  x: number;
+  y: number;
+}
 /**
  * The derived index rows of one record, replaced together with its payload.
  */
@@ -676,4 +885,69 @@ export interface RecordReport {
    */
   minted: AuthoredId[];
   records: number;
+}
+export interface RelationIndex {
+  artifact_id: ArtifactId;
+  counts: {
+    cluster?: number;
+    edge?: number;
+    ending?: number;
+    entry?: number;
+    first?: number;
+    node?: number;
+    route?: number;
+    unit?: number;
+  };
+  parts: PartReference[];
+  projection_version: Version1;
+  row_count: number;
+}
+export interface PartReference {
+  bytes: number;
+  kind: RelationKind;
+  object_id: Digest;
+  ordinal: number;
+  row_count: number;
+}
+export interface AuthorRelationPage {
+  artifact_id: ArtifactId;
+  next_offset?: number | null;
+  projection_version: Version1;
+  rows: RelationRow[];
+}
+export interface RelationPart {
+  artifact_id: ArtifactId;
+  kind: RelationKind;
+  projection_version: Version1;
+  rows: RelationRow[];
+}
+export interface VisitReportV1 {
+  format_version: number;
+  sources: VisitSourceV1[];
+}
+export interface VisitSourceV1 {
+  /**
+   * Established by the checked cursor header, even when ancestor replay cannot start.
+   * None means that header itself was unavailable; no supplied projection can fill it in.
+   */
+  artifact_id?: ArtifactId | null;
+  complete: boolean;
+  cursor: CommitId;
+  frontier: VisitFrontierV1[];
+  missing: VisitMissingV1[];
+  segments: ArtifactVisitsV1[];
+}
+/**
+ * Segments remain separate even if a later migration returns to the same artifact.
+ */
+export interface ArtifactVisitsV1 {
+  artifact_id: ArtifactId;
+  events: VisitEventV1[];
+}
+export interface VisitEventV1 {
+  action: VisitActionV1;
+  commit: CommitId;
+  graph: GraphRef;
+  instance: number;
+  node: NodeId;
 }

@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReaderMapV1",
+  "type": "object",
+  "properties": {
+    "artifact_id": {
+      "$ref": "#/$defs/ArtifactId"
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReaderEdgeV1"
+      }
+    },
+    "endings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NodeId"
+      }
+    },
+    "format_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReaderNodeV1"
+      }
+    },
+    "projection_version": {
+      "$ref": "#/$defs/Version1"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReaderMapSourceV1"
+      }
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReaderUnitV1"
+      }
+    }
+  },
+  "required": [
+    "format_version",
+    "artifact_id",
+    "projection_version",
+    "sources",
+    "units",
+    "nodes",
+    "edges",
+    "endings"
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "CommitId": {
+      "type": "string",
+      "pattern": "^commit:[0-9a-f]{64}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "Digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "ObjectId": {
+      "type": "string",
+      "pattern": "^object:[0-9a-f]{64}$"
+    },
+    "OptionId": {
+      "type": "string",
+      "pattern": "^option:[0-9a-f]{32}$"
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "ReaderEdgeV1": {
+      "type": "object",
+      "properties": {
+        "choice_point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "option": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OptionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "target": {
+          "$ref": "#/$defs/NodeId"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ]
+    },
+    "ReaderMapSourceV1": {
+      "type": "object",
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "frontier": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitFrontierV1"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitMissingV1"
+          }
+        }
+      },
+      "required": [
+        "cursor",
+        "complete",
+        "missing",
+        "frontier"
+      ]
+    },
+    "ReaderNodeV1": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "unit_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "node",
+        "x",
+        "y"
+      ]
+    },
+    "ReaderUnitV1": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "$ref": "#/$defs/ContentRef"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        },
+        "unit_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "unit_id",
+        "content",
+        "segments",
+        "x",
+        "y"
+      ]
+    },
+    "Segment": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/ContentRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "unit"
+      ]
+    },
+    "Version1": {
+      "type": "integer",
+      "const": 1
+    },
+    "VisitFrontierV1": {
+      "description": "The only information about an unvisited choice target that may leave the map core.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "option": {
+          "$ref": "#/$defs/OptionId"
+        }
+      },
+      "required": [
+        "option",
+        "enabled"
+      ]
+    },
+    "VisitMissingV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/ObjectId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/CommitId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "artifact"
+            }
+          },
+          "required": [
+            "kind",
+            "at"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/CommitId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "descriptor"
+            }
+          },
+          "required": [
+            "kind",
+            "at"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "limit"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    }
+  }
+}

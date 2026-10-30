@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { loadAuthoringFrom, type Authoring, type WasmSource } from "../authoring/core.js";
 
 export * from "../authoring/core.js";
+export * from "./relations.js";
 
 export function loadAuthoring(source?: WasmSource): Promise<Authoring> {
   return loadAuthoringFrom(source ?? (async () => new Uint8Array(await readFile(new URL("../authoring-wasm/narrata_authoring_wasm_bg.wasm", import.meta.url)))));

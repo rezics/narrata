@@ -100,6 +100,11 @@ pub struct Evolution {
 }
 #[wasm_bindgen]
 impl Evolution {
+    pub fn visits(&mut self, budget: &str) -> Result<crate::maps_binding::Visits, JsError> {
+        Ok(crate::maps_binding::Visits {
+            inner: self.inner.visits(parse(budget)?).map_err(js_error)?,
+        })
+    }
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self::default()

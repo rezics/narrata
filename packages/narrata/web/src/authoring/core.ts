@@ -5,11 +5,14 @@ import init, {
 import type {
   AuthoredId, CompositionLock, ContentOutline, Diagnostic, DraftRecord, MintedIds, ObjectReference, PackageSource,
   PreviewReport, ProjectManifest, PublicationDescription, PublishReport, RecordIndexes, RecordReport,
+  RelationIndex, RelationKind, RelationPart, RelationRow, AuthorRelationQuery, AuthorRelationPage,
 } from "../generated/authoring.js";
 import { Evolution, EvolutionPlan, planEvolution, readEvolution } from "./evolution.js";
 export * from "./evolution.js";
 export * from "./impact.js";
 export * from "./evolution-controller.js";
+export * from "./maps.js";
+export type { RelationIndex, RelationKind, RelationPart, RelationRow, AuthorRelationQuery, AuthorRelationPage } from "../generated/authoring.js";
 
 export type WasmSource = URL | string | Uint8Array | ArrayBuffer | WebAssembly.Module;
 
@@ -108,6 +111,26 @@ abstract class Handle<T extends { free(): void }> {
 
 /** A checked, immutable publication: description and objects, retrieved one at a time. */
 export class Publication extends Handle<RawPublication> {
+  /** Complete checked projection metadata. Row transport stays bounded and Rust-backed. */
+  relationIndex(): RelationIndex { return JSON.parse(call(() => this.raw.relationIndex())) as RelationIndex; }
+  get relationIndexId(): string { return this.raw.relationIndexId(); }
+  relationRows(kind: RelationKind, offset = 0, limit = 256): readonly RelationRow[] {
+    return JSON.parse(call(() => this.raw.relationRows(JSON.stringify(kind), offset, limit))) as RelationRow[];
+  }
+  relationPart(ordinal: number): RelationPart | undefined {
+    const part = call(() => this.raw.relationPart(ordinal));
+    return part === undefined ? undefined : JSON.parse(part) as RelationPart;
+  }
+  /** Driver-decoded unknown rows return to Rust for exact column and page comparison. */
+  checkRelationRows(kind: RelationKind, offset: number, limit: number, rows: unknown): void {
+    call(() => this.raw.checkRelationRows(JSON.stringify(kind), offset, limit, JSON.stringify(rows)));
+  }
+  queryRelations(query: AuthorRelationQuery, offset = 0, limit = 256): AuthorRelationPage {
+    return JSON.parse(call(() => this.raw.queryRelations(JSON.stringify(query), offset, limit))) as AuthorRelationPage;
+  }
+  checkRelationQuery(query: AuthorRelationQuery, offset: number, limit: number, rows: unknown): void {
+    call(() => this.raw.checkRelationQuery(JSON.stringify(query), offset, limit, JSON.stringify(rows)));
+  }
   /** Consumes this candidate and returns its new publication identity. Retain the old publication in host storage. */
   withEvolution(previous: Publication, plan: EvolutionPlan): Publication {
     const raw = this.take();

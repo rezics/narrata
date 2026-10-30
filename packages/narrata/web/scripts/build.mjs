@@ -4,6 +4,7 @@ import { resolve, sep } from "node:path";
 import { compileFromFile } from "json-schema-to-typescript";
 import Ajv2020 from "ajv/dist/2020.js";
 import standalone from "ajv/dist/standalone/index.js";
+import { minify } from "rolldown/utils";
 
 export const here = resolve(import.meta.dirname, "..");
 export const root = resolve(here, "../../..");
@@ -14,7 +15,7 @@ const dist = resolve(here, "dist");
 // Clear only this package's output and this worktree's dedicated staging directory.
 if (!stage.startsWith(resolve(root, ".temp") + sep) || !dist.startsWith(here + sep)) throw new Error("Build output escaped its worktree");
 rmSync(stage, { recursive: true, force: true });
-const cargo = (...args) => execFileSync("cargo", args, { cwd: root, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: resolve(root, "target") } });
+const cargo = (...args) => execFileSync("cargo", args, { cwd: root, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: resolve(root, "target"), ...(args.includes("narrata-authoring-wasm") && args.includes("build") ? { CARGO_PROFILE_WASM_OPT_LEVEL: "z" } : {}) } });
 const cargoVersion = readFileSync(resolve(root, "Cargo.toml"), "utf8").match(/\[workspace.package\]\s+version = "([^"]+)"/)?.[1];
 if (JSON.parse(readFileSync(resolve(here, "package.json"))).version !== cargoVersion) throw new Error("npm and Cargo workspace versions differ");
 if (!check) {
@@ -51,6 +52,11 @@ mkdirSync(resolve(stage, "src"), { recursive: true });
 symlinkSync(resolve(here, "node_modules"), resolve(stage, "node_modules"), "junction");
 cpSync(resolve(here, "src"), resolve(stage, "src"), { recursive: true });
 cpSync(resolve(root, "packages/narrata/kernel/js/src"), resolve(stage, "src/storage"), { recursive: true });
+for (const name of ["postgres", "relations"]) {
+  const source = readFileSync(resolve(root, `packages/narrata/kernel/js/server/${name}.ts`), "utf8")
+    .replaceAll('"../src/', '"../storage/').replaceAll('"../../../web/src/generated/', '"../generated/');
+  writeFileSync(resolve(stage, `src/server/${name === "relations" ? "relation-driver" : name}.ts`), source.replace(/from "(\.\.[^"\n]+|\.\/[^"\n]+)"/g, (_, path) => `from "${path.endsWith(".js") ? path : path + ".js"}"`));
+}
 writeFileSync(resolve(stage, "src/storage.ts"), 'export * from "./storage/index.js";\n');
 for (const name of readdirSync(resolve(stage, "src/storage"))) {
   const path = resolve(stage, "src/storage", name);
@@ -74,6 +80,16 @@ writeFileSync(resolve(stage, "tsconfig.json"), JSON.stringify({ compilerOptions:
 writeFileSync(resolve(stage, "package.json"), '{"type":"module"}\n');
 execFileSync(process.execPath, [resolve(here, "node_modules/typescript/bin/tsc"), "-p", resolve(stage, "tsconfig.json"), ...(check ? ["--noEmit"] : [])], { cwd: here, stdio: "inherit" });
 if (!check) {
+  // Keep the expanded authoring/server capabilities inside their existing JS budget.
+  // Per-module minification preserves ESM boundaries and package-relative Wasm URLs.
+  for (const directory of ["authoring", "server", "authoring-wasm"]) {
+    for (const name of readdirSync(resolve(dist, directory)).filter(name => name.endsWith(".js"))) {
+      const path = resolve(dist, directory, name);
+      const result = await minify(path, readFileSync(path, "utf8"), { module: true });
+      if (result.errors.length) throw new Error(JSON.stringify(result.errors));
+      writeFileSync(path, result.code);
+    }
+  }
   cpSync(resolve(stage, "src/generated/validate-book.js"), resolve(dist, "generated/validate-book.js"));
   cpSync(resolve(stage, "src/generated/validate-book.d.ts"), resolve(dist, "generated/validate-book.d.ts"));
   cpSync(schemaPath, resolve(dist, "generated/book-view.schema.json"));

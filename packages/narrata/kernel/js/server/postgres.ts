@@ -7,7 +7,7 @@ import {
   encodeFlushReply, ProtocolError,
 } from "../src/protocol";
 
-export type SqlParameter = Uint8Array | number | string;
+export type SqlParameter = Uint8Array | number | string | null | boolean;
 export interface SqlTransaction {
   /** Return driver-decoded bytea as Uint8Array (including Buffer); bigint may be string or bigint. */
   query(text: string, params?: readonly SqlParameter[]): Promise<{ rows: readonly Record<string, unknown>[] }>;

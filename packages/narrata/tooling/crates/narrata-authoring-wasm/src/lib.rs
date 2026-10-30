@@ -5,10 +5,12 @@
 
 #![forbid(unsafe_code)]
 
+mod bounds;
 pub mod core;
 pub mod evolution;
 mod evolution_binding;
 pub mod interface;
+mod maps_binding;
 
 use narrata_authoring::{CheckedPublication, publication::publication_from_pack, validate_record};
 use narrata_nodes::{
@@ -273,6 +275,84 @@ pub struct Publication {
 
 #[wasm_bindgen]
 impl Publication {
+    #[wasm_bindgen(js_name = relationIndex)]
+    pub fn relation_index(&self) -> Result<String, JsError> {
+        json(self.inner.relations().index())
+    }
+    #[wasm_bindgen(js_name = relationIndexId)]
+    pub fn relation_index_id(&self) -> String {
+        self.inner.relations().index_object().id.to_string()
+    }
+    #[wasm_bindgen(js_name = relationRows)]
+    pub fn relation_rows(&self, kind: &str, offset: f64, limit: f64) -> Result<String, JsError> {
+        let (offset, limit) = bounds::page(offset, limit).map_err(js_error)?;
+        json(
+            &self
+                .inner
+                .relations()
+                .page(parse(kind)?, offset, limit)
+                .map_err(js_error)?,
+        )
+    }
+    #[wasm_bindgen(js_name = relationPart)]
+    pub fn relation_part(&self, ordinal: f64) -> Result<Option<String>, JsError> {
+        let ordinal = bounds::index(ordinal, narrata_authoring::relations::MAX_EXPANDED_ROWS)
+            .map_err(js_error)?;
+        self.inner
+            .relations()
+            .read_part(ordinal)
+            .map_err(js_error)?
+            .as_ref()
+            .map(json)
+            .transpose()
+    }
+    #[wasm_bindgen(js_name = checkRelationRows)]
+    pub fn check_relation_rows(
+        &self,
+        kind: &str,
+        offset: f64,
+        limit: f64,
+        rows: &str,
+    ) -> Result<(), JsError> {
+        let (offset, limit) = bounds::page(offset, limit).map_err(js_error)?;
+        self.inner
+            .relations()
+            .check_page(parse(kind)?, offset, limit, rows.as_bytes())
+            .map_err(js_error)
+    }
+    #[wasm_bindgen(js_name = queryRelations)]
+    pub fn query_relations(&self, query: &str, offset: f64, limit: f64) -> Result<String, JsError> {
+        let (offset, limit) = bounds::page(offset, limit).map_err(js_error)?;
+        json(
+            &self
+                .inner
+                .relations()
+                .query(&parse(query)?, offset, limit)
+                .map_err(js_error)?,
+        )
+    }
+    #[wasm_bindgen(js_name = checkRelationQuery)]
+    pub fn check_relation_query(
+        &self,
+        query: &str,
+        offset: f64,
+        limit: f64,
+        rows: &str,
+    ) -> Result<(), JsError> {
+        let (offset, limit) = bounds::page(offset, limit).map_err(js_error)?;
+        let rows: Vec<narrata_authoring::relations::RelationRow> = parse(rows)?;
+        let expected = self
+            .inner
+            .relations()
+            .query(&parse(query)?, offset, limit)
+            .map_err(js_error)?;
+        if expected.rows != rows {
+            return Err(JsError::new(
+                "publication at relations: database query differs from checked projection",
+            ));
+        }
+        Ok(())
+    }
     /// Consumes this candidate and attaches a checked descriptor, retaining its artifact.
     #[wasm_bindgen(js_name = withEvolution)]
     pub fn with_evolution(

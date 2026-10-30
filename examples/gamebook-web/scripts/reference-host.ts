@@ -59,6 +59,7 @@ export async function createReferenceHost() {
     return { artifactId: publication.artifactId, objects: descriptors };
   }
   const aEvidence = collect(a); let bEvidence: ReturnType<typeof collect> | undefined; let current = a.artifactId;
+  const publications = new Map([[a.artifactId, a]]);
   function publishB() {
     if (bEvidence) { current = bEvidence.artifactId; return; }
     const next = api.createDrafts();
@@ -71,7 +72,7 @@ export async function createReferenceHost() {
       next.addOutline(referenceStoryOutline());
       const result = next.publish({ previous: a });
       const b = requireValue(result.publication, JSON.stringify(result.report.diagnostics));
-      try { bEvidence = collect(b); current = b.artifactId; } finally { b.free(); }
+      bEvidence = collect(b); current = b.artifactId; publications.set(b.artifactId, b);
     } finally { next.free(); }
   }
   async function body(request: IncomingMessage): Promise<unknown> {
@@ -85,7 +86,7 @@ export async function createReferenceHost() {
   function send(response: ServerResponse, value: unknown) { const bytes = Buffer.from(JSON.stringify(value)); response.writeHead(200, { "Content-Type": "application/json", "Content-Length": bytes.length }).end(bytes); }
   return {
     evidence: () => ({ previewed: true, editedPass: 7, a: aEvidence, b: bEvidence, entryChunk: requireValue(requests[0], "Missing entry chunk").slice(7), current }),
-    close: () => a.free(),
+    close: () => { for (const publication of publications.values()) publication.free(); },
     async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
       const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
       if (!path.startsWith("/reference-host/")) return false;
@@ -97,6 +98,20 @@ export async function createReferenceHost() {
         } else if (path === "/reference-host/catalog" && request.method === "GET") send(response, { artifactId: current });
         else if (path === "/reference-host/publish-b" && request.method === "POST") { publishB(); send(response, { artifactId: current }); }
         else if (path === "/reference-host/content" && request.method === "POST") send(response, referenceContent(await body(request)));
+        else if (path === "/reference-host/reader-map" && request.method === "POST") {
+          const value = await body(request);
+          if (typeof value !== "object" || value === null || !("save" in value) || typeof value.save !== "string" || !("artifact" in value) || typeof value.artifact !== "string") throw new Error("Invalid map request");
+          const publication = publications.get(value.artifact); if (!publication) throw new Error("Unknown saved publication");
+          // This reference endpoint accepts the caller's checkpoint for personal spoiler
+          // protection. It grants no authorization, rewards or proof of human reading.
+          const engine = api.createEvolution();
+          try {
+            for (const publication of publications.values()) await engine.registerPublication(publication);
+            await engine.restoreSave(value.save);
+            const visits = await engine.visits();
+            try { send(response, visits.readerMap(publication)); } finally { visits.free(); }
+          } finally { await engine.close(); }
+        }
         else if (path === "/reference-host/evidence" && request.method === "GET") send(response, this.evidence());
         else response.writeHead(404).end();
       } catch (error) { response.writeHead(400, { "Content-Type": "text/plain" }).end(error instanceof Error ? error.message : "Reference host failed"); }

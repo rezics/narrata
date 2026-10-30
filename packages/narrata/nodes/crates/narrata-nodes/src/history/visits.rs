@@ -89,6 +89,9 @@ pub struct ArtifactVisitsV1 {
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct VisitSourceV1 {
     pub cursor: CommitId,
+    /// Established by the checked cursor header, even when ancestor replay cannot start.
+    /// None means that header itself was unavailable; no supplied projection can fill it in.
+    pub artifact_id: Option<ArtifactId>,
     pub complete: bool,
     pub missing: Vec<VisitMissingV1>,
     pub segments: Vec<ArtifactVisitsV1>,
@@ -144,11 +147,52 @@ impl EvolutionRegistry {
     ) -> Result<CheckedVisits> {
         let mut source = VisitSourceV1 {
             cursor,
+            artifact_id: None,
             complete: false,
             missing: Vec::new(),
             segments: Vec::new(),
             frontier: Vec::new(),
         };
+        // Cursor provenance is one bounded header read, independent of the replay budget.
+        // It establishes no visits and does not validate any ancestor or stored State.
+        let cursor_object = history.reader().require(
+            narrata_history::ObjectId::from_bytes(*cursor.as_bytes()),
+            Some(crate::wire::KIND_COMMIT),
+        );
+        match cursor_object {
+            Ok(object) => {
+                let header = crate::Commit::decode(object.bytes())?;
+                if header.id() != cursor {
+                    return Err(Error::new(
+                        "invalid_save",
+                        cursor.to_string(),
+                        "cursor identity differs",
+                    ));
+                }
+                source.artifact_id = Some(header.artifact);
+            }
+            Err(
+                narrata_history::HistoryError::MissingObject(_)
+                | narrata_history::HistoryError::HistoryTruncated(_),
+            ) => {
+                source.missing.push(VisitMissingV1::Object {
+                    id: ObjectId::from_bytes(*cursor.as_bytes()),
+                });
+                return Ok(CheckedVisits {
+                    report: VisitReportV1 {
+                        format_version: 1,
+                        sources: vec![source],
+                    },
+                });
+            }
+            Err(error) => {
+                return Err(Error::new(
+                    "invalid_save",
+                    cursor.to_string(),
+                    error.to_string(),
+                ));
+            }
+        }
         let mut event_count = 0;
         let outcome = self.audit_path(history, cursor, None, limits, |step| {
             let program = self.program(step.header.artifact)?;

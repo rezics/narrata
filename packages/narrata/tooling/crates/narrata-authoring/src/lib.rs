@@ -35,6 +35,14 @@ pub use validate::{
 
 pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {
     vec![
+        (
+            "visits.schema.json",
+            schemars::schema_for!(narrata_nodes::history::visits::VisitReportV1),
+        ),
+        (
+            "reader-map.schema.json",
+            schemars::schema_for!(maps::ReaderMapV1),
+        ),
         ("draft-record.schema.json", records::schema()),
         (
             "publication.schema.json",

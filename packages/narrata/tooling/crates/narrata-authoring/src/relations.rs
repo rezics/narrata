@@ -204,6 +204,50 @@ impl CheckedRelations {
         &self.rows
     }
 
+    /// Bounded typed access to one row kind. Passing the end offset returns an empty
+    /// page, which also lets database readers reject unexpected trailing rows.
+    pub fn page(&self, kind: RelationKind, offset: usize, limit: usize) -> Result<&[RelationRow]> {
+        if limit == 0 || limit > MAX_QUERY_ROWS {
+            return Err(error("relation page budget"));
+        }
+        let start = self.rows.partition_point(|row| row.kind() < kind);
+        let count = self.index.counts[&kind] as usize;
+        if offset > count {
+            return Err(error("relation page offset"));
+        }
+        let end = offset.saturating_add(limit).min(count);
+        Ok(&self.rows[start + offset..start + end])
+    }
+
+    /// Unknown database values are decoded by Rust, then compared with every expected
+    /// column of this exact checked projection. No SQL array becomes a complete projection.
+    pub fn check_page(
+        &self,
+        kind: RelationKind,
+        offset: usize,
+        limit: usize,
+        bytes: &[u8],
+    ) -> Result<()> {
+        if bytes.len() > MAX_PART_BYTES {
+            return Err(error("relation page byte budget"));
+        }
+        let text = std::str::from_utf8(bytes).map_err(error)?;
+        let rows: Vec<RelationRow> = narrata_nodes::parse_json_limited(text, MAX_PART_BYTES)?;
+        if self.page(kind, offset, limit)? != rows {
+            return Err(error(
+                "database relation rows differ from checked projection",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn read_part(&self, ordinal: usize) -> Result<Option<RelationPart>> {
+        self.parts
+            .get(ordinal)
+            .map(|part| decode_json(&part.bytes, MAX_PART_BYTES))
+            .transpose()
+    }
+
     /// Bounded author access. Structural first/route rows make no claim about execution.
     pub fn query(
         &self,
@@ -346,13 +390,18 @@ impl ReaderRelationAllowlist {
         let mut endings = BTreeSet::new();
         let mut matched = false;
         for source in &visits.report().sources {
+            matched |= source.artifact_id == Some(artifact);
             for segment in source.segments.iter().filter(|s| s.artifact_id == artifact) {
                 matched = true;
                 let mut previous = None;
                 let mut selection = None;
+                let mut departed = false;
                 for event in &segment.events {
                     match &event.action {
                         VisitActionV1::Visit { static_node: true } => {
+                            // Freeze the originating transfer when leaving its node. A
+                            // later choice in a body-less passage does not replace it.
+                            departed = previous.is_some();
                             let row = node_rows
                                 .get(&event.node)
                                 .ok_or_else(|| error("visited node absent from projection"))?;
@@ -365,17 +414,21 @@ impl ReaderRelationAllowlist {
                                 }
                                 previous = Some((event.node, unit));
                                 selection = None;
+                                departed = false;
                             }
                         }
                         VisitActionV1::Visit { static_node: false } => {
                             previous = None;
                             selection = None;
+                            departed = false;
                         }
                         VisitActionV1::Selected {
                             choice_point,
                             option,
                             branch: true,
-                        } => selection = Some((*choice_point, *option)),
+                        } if !departed && previous.is_some_and(|(node, _)| node == event.node) => {
+                            selection = Some((*choice_point, *option))
+                        }
                         VisitActionV1::Segment { segment, .. } => {
                             units.insert(unit_id(&segment.unit));
                         }

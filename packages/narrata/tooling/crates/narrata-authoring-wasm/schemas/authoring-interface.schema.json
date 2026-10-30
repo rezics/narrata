@@ -49,6 +49,9 @@
     "publish_report": {
       "$ref": "#/$defs/PublishReport"
     },
+    "reader_map": {
+      "$ref": "#/$defs/ReaderMapV1"
+    },
     "record": {
       "$ref": "#/$defs/DraftRecord"
     },
@@ -57,9 +60,30 @@
     },
     "record_report": {
       "$ref": "#/$defs/RecordReport"
+    },
+    "relation_index": {
+      "$ref": "#/$defs/RelationIndex"
+    },
+    "relation_page": {
+      "$ref": "#/$defs/AuthorRelationPage"
+    },
+    "relation_part": {
+      "$ref": "#/$defs/RelationPart"
+    },
+    "relation_query": {
+      "$ref": "#/$defs/AuthorRelationQuery"
+    },
+    "visits": {
+      "$ref": "#/$defs/VisitReportV1"
     }
   },
   "required": [
+    "visits",
+    "reader_map",
+    "relation_index",
+    "relation_part",
+    "relation_query",
+    "relation_page",
     "record",
     "record_report",
     "record_indexes",
@@ -173,6 +197,25 @@
     "ArtifactId": {
       "type": "string",
       "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "ArtifactVisitsV1": {
+      "description": "Segments remain separate even if a later migration returns to the same artifact.",
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitEventV1"
+          }
+        }
+      },
+      "required": [
+        "artifact_id",
+        "events"
+      ]
     },
     "AssessmentV1": {
       "oneOf": [
@@ -321,6 +364,176 @@
       "required": [
         "target",
         "value"
+      ]
+    },
+    "AuthorRelationPage": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "next_offset": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "projection_version": {
+          "$ref": "#/$defs/Version1"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelationRow"
+          }
+        }
+      },
+      "required": [
+        "artifact_id",
+        "projection_version",
+        "rows"
+      ]
+    },
+    "AuthorRelationQuery": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "content"
+            },
+            "reference": {
+              "$ref": "#/$defs/ContentRef"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reference"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "node"
+            },
+            "node": {
+              "$ref": "#/$defs/NodeId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "node"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "cluster": {
+              "$ref": "#/$defs/ClusterId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "cluster"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "cluster"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "ending"
+            },
+            "node": {
+              "$ref": "#/$defs/NodeId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "node"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ending": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "route"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "ending"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "first"
+            },
+            "unit": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "unit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "forward"
+            },
+            "unit": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "unit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "reverse"
+            },
+            "unit": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "unit"
+          ]
+        }
       ]
     },
     "AuthoredId": {
@@ -945,6 +1158,15 @@
       "enum": [
         "cbor",
         "json"
+      ]
+    },
+    "EndingClass": {
+      "type": "string",
+      "enum": [
+        "unspecified",
+        "success",
+        "failure",
+        "neutral"
       ]
     },
     "EndingSource": {
@@ -1880,6 +2102,40 @@
         "graphs"
       ]
     },
+    "PartReference": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "object_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "ordinal": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "row_count": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ordinal",
+        "object_id",
+        "bytes",
+        "row_count"
+      ]
+    },
     "PathComparisonV1": {
       "oneOf": [
         {
@@ -2342,6 +2598,190 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
+    "ReaderEdgeV1": {
+      "type": "object",
+      "properties": {
+        "choice_point": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "option": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OptionId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "target": {
+          "$ref": "#/$defs/NodeId"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ]
+    },
+    "ReaderMapSourceV1": {
+      "type": "object",
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "frontier": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitFrontierV1"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitMissingV1"
+          }
+        }
+      },
+      "required": [
+        "cursor",
+        "complete",
+        "missing",
+        "frontier"
+      ]
+    },
+    "ReaderMapV1": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReaderEdgeV1"
+          }
+        },
+        "endings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NodeId"
+          }
+        },
+        "format_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReaderNodeV1"
+          }
+        },
+        "projection_version": {
+          "$ref": "#/$defs/Version1"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReaderMapSourceV1"
+          }
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReaderUnitV1"
+          }
+        }
+      },
+      "required": [
+        "format_version",
+        "artifact_id",
+        "projection_version",
+        "sources",
+        "units",
+        "nodes",
+        "edges",
+        "endings"
+      ]
+    },
+    "ReaderNodeV1": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "unit_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "node",
+        "x",
+        "y"
+      ]
+    },
+    "ReaderUnitV1": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "$ref": "#/$defs/ContentRef"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Segment"
+          }
+        },
+        "unit_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "x": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "y": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "required": [
+        "unit_id",
+        "content",
+        "segments",
+        "x",
+        "y"
+      ]
+    },
     "RecordIndexes": {
       "description": "The derived index rows of one record, replaced together with its payload.",
       "type": "object",
@@ -2501,6 +2941,480 @@
       "required": [
         "node",
         "choice_point"
+      ]
+    },
+    "RelationIndex": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "cluster": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "edge": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "ending": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "entry": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "first": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "node": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "route": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "unit": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PartReference"
+          }
+        },
+        "projection_version": {
+          "$ref": "#/$defs/Version1"
+        },
+        "row_count": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "projection_version",
+        "parts",
+        "counts",
+        "row_count"
+      ]
+    },
+    "RelationKind": {
+      "type": "string",
+      "enum": [
+        "unit",
+        "node",
+        "edge",
+        "entry",
+        "ending",
+        "route",
+        "cluster",
+        "first"
+      ]
+    },
+    "RelationPart": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "projection_version": {
+          "$ref": "#/$defs/Version1"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelationRow"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "projection_version",
+        "kind",
+        "rows"
+      ]
+    },
+    "RelationRow": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "content_key": {
+              "$ref": "#/$defs/ContentKey"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "provider": {
+              "$ref": "#/$defs/ProviderId"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "unit"
+            },
+            "unit_id": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "unit_id",
+            "provider",
+            "content_key"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "cluster_id": {
+              "$ref": "#/$defs/ClusterId"
+            },
+            "first_anchor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AnchorId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "graph": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            },
+            "last_anchor": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AnchorId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "node_id": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "package": {
+              "type": "string"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "node"
+            },
+            "unit_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Digest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "node_id",
+            "package",
+            "graph",
+            "kind",
+            "cluster_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "choice_point": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ChoicePointId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "edge_kind": {
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            },
+            "edge_no": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "option": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/OptionId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "edge"
+            },
+            "source_node": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "source_unit": {
+              "$ref": "#/$defs/Digest"
+            },
+            "target_node": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "target_unit": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "edge_no",
+            "source_unit",
+            "target_unit",
+            "source_node",
+            "target_node",
+            "edge_kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "node_id": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "entry"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "node_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "class": {
+              "$ref": "#/$defs/EndingClass"
+            },
+            "node_id": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "reachable": {
+              "type": "boolean"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "ending"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "node_id",
+            "class",
+            "reachable"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "cluster_id": {
+              "$ref": "#/$defs/ClusterId"
+            },
+            "ending_node": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "route"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "ending_node",
+            "cluster_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "cluster_id": {
+              "$ref": "#/$defs/ClusterId"
+            },
+            "graph": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "package": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "cluster"
+            },
+            "unit_id": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Digest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "cluster_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "artifact_id": {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            "distance": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "node_id": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "projection_version": {
+              "$ref": "#/$defs/Version1"
+            },
+            "row_type": {
+              "type": "string",
+              "const": "first"
+            },
+            "unit_id": {
+              "$ref": "#/$defs/Digest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "row_type",
+            "artifact_id",
+            "projection_version",
+            "unit_id",
+            "node_id",
+            "distance"
+          ]
+        }
+      ]
+    },
+    "Role": {
+      "type": "string",
+      "enum": [
+        "title",
+        "body",
+        "reply"
       ]
     },
     "Scalar": {
@@ -2681,6 +3595,347 @@
     "Version1": {
       "type": "integer",
       "const": 1
+    },
+    "VisitActionV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "visit"
+            },
+            "static_node": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "static_node"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "segment"
+            },
+            "role": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Role"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "segment": {
+              "$ref": "#/$defs/Segment"
+            }
+          },
+          "required": [
+            "kind",
+            "segment"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": "boolean"
+            },
+            "choice_point": {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "selected"
+            },
+            "option": {
+              "$ref": "#/$defs/OptionId"
+            }
+          },
+          "required": [
+            "kind",
+            "choice_point",
+            "option",
+            "branch"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "branch"
+            },
+            "target": {
+              "$ref": "#/$defs/NodeId"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "instance": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "call"
+            },
+            "node": {
+              "$ref": "#/$defs/NodeId"
+            }
+          },
+          "required": [
+            "kind",
+            "graph",
+            "node",
+            "instance"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "continuation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NodeId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "return"
+            },
+            "outcome": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "outcome"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "finished"
+            },
+            "outcome": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "outcome"
+          ]
+        }
+      ]
+    },
+    "VisitEventV1": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/VisitActionV1"
+        },
+        "commit": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "instance": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        }
+      },
+      "required": [
+        "commit",
+        "graph",
+        "node",
+        "instance",
+        "action"
+      ]
+    },
+    "VisitFrontierV1": {
+      "description": "The only information about an unvisited choice target that may leave the map core.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "option": {
+          "$ref": "#/$defs/OptionId"
+        }
+      },
+      "required": [
+        "option",
+        "enabled"
+      ]
+    },
+    "VisitMissingV1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/ObjectId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/CommitId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "artifact"
+            }
+          },
+          "required": [
+            "kind",
+            "at"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/CommitId"
+            },
+            "kind": {
+              "type": "string",
+              "const": "descriptor"
+            }
+          },
+          "required": [
+            "kind",
+            "at"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "limit"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "VisitReportV1": {
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitSourceV1"
+          }
+        }
+      },
+      "required": [
+        "format_version",
+        "sources"
+      ]
+    },
+    "VisitSourceV1": {
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "description": "Established by the checked cursor header, even when ancestor replay cannot start.\nNone means that header itself was unavailable; no supplied projection can fill it in.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "frontier": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitFrontierV1"
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VisitMissingV1"
+          }
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ArtifactVisitsV1"
+          }
+        }
+      },
+      "required": [
+        "cursor",
+        "complete",
+        "missing",
+        "segments",
+        "frontier"
+      ]
     }
   }
 }

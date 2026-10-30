@@ -62,6 +62,29 @@ pub struct Engine {
     request: Option<LoadRequest>,
 }
 impl Engine {
+    pub fn visits(
+        &mut self,
+        budget: ComparisonBudgetV1,
+    ) -> Result<narrata_nodes::history::visits::CheckedVisits> {
+        let limits = budget.limits()?;
+        let result = if let Some(execution) = self.execution {
+            Session::open_with_registry(&self.registry, execution, self.cache.share()).and_then(
+                |s| {
+                    self.registry
+                        .visited_from_save(s.history(), s.cursor()?, limits)
+                },
+            )
+        } else {
+            self.snapshot
+                .as_ref()
+                .ok_or_else(|| Error::new("save", "visits", "open a save first"))
+                .and_then(|s| {
+                    self.registry
+                        .visited_from_save(s.history(), s.cursor()?, limits)
+                })
+        };
+        self.settle(result)
+    }
     /// Read-only jobs share verified programs and descriptors, while cursors, approvals and
     /// storage caches remain isolated. No full-work cloning or re-verification per reader.
     pub fn fork(&self) -> Self {

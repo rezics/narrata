@@ -1,5 +1,25 @@
 # @rezics/narrata
 
+For a revealed map, initialize the authoring/server module, register the exact trusted
+publications on `api.createEvolution()`, restore the checkpoint (or connect an authorized
+store), and call `visits()`. `visits.readerMap(publication)` returns only revealed references,
+executed connections and visible option placeholders. Resolve content through the host;
+`RevealedReaderMap` in the optional graph React entry renders this data without program objects.
+Free visits and relation handles, then close the evolution context. The `/?reference` example
+requests the map from its Node host using the same confirmed checkpoint and artifact.
+
+`Publication.relationRows`, `relationPart` and `queryRelations` provide bounded Rust-backed
+author access. `visits.readerRelations(publication)` creates a separate sparse reader allowlist;
+it preserves original edge numbers. `PostgresRelations` from the server entry accepts an
+authorized `TransactionalSql`, loads the complete projection atomically, and validates every
+row on retries and query readback. Install the repository's authoritative `relations-v1.sql`
+before using it; the adapter installs no schema or migrations. `load(publication)`,
+`query(publication, query)` and `readReader(allowlist)` have separate host authorization needs.
+Structural first/route queries do not prove first reading or an executable narrative route.
+Client checkpoints and visits support personal spoiler protection, never entitlement or rewards.
+Incomplete history retains missing-object metadata; keep old publications and migration evidence
+to recover complete maps. Reader imports and their first screen never initialize authoring/trace.
+
 The ESM package for hosts that run Narrata Gamebooks in a browser, Node or Bun. Content references
 in `BookView` are resolved by the host; the runtime maintains structure, state and history.
 

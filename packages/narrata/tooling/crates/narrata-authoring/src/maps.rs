@@ -105,14 +105,11 @@ fn map_rows(
             .iter()
             .filter(|s| s.artifact_id == artifact)
             .collect();
-        if relevant.is_empty() {
+        if relevant.is_empty() && source.artifact_id != Some(artifact) {
             continue;
         }
         matched = true;
-        let current = source
-            .segments
-            .last()
-            .is_some_and(|s| s.artifact_id == artifact);
+        let current = source.artifact_id == Some(artifact);
         map.sources.push(ReaderMapSourceV1 {
             cursor: source.cursor,
             complete: source.complete,

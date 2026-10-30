@@ -15,6 +15,102 @@ fn registry(s: &Session) -> EvolutionRegistry {
 }
 
 #[test]
+fn unselected_proposals_do_not_visit_and_selected_dynamic_nodes_are_not_static() {
+    let compilation = try_variant(|_, main, _| {
+        set(
+            main,
+            &format!("{GATE}/choice_points/0"),
+            "proposals",
+            serde_json::json!(true),
+        )
+    })
+    .unwrap();
+    let (mut s, _) = session(&compilation);
+    let r = registry(&s);
+    let request: narrata_nodes::ProposalRequest = serde_json::from_value(serde_json::json!({"choice_point":point(1),"options":[{"label":content("detour-label"),"outcome":{"kind":"branch","target":"detour"}}],"nodes":[{"key":"detour","body":{"unit":content("detour-body")},"next":node(4)}]})).unwrap();
+    let parent = s.cursor().unwrap();
+    s.propose(&parent, &request).unwrap();
+    let before = r
+        .visited_from_save(s.history(), s.cursor().unwrap(), PathLimits::default())
+        .unwrap();
+    assert!(
+        !serde_json::to_string(before.report())
+            .unwrap()
+            .contains("detour-body")
+    );
+    let narrata_nodes::view::Interaction::Choose {
+        choice_point,
+        options,
+        ..
+    } = s.interaction(None).unwrap()
+    else {
+        panic!()
+    };
+    let option = options
+        .iter()
+        .find(|o| {
+            o.label
+                .as_ref()
+                .is_some_and(|l| l.key.as_str() == "detour-label")
+        })
+        .unwrap();
+    s.choose(&s.cursor().unwrap(), choice_point, vec![option.id])
+        .unwrap();
+    let after = r
+        .visited_from_save(s.history(), s.cursor().unwrap(), PathLimits::default())
+        .unwrap();
+    assert!(
+        after.report().sources[0].segments[0]
+            .events
+            .iter()
+            .any(|e| matches!(e.action, VisitActionV1::Visit { static_node: false }))
+    );
+    assert!(
+        serde_json::to_string(after.report())
+            .unwrap()
+            .contains("detour-body")
+    );
+}
+
+#[test]
+fn well_formed_but_unreachable_stored_state_is_rejected_by_the_shared_audit() {
+    use narrata_history::{DomainKinds, History, Object, Transaction};
+    use narrata_nodes::history::NodeDomain;
+    let (s, _) = session(&compiled());
+    let r = registry(&s);
+    let mut state = s.state().unwrap().clone();
+    state
+        .shared
+        .insert("coins".into(), narrata_nodes::Scalar::Int(12345));
+    let state = Object::new(
+        narrata_nodes::KIND_STATE,
+        narrata_nodes::SCHEMA,
+        &state.encode(),
+    );
+    let commit = narrata_history::Commit::root(
+        narrata_history::ArtifactId::from_bytes(*s.program().artifact_id().as_bytes()),
+        state.id(),
+    )
+    .to_object(narrata_nodes::KIND_COMMIT);
+    let mut history = History::in_memory(DomainKinds::<NodeDomain>::new());
+    history
+        .write(
+            &Transaction {
+                objects: vec![state, commit.clone()],
+                ..Transaction::default()
+            },
+            |_| Ok(Vec::new()),
+        )
+        .unwrap();
+    let result = r.visited_from_save(
+        &history,
+        narrata_nodes::CommitId::from_bytes(*commit.id().as_bytes()),
+        PathLimits::default(),
+    );
+    assert_eq!(result.unwrap_err().code, "invalid_save");
+}
+
+#[test]
 fn replay_observes_local_multiselect_automatic_call_return_and_ending_without_writes() {
     let (mut s, names) = session(&compiled());
     for keys in [
