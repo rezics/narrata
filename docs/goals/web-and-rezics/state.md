@@ -18,15 +18,15 @@
 ## 下一步
 
 1. M1 固定包的公开接口、本地与 CI 证据已就绪；保持宿主能力状态为“提出”，不声称 REZICS 上线。
-2. [visits/读者地图/SQL 宿主](tasks/G-037.md)在原 worktree 以 Codex/high 运行 attempt 4。候选提交 3024622（后续 1af88cc 修正真实 A/B 夹具及 SQL 标量测试）尚未合入；核心修复已在提交上复审通过，R1 含 26 项浏览器回归通过，manager 已查看桌面/390px 地图截图。真实 PG 关系 gate/规模测量及其他检查由原 worker 继续；最终地图/SQL 评审仍有下述修复，不能据此验收。manager 已补齐参考页面/宿主/旅程路径认领，使用实际 /?reference 冷参考体验。
+2. [visits/读者地图/SQL 宿主](tasks/G-037.md)在原 worktree 以 Codex/high 运行 attempt 5。候选提交 3024622、1af88cc、1f8f906、177439b 尚未合入；核心修复与迟到地图的游标关联修复已在提交上复审通过。R1（26 浏览器）、Web、真实 PG（57 通过/1 个 PGlite 权限对应项跳过）、脚本 53 及文档通过；manager 已查看桌面/390px 地图截图。当前统一修复下述三个剩余问题与回归，不据旧 gate 直接验收。
 3. 随后完成[存档维护/浅恢复](tasks/G-038.md)与[阅读器跨构件/确认组合](tasks/G-039.md)。浅历史必须保留精确当前页上下文或在移动根前拒绝；不能用迁移页伪造原页。跨版本时间线/checkout/确认 UI 必须实际可用，不能只凭脱离产品的控制器测试关闭。
 4. M2/M3 全项当前版本审计、固定交付证据和归位后才关闭本 Goal；Web VN 仍待启动，不占用其路径。
 
 medium 子代理的范围审计在 .temp/stage-coverage-audit.md：剩余能力都有上述任务或 manager 收敛归属；交接已明确 M1 快照导出/恢复与 M2 有界冷库导入导出、浅历史/GC 的边界，未缩小原 Goal。最终 M3 仍须用完成后的包、源码、CI 与桌面/移动端证据逐项证明；ADR 0022 的关系规模证据已有 100,000 选择点、44,083 行及 15,640,925-byte 分片生成读数，新 SQL loader 的真实 PostgreSQL 装载时间/体积需另行测量，不能沿用旧纯投影数据。
 
-high 的提交评审见 .temp/review-map-core-commit.md、review-map-sql-commit.md、review-map-package.md。原两项核心 P2 与 SQL 数值截断/冷竞争测试缺口均已在 3024622 源码确认修复；仍待最终检查绑定。新增已确认：SQL 查询对象跨 await 可变，导致校验 B 却返回预算的 A；地图分别 inspect/export 且以点击时游标缓存，会把后续 C1 路径显示到回退的 C0；HTTP 地图 JSON 未校验可使 React 崩溃；长地图被 maxHeight 缩到不可读。不要中断当前重型测量；待 worker 交接后，以 .temp/map-final-review-resume.md 在原任务统一修复并补 SQL 有实际稀疏边的读回/坏闭包验证与地图迟到/账号/长视图回归。
+high 的提交评审见 .temp/review-map-core-commit.md、review-map-sql-commit.md、review-map-package.md。原两项核心 P2 与 SQL 数值截断/冷竞争测试缺口均已在 3024622 源码确认修复。1f8f906 的响应游标关联已由 .temp/review-map-race-fix.md 接受，不能再为这项已修复竞态强造原子导出 API；须加强防止页面崩溃假通过的测试，并补账号/新旅程迟到覆盖。剩余已确认三项：SQL 查询对象跨 await 可变，导致校验 B 却返回预先算出的 A；HTTP 地图 JSON 未校验可使 React 崩溃；长地图被 maxHeight 缩到不可读。manager 在全部重型检查结束、最新公开迁移地图测试/类型检查通过后停止 attempt 4，保留五个提交和全部证据，以 .temp/map-final-review-resume.md 在原任务 high 恢复 attempt 5；还需 SQL 实际稀疏边/坏闭包回归、包内 DDL 资产与最终交接。
 
-attempt 3 的公共包构建及 PGlite 4 项关系初测通过，真实 PostgreSQL 关系证据仍待补；中途模型连接超时后自行恢复，没有重复派发。authoring-only opt-level=z 与分模块压缩的暂测预算已通过（reader 1,694,481/439,038，authoring Wasm 2,664,007/684,148 raw/gzip），新工具与构建设置须同改工具链并通过独立安装。出现一项尚未进入认领的 online/index.ts 薄 exportSave 方法；manager 已查看其 saved 状态/队列/checked 包装，待交接时确认最终代码并补认领或审阅 allow-scope，不忽略范围审计。尚未合入此任务。
+真实 PG 18.6、fsync/synchronous_commit on 的 100,000 选择点测量：44,083 行，装载 34.13 秒，精确重试 0.82 秒；source/SQL 页均不超过 256 行，10 个参数。19,103 个发布对象的独立载入/验证为 156.62 秒，不混作 SQL 装载耗时。原始计数、表/索引大小在 worker 的 .temp/postgresql/map-validation/scale-loading.json，临时库已停。authoring-only opt-level=z 与分模块压缩已在独立安装 gate 下通过预算（reader 1,694,481/439,038，authoring Wasm 2,664,007/684,148 raw/gzip）；新工具/构建设置已写工具链，仍须结合最终修复重测受影响包。online/index.ts 薄 exportSave 接缝已补精确认领，scope 检查通过。
 
 推送检查点 1ac944b 的[CI](https://github.com/rezics/narrata/actions/runs/41036659729)八项全部成功；产品树与固定 M1 包一致，证据在 .temp/delivery/m1-checkpoint-ci.json 及 m1-release.json。这不代替尚未合入的地图提交 CI。
 
