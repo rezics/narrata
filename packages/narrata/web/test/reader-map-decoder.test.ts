@@ -25,3 +25,23 @@ test("HTTP map bodies and object counts have explicit transport bounds", async (
   value.nodes = Array(100001).fill(value.nodes[0]);
   expect(() => decodeReaderMap(value, identity)).toThrow("limit");
 });
+
+for (const kind of ["nodes", "units"] as const) {
+  for (const axis of ["x", "y"] as const) {
+    test(`${kind}.${axis} transport coordinates require the Rust i32 range`, async () => {
+      for (const coordinate of [-2147483648, -1, 0, 1, 2147483647]) {
+        const value = fixture(), identity = { artifactId: value.artifact_id, cursor: value.sources[0].cursor };
+        value[kind][0][axis] = coordinate;
+        expect(decodeReaderMap(value, identity)).toBe(value);
+        expect(await readReaderMapResponse(new Response(JSON.stringify(value)), identity)).toEqual(value);
+      }
+      for (const coordinate of [-2147483649, 2147483648, -Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, -1e308, 1e308]) {
+        expect(Number.isFinite(coordinate) && Number.isInteger(coordinate)).toBe(true);
+        const value = fixture(), identity = { artifactId: value.artifact_id, cursor: value.sources[0].cursor };
+        value[kind][0][axis] = coordinate;
+        expect(() => decodeReaderMap(value, identity)).toThrow();
+        await expect(readReaderMapResponse(new Response(JSON.stringify(value)), identity)).rejects.toThrow();
+      }
+    });
+  }
+}

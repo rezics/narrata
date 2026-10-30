@@ -20,7 +20,10 @@ pub struct ReaderUnitV1 {
     pub unit_id: Digest,
     pub content: ContentRef,
     pub segments: Vec<Segment>,
+    // JSON Schema's int32 format is only an annotation in transport validators.
+    #[schemars(range(min = i32::MIN, max = i32::MAX))]
     pub x: i32,
+    #[schemars(range(min = i32::MIN, max = i32::MAX))]
     pub y: i32,
 }
 
@@ -29,7 +32,9 @@ pub struct ReaderUnitV1 {
 pub struct ReaderNodeV1 {
     pub node: NodeId,
     pub unit_id: Option<Digest>,
+    #[schemars(range(min = i32::MIN, max = i32::MAX))]
     pub x: i32,
+    #[schemars(range(min = i32::MIN, max = i32::MAX))]
     pub y: i32,
 }
 

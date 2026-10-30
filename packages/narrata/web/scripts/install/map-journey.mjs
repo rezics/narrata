@@ -101,7 +101,10 @@ export async function verifyMapJourney(page, origin, directory) {
   await confirmedGuard("conflict");
   await currentContent();
   const invalid = [];
-  for (const kind of ["malformed", "format", "projection", "artifact", "cursor", "sources", "coordinates", "unknown_field"]) {
+  const coordinateCases = ["nodes", "units"].flatMap(collection => ["x", "y"].flatMap(axis =>
+    [-2147483649, 2147483648, -1e308, 1e308].map(value => ({ kind: `${collection}.${axis}=${value}`, collection, axis, value }))));
+  for (const scenario of [...["malformed", "format", "projection", "artifact", "cursor", "sources", "coordinates", "unknown_field"].map(kind => ({ kind })), ...coordinateCases]) {
+    const { kind } = scenario;
     const before = await page.evaluate(() => window.referenceJourney.getSnapshot().binding.session.getSnapshot().progress.view.cursor);
     await page.route("**/reference-host/reader-map", async route => {
       const response = await route.fetch(), data = await response.json();
@@ -113,6 +116,7 @@ export async function verifyMapJourney(page, origin, directory) {
       if (kind === "sources") data.sources.push(structuredClone(data.sources[0]));
       if (kind === "coordinates") data.nodes[0].x = 0.5;
       if (kind === "unknown_field") data.hidden_target = "must reject an unknown field";
+      if ("collection" in scenario) data[scenario.collection][0][scenario.axis] = scenario.value;
       await route.fulfill({ response, body: JSON.stringify(data) });
     });
     await page.getByRole("button", { name: "Show revealed map", exact: true }).click(); await readyMapButton();

@@ -13,6 +13,19 @@ use narrata_nodes::{
 use serde_json::{Value, json};
 use support::*;
 
+#[test]
+fn map_coordinate_schemas_express_the_rust_integer_range_without_format_validation() {
+    let schema = serde_json::to_value(schemars::schema_for!(ReaderMapV1)).unwrap();
+    for kind in ["ReaderUnitV1", "ReaderNodeV1"] {
+        for axis in ["x", "y"] {
+            let coordinate = &schema["$defs"][kind]["properties"][axis];
+            assert_eq!(coordinate["type"], "integer");
+            assert_eq!(coordinate["minimum"], i32::MIN);
+            assert_eq!(coordinate["maximum"], i32::MAX);
+        }
+    }
+}
+
 fn visits(session: &Session) -> CheckedVisits {
     let mut registry = EvolutionRegistry::new();
     registry
