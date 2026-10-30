@@ -18,13 +18,15 @@
 ## 下一步
 
 1. M1 固定包的公开接口、本地与 CI 证据已就绪；保持宿主能力状态为“提出”，不声称 REZICS 上线。
-2. [visits/读者地图/SQL 宿主](tasks/G-037.md)在原 worktree 以 Codex/high 运行 attempt 5。候选提交 3024622、1af88cc、1f8f906、177439b 尚未合入；核心修复与迟到地图的游标关联修复已在提交上复审通过。R1（26 浏览器）、Web、真实 PG（57 通过/1 个 PGlite 权限对应项跳过）、脚本 53 及文档通过；manager 已查看桌面/390px 地图截图。当前统一修复下述三个剩余问题与回归，不据旧 gate 直接验收。
+2. [visits/读者地图/SQL 宿主](tasks/G-037.md)在原 worktree 以 Codex/high 运行 attempt 6。候选提交 3024622、1af88cc、1f8f906、177439b、ca88d58 尚未合入；核心、迟到地图游标关联和 SQL 私有输入快照修复均已复审通过。先前 R1（26 浏览器）、Web、真实 PG（57 通过/1 个 PGlite 权限对应项跳过）、脚本 53 及文档通过；最终新增边界/渲染与包入口仍须检查，不据旧 gate 直接验收。
 3. 随后完成[存档维护/浅恢复](tasks/G-038.md)与[阅读器跨构件/确认组合](tasks/G-039.md)。浅历史必须保留精确当前页上下文或在移动根前拒绝；不能用迁移页伪造原页。跨版本时间线/checkout/确认 UI 必须实际可用，不能只凭脱离产品的控制器测试关闭。
 4. M2/M3 全项当前版本审计、固定交付证据和归位后才关闭本 Goal；Web VN 仍待启动，不占用其路径。
 
 medium 子代理的范围审计在 .temp/stage-coverage-audit.md：剩余能力都有上述任务或 manager 收敛归属；交接已明确 M1 快照导出/恢复与 M2 有界冷库导入导出、浅历史/GC 的边界，未缩小原 Goal。最终 M3 仍须用完成后的包、源码、CI 与桌面/移动端证据逐项证明；ADR 0022 的关系规模证据已有 100,000 选择点、44,083 行及 15,640,925-byte 分片生成读数，新 SQL loader 的真实 PostgreSQL 装载时间/体积需另行测量，不能沿用旧纯投影数据。
 
-high 的提交评审见 .temp/review-map-core-commit.md、review-map-sql-commit.md、review-map-package.md。原两项核心 P2 与 SQL 数值截断/冷竞争测试缺口均已在 3024622 源码确认修复。1f8f906 的响应游标关联已由 .temp/review-map-race-fix.md 接受，不能再为这项已修复竞态强造原子导出 API；须加强防止页面崩溃假通过的测试，并补账号/新旅程迟到覆盖。剩余已确认三项：SQL 查询对象跨 await 可变，导致校验 B 却返回预先算出的 A；HTTP 地图 JSON 未校验可使 React 崩溃；长地图被 maxHeight 缩到不可读。manager 在全部重型检查结束、最新公开迁移地图测试/类型检查通过后停止 attempt 4，保留五个提交和全部证据，以 .temp/map-final-review-resume.md 在原任务 high 恢复 attempt 5；还需 SQL 实际稀疏边/坏闭包回归、包内 DDL 资产与最终交接。
+high 的提交评审见 .temp/review-map-core-commit.md、review-map-sql-commit.md、review-map-package.md。原核心、SQL 数值截断与冷竞争缺口已修复；1f8f906 游标修复见 review-map-race-fix.md，ca88d58 私有查询快照及实际稀疏边回归见 review-map-sql-repair.md，均接受源码、仍需最终 PG/包检查绑定。177439b 新增公开迁移/浅历史/循环/提议探针已在 review-map-public-probes.md 复核。HTTP JSON 与长图修复仍未提交；其浏览器证据已覆盖 8 类无效响应、unknown/quota/conflict、账号/新旅程迟到和 800 节点视图，errors=[]；manager 已查看新桌面/390px 长图，圆直径 36px、文字框 21px，末节点可达且无页面横溢。证据在 worker 的 .temp/reader-map-evidence/，须绑定最终提交并复审。
+
+attempt 5 加入解码器后，作者图 bundle 为 271,057 raw，超原 260,000；schema 解引用/双重否定实验未解决边界问题。manager 在预算/解码测试结束且无重型检查时停止并完整保留工作，以 .temp/map-entry-boundary-resume.md 恢复 attempt 6：新增同包 /reader-map 与 /reader-map/react 直接可选入口，复用既有 DTO/校验/组件，移出作者图 barrel；旧作者图与 reader 上限不变，新 readerMap bundle 按实际依赖单独设预算并完整计入 aggregate，不漏计或藏入作者模块。移除仅为压旧 cap 引入的 RefParser/编译语义实验，沿用直接的 Ajv standalone 生成；README/工具链/独立安装和冷首屏边界同步验证。简报已记录该决定，不新增运行时或包。
 
 真实 PG 18.6、fsync/synchronous_commit on 的 100,000 选择点测量：44,083 行，装载 34.13 秒，精确重试 0.82 秒；source/SQL 页均不超过 256 行，10 个参数。19,103 个发布对象的独立载入/验证为 156.62 秒，不混作 SQL 装载耗时。原始计数、表/索引大小在 worker 的 .temp/postgresql/map-validation/scale-loading.json，临时库已停。authoring-only opt-level=z 与分模块压缩已在独立安装 gate 下通过预算（reader 1,694,481/439,038，authoring Wasm 2,664,007/684,148 raw/gzip）；新工具/构建设置已写工具链，仍须结合最终修复重测受影响包。online/index.ts 薄 exportSave 接缝已补精确认领，scope 检查通过。
 
