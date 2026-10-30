@@ -12,7 +12,6 @@
 - **局部结果**只改状态，回应与汇合点在当前段落的同一内容单元内。这覆盖绝大多数"小选择"，
   不需要为回应和汇合各建一个内容单元。
 - **分支结果**进入另一个节点，章末选项就是这种。
-- **多选**与允许不选的选择点只用局部结果，共享同一个汇合点；之后的走向由条件决定。
 - 一个选择点可以混合局部与分支选项（例如"继续交谈"与"离开"）。
 
 ## 正文里只有标记
@@ -20,13 +19,14 @@
 内容单元是扁平的块序列，不嵌套选择树。内容方可以在正文中放一个只记录 `ChoicePointId` 的
 标记块（REZICS 的 `narrata-choice` 块，本地内容包的 `{ id, choice_point }` 块），用于编辑器
 渲染和不支持 Narrata 的读者显示占位；翻译时原样复制。没有标记块时，Narrata 按 `placement`
-锚点定位。标记块与 `placement` 不一致时，编译报告诊断。
+锚点定位；大纲校验见[测试](../../packages/narrata/nodes/crates/narrata-nodes/tests/outline.rs)。
 
 ## 身份与生命周期
 
-选择点、选项、节点的 ID 规则见 [决定 3](../product/decisions.md#3-身份以-narrata-为权威)：
-改文字、条件、效果、顺序、目标都不换 ID；移到另一个选择点或复制会换 ID；删除留墓碑，
-ID 永不复用。`compose` 对照上一次的构件执行这些规则。
+选择点、选项、节点的 ID 连续性意图见 [决定 3](../product/decisions.md#3-身份以-narrata-为权威)，
+受检比较见[组合实现](../../packages/narrata/tooling/crates/narrata-authoring/src/compose.rs)与
+[发布测试](../../packages/narrata/tooling/crates/narrata-authoring/tests/publication.rs)。
+宿主每次发布须提供上一次发布，并保存返回的墓碑记录。
 
 ## 记录什么
 
@@ -37,8 +37,8 @@ ID 永不复用。`compose` 对照上一次的构件执行这些规则。
 
 - 会改变走向的生成内容（新选项、新段落）经提议写进提交历史；只影响呈现的生成文字仍只是内容
   引用，由内容方按呈现键缓存，不需要提议。提议里的文字同样是引用，Narrata 只记录结构。
-- 作者用 `proposals: true` 标出允许追加的选择点。这样的选择点总会停下等待交互，它的静态选项是
-  没有生成器的宿主的退路。宿主从 view 交互的 `proposals` 标记得知能否提议。
+- 允许提议的选择点仍应提供静态选项，作为没有生成器的宿主的退路；等待、追加与返回时的行为见
+  [提议测试](../../packages/narrata/nodes/crates/narrata-nodes/tests/proposals.rs)。
 - 提议的段落只属于当前栈帧，调用返回后消失。需要跨章节保留的生成结构应写回作品源稿并重新编译，
   而不是依赖叠加层。
 
