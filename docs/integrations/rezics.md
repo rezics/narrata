@@ -1,6 +1,6 @@
 # REZICS 集成
 
-更新：2026-10-29。首个产品 Gamingbook 采用正文阅读与分支选择；传统视觉小说随后纳入，方向是纯 Web、按需分发。本文据重建后的宿主重新整理首发能力请求，取代 2026-10-05 对 Occurrence、Expression、Structure 等宿主实现的映射假设。
+更新：2026-10-30。首个产品 Gamingbook 采用正文阅读与分支选择；传统视觉小说随后纳入，方向是纯 Web、按需分发。本文据重建后的宿主重新整理首发能力请求，取代 2026-10-05 对 Occurrence、Expression、Structure 等宿主实现的映射假设。
 
 Narrata 的工作不修改 REZICS 仓库（[决定 13](../product/decisions.md)）。本页供维护者交给 REZICS 评估和实施；“提出”表示尚未取得宿主接受及联合验收证据。字段、限额、交换格式以现有 schema 与 ADR 为准；需要改变格式时先写 ADR，本页不另定协议。
 
@@ -134,7 +134,7 @@ Narrata 负责场景依赖、推进与恢复语义；播放器负责资源准备
 - `@rezics/narrata/content/native` 支持同一修订的原生文档片段与文字回退；内容大纲仍不含正文或 revision 字段，具体宿主模型转换与权限由 REZICS 实现。
 - 根入口的 `AuthenticatedLibrary` / `createOnlineSession` 提供固定库实例、未知保存原字节重试与保留证明、配额/冲突恢复、关闭/账号失效和删除重建接缝，并按存档的精确 artifact 打开。调用方式与宿主责任见[在线旅程](../../packages/narrata/web/README.md#authenticated-online-journeys)；宿主仍提供认证传输、库授权与对象保留。
 
-M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公开创作的同一复合短篇、真实正文/标签、冷读取、A/B 逻辑隔离与在线故障恢复均有证据。接受的参考入口为 `/?reference`，`/` 仅作旧兼容示例。固定输入为版本 `0.1.0-alpha.1`、[源码 fa0266b1063428e855efea1408768029818500d0](https://github.com/rezics/narrata/tree/fa0266b1063428e855efea1408768029818500d0)、tarball SHA-256 `524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19`；由维护者提供该文件，不把同版本其他构建或 `latest` 当同一输入。尚未发布 npm registry，本次主线 CI 另行核实。
+M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公开创作的同一复合短篇、真实正文/标签、冷读取、A/B 逻辑隔离与在线故障恢复均有证据。接受的参考入口为 `/?reference`，`/` 仅作旧兼容示例。固定输入为版本 `0.1.0-alpha.1`、[源码 fa0266b1063428e855efea1408768029818500d0](https://github.com/rezics/narrata/tree/fa0266b1063428e855efea1408768029818500d0)、tarball SHA-256 `524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19`；由维护者提供该文件，不把同版本其他构建或 `latest` 当同一输入。尚未发布 npm registry；同一产品源码树的 a6f8952 已通过[主线 CI](https://github.com/rezics/narrata/actions/runs/40923433584)。
 
 正文依宿主当前可用修订解析，同一画面/原生片段使用一次解析快照；固定旧逻辑构件不保证历史正文永久原样可得。M2 的 visits/读者地图、关系投影数据库装载和维护入口仍在实施。作者端演化规划、描述符、评估/应用控制器与只读影响作业已交付，但真实阅读器中的跨构件历史与确认接线尚未完成，不把后端测试当作完整 M2 旅程；REZICS 真实联合验收仍另行记录。
 
