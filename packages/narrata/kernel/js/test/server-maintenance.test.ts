@@ -50,8 +50,10 @@ for (const real of [false,true]) describe.skipIf(real && !url)(`public maintenan
       const usage = await destination.usage();
       expect(BigInt(usage.used.bytes)).toBeGreaterThan(0n);expect(usage.quota).toEqual(generousQuota);
       await receiving.run({kind:"delete_roots",roots:await roots(receiving)});
+      const afterDeletion = await destination.usage();
+      expect(BigInt(afterDeletion.used.keys)).toBeLessThan(BigInt(usage.used.keys));
       const dry = await receiving.run({kind:"collect",now:1000,grace_seconds:10,dry_run:true});
-      expect(dry.kind).toBe("collected");expect((await destination.usage()).used).toEqual(usage.used);
+      expect(dry.kind).toBe("collected");expect(await destination.usage()).toEqual(afterDeletion);
       await receiving.run({kind:"collect",now:1000,grace_seconds:10,dry_run:false});
       expect(BigInt((await destination.usage()).used.objects)).toBe(0n);
       await receiving.importSave(bytes,{execution,artifact,cursor,expected_revision:null,now:1001});
