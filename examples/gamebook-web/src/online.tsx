@@ -256,7 +256,7 @@ function OnlineReference({ host }: { host: ReferenceHost }) {
       <button disabled={busy || save.status === "unknown"} onClick={() => { void action(host.reopen); }}>Reopen this journey</button>
       <button disabled={busy} onClick={() => { void action(host.newJourney); }}>Start a new journey</button>
       <button disabled={pending} onClick={() => { void action(host.switchAccount); }}>Switch account</button>
-      {host.canMap ? <button disabled={busy || save.status !== "saved"} onClick={() => { void action(async () => { const data = await host.readerMap(); setMap({ cursor: save.progress?.view.cursor ?? "", data }); }); }}>Show revealed map</button> : null}
+      {host.canMap ? <button disabled={busy || save.status !== "saved"} onClick={() => { void action(async () => { const data = await host.readerMap(); setMap({ cursor: data.sources[0]?.cursor ?? "", data }); }); }}>Show revealed map</button> : null}
     </nav>
     {error ? <p role="alert">The host action failed. Your saved journey is preserved; try the action again.</p> : null}
     <details><summary>Simulate a save failure</summary>
