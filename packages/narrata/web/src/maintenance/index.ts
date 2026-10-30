@@ -92,8 +92,7 @@ export class Maintenance {
   }
   /** Validates page context without touching the library; also resolves remapped legacy IDs. */
   inspectSave(save: Uint8Array | string): Promise<CheckedSave> {
-    const text = typeof save === "string" ? save : hex(save);
-    return this.enqueue(() => JSON.parse(checked(() => this.raw.inspectSave(text))) as CheckedSave);
+    return this.enqueue(() => JSON.parse(checked(() => this.raw.inspectSave(this.input(save), JSON.stringify(this.budget)))) as CheckedSave);
   }
   run(request: MaintenanceRequest): Promise<MaintenanceResult> {
     if (request.kind === "collect") { safeTime(request.now); safeTime(request.grace_seconds); }
@@ -110,8 +109,15 @@ export class Maintenance {
    * checked artifact/cursor must match. null expected_revision means create only if absent. */
   importSave(save: Uint8Array | string, selection: ImportSelection): Promise<string> {
     safeTime(selection.now);
-    const text = typeof save === "string" ? save : hex(save), selected = JSON.stringify(selection);
-    return this.operation(() => checked(() => this.raw.import(text, selected, JSON.stringify(this.budget))));
+    let text = "";
+    const selected = JSON.stringify(selection);
+    return this.operation(() => checked(() => this.raw.import(text, selected, JSON.stringify(this.budget))), () => { text = this.input(save); });
+  }
+  private input(save: Uint8Array | string): string {
+    this.assertOpen();
+    const bytes = typeof save === "string" ? save.length : save.byteLength * 2;
+    if (bytes > 64 * 1024 * 1024 || bytes > this.budget.bytes || bytes + 1 > this.budget.work || this.budget.object_reads === 0) throw new MaintenanceLimit("Save input exceeds maintenance budget");
+    return typeof save === "string" ? save : hex(save);
   }
   /** Retransmits the original unknown flush. Then re-read roots; confirmation does not rerun
    * the operation or restore its lost return value. Conflicts require a fresh explicit call. */
@@ -123,9 +129,10 @@ export class Maintenance {
   }
   /** After a definite quota rejection, discard the candidate, explicitly delete selected
    * roots/collect, and retry import. GC may reclaim nothing when all objects remain rooted. */
-  private operation<T>(operation: () => T): Promise<T> {
+  private operation<T>(operation: () => T, prepare?: () => void): Promise<T> {
     return this.enqueue(async () => {
       if (this.uncertain) throw new Error("A maintenance write has an unknown outcome; retryPending or close and verify durable roots.");
+      prepare?.();
       this.raw.refresh();
       this.loads = 0; this.readBytes = 0; this.attemptedWrite = false;
       try { const result = await this.host.run(operation); this.assertOpen(); return result; }

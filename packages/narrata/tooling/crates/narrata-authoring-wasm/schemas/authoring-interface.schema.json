@@ -1731,12 +1731,13 @@
           "minimum": 0
         },
         "load_bytes": {
+          "description": "Cumulative encoded reply receipt/acceptance threshold. One conforming bounded reply\nmay arrive before rejection, before maintenance/cache acceptance and Wasm transfer.\nThis does not bound host allocation or I/O before the host returns its reply.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0
         },
         "loads": {
-          "description": "Host load calls and encoded reply bytes, including retries on a cold cache.",
+          "description": "Host load calls, including retries on a cold cache.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0

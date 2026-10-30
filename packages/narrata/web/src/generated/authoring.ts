@@ -588,9 +588,14 @@ export interface PackageLock {
 }
 export interface MaintenanceLimits {
   bytes: number;
+  /**
+   * Cumulative encoded reply receipt/acceptance threshold. One conforming bounded reply
+   * may arrive before rejection, before maintenance/cache acceptance and Wasm transfer.
+   * This does not bound host allocation or I/O before the host returns its reply.
+   */
   load_bytes: number;
   /**
-   * Host load calls and encoded reply bytes, including retries on a cold cache.
+   * Host load calls, including retries on a cold cache.
    */
   loads: number;
   object_reads: number;

@@ -84,6 +84,9 @@ observed decimal revision and commit via `delete_roots`; a stale selection must 
 `removed` amounts are candidates in dry-run and reclaimed amounts after a confirmed sweep.
 
 Limits bound object reads, bytes, scan pages, work and cumulative cold-cache loads, including retries.
+`load_bytes` counts complete encoded replies when received. One conforming reply may arrive before
+the threshold rejects it; that reply never enters the maintenance cache/Wasm. Host transport limits
+bound each reply (64 MiB of values, 128 MiB framed), independently of this acceptance threshold.
 Collection rejects a sweep that cannot fit one atomic flush. Incomplete or invalid scans never
 authorize collection. Quota rejection preserves durable progress: select roots
 to delete, inspect a dry-run, collect explicitly, then retry the import. Collection may free nothing.

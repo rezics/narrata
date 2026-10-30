@@ -44,7 +44,35 @@ fn migrated_and_proposal_checkpoints_use_the_same_cold_cache_driver_and_exact_sh
             }
         }
         let save = hex::encode(std::fs::read(directory.join("target.checkpoint")).unwrap());
-        let checked = engine.inspect_save(&save).unwrap();
+        for bounded in [
+            MaintenanceLimits {
+                bytes: 0,
+                ..limits()
+            },
+            MaintenanceLimits {
+                bytes: 1,
+                ..limits()
+            },
+            MaintenanceLimits {
+                object_reads: 0,
+                ..limits()
+            },
+            MaintenanceLimits {
+                object_reads: 1,
+                ..limits()
+            },
+            MaintenanceLimits {
+                work: save.len() as u32 + 10,
+                ..limits()
+            },
+        ] {
+            assert_eq!(
+                engine.inspect_save(&save, bounded).unwrap_err().code,
+                "limit"
+            );
+            assert!(engine.cache.unconfirmed().is_none());
+        }
+        let checked = engine.inspect_save(&save, limits()).unwrap();
         let host = MemoryHost::new(StoreId::from_bytes([9; 16]));
         let cache = engine.cache.share();
         let execution = "execution:0190f2a0000070008000000000000001"
@@ -76,7 +104,10 @@ fn migrated_and_proposal_checkpoints_use_the_same_cold_cache_driver_and_exact_sh
         })
         .unwrap();
         assert_eq!(
-            engine.inspect_save(&hex::encode(shallow)).unwrap().cursor,
+            engine
+                .inspect_save(&hex::encode(shallow), limits())
+                .unwrap()
+                .cursor,
             checked.cursor
         );
         engine.refresh();

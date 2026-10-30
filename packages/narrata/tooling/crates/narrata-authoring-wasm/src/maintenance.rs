@@ -20,8 +20,11 @@ pub struct MaintenanceLimits {
     pub pages: u32,
     pub work: u32,
     pub page_size: u32,
-    /// Host load calls and encoded reply bytes, including retries on a cold cache.
+    /// Host load calls, including retries on a cold cache.
     pub loads: u32,
+    /// Cumulative encoded reply receipt/acceptance threshold. One conforming bounded reply
+    /// may arrive before rejection, before maintenance/cache acceptance and Wasm transfer.
+    /// This does not bound host allocation or I/O before the host returns its reply.
     pub load_bytes: u32,
 }
 impl MaintenanceLimits {
@@ -226,8 +229,11 @@ impl Engine {
         narrata_history::MaintenanceBackend::with_remaining(self.cache.share(), remaining)
             .map_err(history_error)
     }
-    pub fn inspect_save(&self, save: &str) -> Result<CheckedSave> {
-        let snapshot = Session::restore_with_registry(&self.registry, save)?;
+    pub fn inspect_save(&self, save: &str, limits: MaintenanceLimits) -> Result<CheckedSave> {
+        let backend =
+            narrata_history::MaintenanceBackend::new(CacheBackend::new(), limits.budget()?)
+                .map_err(history_error)?;
+        let (_, snapshot, _, _) = Self::checked_snapshot(&self.registry, backend, save, limits)?;
         snapshot.page()?;
         snapshot.interaction(None)?;
         Ok(CheckedSave {
@@ -405,6 +411,110 @@ impl Engine {
                 .map_err(|e| Error::new("decode", "checkpoint", e.to_string())),
         }
     }
+    fn prepare_snapshot(&mut self, save: &str, limits: MaintenanceLimits) -> Result<()> {
+        limits.budget()?;
+        if self
+            .snapshot
+            .as_ref()
+            .is_some_and(|(text, _, _, _)| text != save)
+        {
+            return Err(Error::new(
+                "stale_input",
+                "checkpoint",
+                "refresh before importing a different save",
+            ));
+        }
+        if self.snapshot.is_none() {
+            self.snapshot = Some(Self::checked_snapshot(
+                &self.registry,
+                self.backend(limits)?,
+                save,
+                limits,
+            )?);
+        }
+        Ok(())
+    }
+    fn checked_snapshot(
+        registry: &EvolutionRegistry,
+        backend: narrata_history::MaintenanceBackend<CacheBackend>,
+        save: &str,
+        limits: MaintenanceLimits,
+    ) -> Result<(String, Session, Vec<u8>, u64)> {
+        let budget = limits.budget()?;
+        // Bound the caller-owned input before copying/decoding it. Cache the immutable
+        // checked snapshot across misses instead of repeatedly rebuilding a full save.
+        if save.len() as u64 > budget.bytes || save.len() > narrata_nodes::MAX_EXPORT_BYTES {
+            return Err(Error::new(
+                "limit",
+                "checkpoint",
+                "save input exceeds byte budget",
+            ));
+        }
+        backend
+            .account_input(0, save.len() as u64)
+            .map_err(history_error)?;
+        let decode_limits = narrata_history::BundleLimits {
+            max_total_bytes: budget.bytes,
+            max_object_bytes: budget.bytes.min(16 * 1024 * 1024),
+            max_objects: budget.object_reads.min(budget.work),
+        };
+        let count_objects = |bytes: &[u8]| {
+            let result = if bytes.starts_with(narrata_history::SHALLOW_MAGIC) {
+                narrata_history::ShallowBundle::from_bytes(bytes, decode_limits, |_| true)
+                    .map(|b| b.objects.len())
+            } else {
+                narrata_history::CheckpointBundle::from_bytes(bytes, decode_limits, |_| true)
+                    .map(|b| b.objects.len())
+            };
+            result.map_err(|error| {
+                Error::new(
+                    if matches!(error, narrata_history::ContainerError::Limit(_)) {
+                        "limit"
+                    } else {
+                        "corrupt_save"
+                    },
+                    "checkpoint",
+                    error.to_string(),
+                )
+            })
+        };
+        let legacy = save.trim_start().starts_with('{');
+        let raw_bytes = if legacy {
+            Vec::new()
+        } else {
+            hex::decode(save.trim())
+                .map_err(|e| Error::new("corrupt_save", "checkpoint", e.to_string()))?
+        };
+        let count = if legacy {
+            let export: narrata_nodes::SessionExport = serde_json::from_str(save)
+                .map_err(|e| Error::new("corrupt_save", "checkpoint", e.to_string()))?;
+            if export.objects.len() as u64 > decode_limits.max_objects {
+                return Err(Error::new(
+                    "limit",
+                    "checkpoint",
+                    "legacy save exceeds object budget",
+                ));
+            }
+            export.objects.len()
+        } else {
+            count_objects(&raw_bytes)?
+        };
+        backend
+            .account_input(
+                (count as u64).saturating_mul(3),
+                (save.len() as u64).saturating_mul(3),
+            )
+            .map_err(history_error)?;
+        let source = Session::restore_with_registry(registry, save)?;
+        let bytes = if legacy {
+            hex::decode(source.export()?)
+                .map_err(|e| Error::new("decode", "checkpoint", e.to_string()))?
+        } else {
+            raw_bytes
+        };
+        let count = count_objects(&bytes)?;
+        Ok((save.to_owned(), source, bytes, count as u64))
+    }
     pub fn import(
         &mut self,
         save: &str,
@@ -419,94 +529,7 @@ impl Engine {
             now,
         } = selection;
         time(now)?;
-        let budget = limits.budget()?;
-        if self
-            .snapshot
-            .as_ref()
-            .is_some_and(|(text, _, _, _)| text != save)
-        {
-            return Err(Error::new(
-                "stale_input",
-                "checkpoint",
-                "refresh before importing a different save",
-            ));
-        }
-        if self.snapshot.is_none() {
-            // Bound the caller-owned input before copying/decoding it. Cache the immutable
-            // checked snapshot across misses instead of repeatedly rebuilding a full save.
-            if save.len() as u64 > budget.bytes || save.len() > narrata_nodes::MAX_EXPORT_BYTES {
-                return Err(Error::new(
-                    "limit",
-                    "checkpoint",
-                    "save input exceeds byte budget",
-                ));
-            }
-            let backend = self.backend(limits)?;
-            backend
-                .account_input(0, save.len() as u64)
-                .map_err(history_error)?;
-            let decode_limits = narrata_history::BundleLimits {
-                max_total_bytes: budget.bytes,
-                max_object_bytes: budget.bytes.min(16 * 1024 * 1024),
-                max_objects: budget.object_reads.min(budget.work),
-            };
-            let count_objects = |bytes: &[u8]| {
-                let result = if bytes.starts_with(narrata_history::SHALLOW_MAGIC) {
-                    narrata_history::ShallowBundle::from_bytes(bytes, decode_limits, |_| true)
-                        .map(|b| b.objects.len())
-                } else {
-                    narrata_history::CheckpointBundle::from_bytes(bytes, decode_limits, |_| true)
-                        .map(|b| b.objects.len())
-                };
-                result.map_err(|error| {
-                    Error::new(
-                        if matches!(error, narrata_history::ContainerError::Limit(_)) {
-                            "limit"
-                        } else {
-                            "corrupt_save"
-                        },
-                        "checkpoint",
-                        error.to_string(),
-                    )
-                })
-            };
-            let legacy = save.trim_start().starts_with('{');
-            let raw_bytes = if legacy {
-                Vec::new()
-            } else {
-                hex::decode(save.trim())
-                    .map_err(|e| Error::new("corrupt_save", "checkpoint", e.to_string()))?
-            };
-            let count = if legacy {
-                let export: narrata_nodes::SessionExport = serde_json::from_str(save)
-                    .map_err(|e| Error::new("corrupt_save", "checkpoint", e.to_string()))?;
-                if export.objects.len() as u64 > decode_limits.max_objects {
-                    return Err(Error::new(
-                        "limit",
-                        "checkpoint",
-                        "legacy save exceeds object budget",
-                    ));
-                }
-                export.objects.len()
-            } else {
-                count_objects(&raw_bytes)?
-            };
-            backend
-                .account_input(
-                    (count as u64).saturating_mul(3),
-                    (save.len() as u64).saturating_mul(3),
-                )
-                .map_err(history_error)?;
-            let source = Session::restore_with_registry(&self.registry, save)?;
-            let bytes = if legacy {
-                hex::decode(source.export()?)
-                    .map_err(|e| Error::new("decode", "checkpoint", e.to_string()))?
-            } else {
-                raw_bytes
-            };
-            let count = count_objects(&bytes)?;
-            self.snapshot = Some((save.to_owned(), source, bytes, count as u64));
-        }
+        self.prepare_snapshot(save, limits)?;
         let backend = self.backend(limits)?;
         let (_, source, bytes, count) = self
             .snapshot
@@ -519,6 +542,13 @@ impl Engine {
                 "save differs from exact artifact/cursor",
             ));
         }
+        // Establish the target layout before repeating the isolated page proof on a cold
+        // miss. Any empty-store initialization stays unconfirmed until the full import succeeds.
+        narrata_history::History::open(
+            self.backend(limits)?,
+            narrata_history::DomainKinds::<narrata_nodes::history::NodeDomain>::new(),
+        )
+        .map_err(history_error)?;
         // import_snapshot rechecks an isolated page and the bundle root before each
         // attempt. Charge those complete in-memory passes too, not only cache loads.
         backend
@@ -562,8 +592,13 @@ impl Maintenance {
         self.inner.refresh();
     }
     #[wasm_bindgen(js_name = inspectSave)]
-    pub fn inspect_save(&self, save: &str) -> std::result::Result<String, JsError> {
-        crate::json(&self.inner.inspect_save(save).map_err(crate::js_error)?)
+    pub fn inspect_save(&self, save: &str, limits: &str) -> std::result::Result<String, JsError> {
+        crate::json(
+            &self
+                .inner
+                .inspect_save(save, crate::parse(limits)?)
+                .map_err(crate::js_error)?,
+        )
     }
     pub fn run(&mut self, request: &str, limits: &str) -> std::result::Result<String, JsError> {
         crate::json(
