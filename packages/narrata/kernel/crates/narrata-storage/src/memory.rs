@@ -67,8 +67,24 @@ impl StorageBackend for MemoryBackend {
         &self,
         digests: &[ObjectDigest],
     ) -> Result<Vec<Option<Arc<[u8]>>>, StorageError> {
+        self.get_objects_bounded(digests, u64::MAX)
+    }
+
+    fn get_objects_bounded(
+        &self,
+        digests: &[ObjectDigest],
+        max_bytes: u64,
+    ) -> Result<Vec<Option<Arc<[u8]>>>, StorageError> {
         self.limits.check(Limit::ReadItems, digests.len() as u64)?;
         let store = self.store();
+        crate::check_read_bytes(
+            digests
+                .iter()
+                .filter_map(|id| store.objects.get(id))
+                .map(|b| b.len() as u64)
+                .sum(),
+            max_bytes,
+        )?;
         Ok(digests
             .iter()
             .map(|digest| store.objects.get(digest).cloned())
@@ -95,13 +111,20 @@ impl StorageBackend for MemoryBackend {
     }
 
     fn read_key(&self, space: KeySpace, key: &[u8]) -> Result<Option<KeyValue>, StorageError> {
+        self.read_key_bounded(space, key, u64::MAX)
+    }
+
+    fn read_key_bounded(
+        &self,
+        space: KeySpace,
+        key: &[u8],
+        max_bytes: u64,
+    ) -> Result<Option<KeyValue>, StorageError> {
         self.limits.check(Limit::KeyBytes, len(key))?;
-        Ok(self
-            .store()
-            .spaces
-            .get(&space)
-            .and_then(|keys| keys.get(key))
-            .cloned())
+        let store = self.store();
+        let value = store.spaces.get(&space).and_then(|keys| keys.get(key));
+        crate::check_read_bytes(value.map_or(0, |v| v.value.len() as u64), max_bytes)?;
+        Ok(value.cloned())
     }
 
     fn scan_keys(
@@ -110,6 +133,17 @@ impl StorageBackend for MemoryBackend {
         prefix: &[u8],
         after: Option<&[u8]>,
         limit: u32,
+    ) -> Result<KeyPage, StorageError> {
+        self.scan_keys_bounded(space, prefix, after, limit, u64::MAX)
+    }
+
+    fn scan_keys_bounded(
+        &self,
+        space: KeySpace,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        limit: u32,
+        max_bytes: u64,
     ) -> Result<KeyPage, StorageError> {
         self.limits.check_key_scan(prefix, limit)?;
         let store = self.store();
@@ -122,17 +156,25 @@ impl StorageBackend for MemoryBackend {
         };
         let mut matching = keys
             .range::<[u8], _>((lower, Bound::Unbounded))
-            .take_while(|(key, _)| key.starts_with(prefix))
+            .take_while(|(key, _)| key.starts_with(prefix));
+        let selected = matching.by_ref().take(limit as usize).collect::<Vec<_>>();
+        crate::check_read_bytes(
+            selected
+                .iter()
+                .map(|(k, v)| (k.len() + v.value.len()) as u64)
+                .sum(),
+            max_bytes,
+        )?;
+        let more = matching.next().is_some(); // Lookahead borrows, never copies a value.
+        let entries = selected
+            .into_iter()
             .map(|(key, value)| KeyEntry {
                 key: key.clone(),
                 value: value.value.clone(),
                 revision: value.revision,
-            });
-        let entries = matching.by_ref().take(limit as usize).collect();
-        Ok(KeyPage {
-            entries,
-            more: matching.next().is_some(),
-        })
+            })
+            .collect();
+        Ok(KeyPage { entries, more })
     }
 
     fn apply(&mut self, batch: &Batch) -> Result<Applied, StorageError> {

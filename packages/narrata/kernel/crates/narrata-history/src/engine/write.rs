@@ -505,6 +505,17 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             observed.entry(object.id()).or_insert(observed_at);
             staged.entry(object.id()).or_insert_with(|| object.clone());
         }
+        let ids = staged.keys().copied().collect::<Vec<_>>();
+        for (id, stored) in ids.iter().zip(self.reader().objects(&ids)?) {
+            if let Some(stored) = stored
+                && staged.get(id) != Some(&stored)
+            {
+                return Err(HistoryError::CorruptStore(format!(
+                    "destination object {id} differs from staged object"
+                ))
+                .into());
+            }
+        }
         let mut view = View::new(self.reader(), &self.registry, &staged);
 
         let mut wanted = Vec::new();

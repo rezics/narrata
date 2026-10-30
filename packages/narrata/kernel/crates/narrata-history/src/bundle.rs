@@ -210,8 +210,8 @@ pub fn decode_list<'a, T>(
     if length > 1_000_000 {
         return Err(DecodeError::Limit("manifest list"));
     }
-    let mut values =
-        Vec::with_capacity(usize::try_from(length).map_err(|_| DecodeError::LengthOverflow)?);
+    // Grow only after a member decoded: an array header alone proves no storage need.
+    let mut values = Vec::new();
     for _ in 0..length {
         values.push(decode(reader)?);
     }
@@ -354,7 +354,10 @@ pub fn decode_container(
     if count > limits.max_objects {
         return Err(ContainerError::Limit("object count"));
     }
-    let mut objects = Vec::with_capacity(to_usize(count)?);
+    if count > (bytes.len().saturating_sub(cursor.offset) / 44) as u64 {
+        return Err(ContainerError::Truncated);
+    }
+    let mut objects = Vec::new();
     let mut previous = None;
     for _ in 0..count {
         let declared_id = ObjectId::from_bytes(cursor.array::<32>()?);

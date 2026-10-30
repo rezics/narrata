@@ -70,6 +70,10 @@ impl<B> MaintenanceBackend<B> {
         )
         .map_err(HistoryError::from)
     }
+    fn read_bytes(&self) -> u64 {
+        let left = self.remaining.get();
+        left.bytes.min(left.work)
+    }
     fn charge(
         &self,
         objects: u64,
@@ -126,7 +130,7 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
         ids: &[narrata_storage::ObjectDigest],
     ) -> Result<Vec<Option<std::sync::Arc<[u8]>>>, narrata_storage::StorageError> {
         self.charge(ids.len() as u64, 0, 0, ids.len() as u64)?;
-        let values = self.inner.get_objects(ids)?;
+        let values = self.inner.get_objects_bounded(ids, self.read_bytes())?;
         let bytes = values.iter().flatten().map(|b| b.len() as u64).sum();
         self.charge(0, bytes, 0, bytes)?;
         Ok(values)
@@ -137,9 +141,9 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
         limit: u32,
     ) -> Result<narrata_storage::ObjectPage, narrata_storage::StorageError> {
         self.charge(0, 0, 1, u64::from(limit))?;
-        let page = self
-            .inner
-            .scan_objects(after, limit.min(self.remaining.get().page_size))?;
+        let limit = limit.min(self.remaining.get().page_size);
+        narrata_storage::check_read_bytes(u64::from(limit) * 32, self.read_bytes())?;
+        let page = self.inner.scan_objects(after, limit)?;
         self.charge(
             0,
             page.digests.len() as u64 * 32,
@@ -154,7 +158,7 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
         key: &[u8],
     ) -> Result<Option<narrata_storage::KeyValue>, narrata_storage::StorageError> {
         self.charge(0, key.len() as u64, 0, 1)?;
-        let value = self.inner.read_key(space, key)?;
+        let value = self.inner.read_key_bounded(space, key, self.read_bytes())?;
         let bytes = value.as_ref().map_or(0, |v| v.value.len() as u64);
         self.charge(0, bytes, 0, bytes)?;
         Ok(value)
@@ -167,11 +171,12 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
         limit: u32,
     ) -> Result<narrata_storage::KeyPage, narrata_storage::StorageError> {
         self.charge(0, 0, 1, u64::from(limit))?;
-        let page = self.inner.scan_keys(
+        let page = self.inner.scan_keys_bounded(
             space,
             prefix,
             after,
             limit.min(self.remaining.get().page_size),
+            self.read_bytes(),
         )?;
         let bytes = page
             .entries
@@ -258,6 +263,23 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
                 if matches!(reference, Reference::Object { id, descriptor: false, .. } if *id == parent)
                 {
                     *reference = Reference::object(marker.id(), shallow::TRUNCATED_PARENT_KIND);
+                }
+            }
+        }
+        for reference in &references {
+            match reference {
+                Reference::Object { id, kind, .. } => {
+                    self.reader().require(*id, *kind)?;
+                }
+                Reference::Named { kind, name } => {
+                    let id = self
+                        .registry
+                        .resolve(&self.reader(), *kind, name)?
+                        .ok_or(HistoryError::Unresolved { kind: *kind })?;
+                    let object = self.reader().require(id, Some(*kind))?;
+                    if self.registry.name(&object).as_ref() != Some(name) {
+                        return Err(HistoryError::Unresolved { kind: *kind });
+                    }
                 }
             }
         }

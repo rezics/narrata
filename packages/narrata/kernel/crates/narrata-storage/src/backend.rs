@@ -27,6 +27,48 @@ pub trait StorageBackend {
             .flatten())
     }
 
+    /// Bounds payload materialization before reading. Legacy providers reserve their declared
+    /// worst case; providers with size metadata can check exact sizes without copying values.
+    fn get_objects_bounded(
+        &self,
+        digests: &[ObjectDigest],
+        max_bytes: u64,
+    ) -> Result<Vec<Option<Arc<[u8]>>>, StorageError> {
+        check_read_bytes(
+            (digests.len() as u64).saturating_mul(self.capabilities().limits.max_value_bytes),
+            max_bytes,
+        )?;
+        self.get_objects(digests)
+    }
+
+    fn read_key_bounded(
+        &self,
+        space: KeySpace,
+        key: &[u8],
+        max_bytes: u64,
+    ) -> Result<Option<KeyValue>, StorageError> {
+        check_read_bytes(self.capabilities().limits.max_value_bytes, max_bytes)?;
+        self.read_key(space, key)
+    }
+
+    /// Includes any value-bearing lookahead in the bound, even though it is not returned.
+    fn scan_keys_bounded(
+        &self,
+        space: KeySpace,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        limit: u32,
+        max_bytes: u64,
+    ) -> Result<KeyPage, StorageError> {
+        let limits = self.capabilities().limits;
+        check_read_bytes(
+            (u64::from(limit) + 1)
+                .saturating_mul(limits.max_key_bytes.saturating_add(limits.max_value_bytes)),
+            max_bytes,
+        )?;
+        self.scan_keys(space, prefix, after, limit)
+    }
+
     /// Lists object digests in ascending order after the `after` cursor, one bounded page at a
     /// time. Only GC sweeps and integrity checks need it.
     fn scan_objects(
@@ -50,4 +92,16 @@ pub trait StorageBackend {
     /// Applies `batch` entirely or not at all. On error, [`StorageError::outcome_unknown`]
     /// tells whether the batch may nevertheless have been applied.
     fn apply(&mut self, batch: &Batch) -> Result<Applied, StorageError>;
+}
+
+pub fn check_read_bytes(requested: u64, max: u64) -> Result<(), StorageError> {
+    if requested > max {
+        Err(StorageError::Limit(crate::LimitExceeded {
+            limit: crate::Limit::BatchBytes,
+            requested,
+            max,
+        }))
+    } else {
+        Ok(())
+    }
 }

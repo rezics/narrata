@@ -17,7 +17,7 @@ mod memory;
 pub mod testing;
 mod types;
 
-pub use backend::StorageBackend;
+pub use backend::{StorageBackend, check_read_bytes};
 pub use batch::{Applied, Batch, Expect, KeyAction, KeyOp};
 pub use capabilities::{Capabilities, Durability, Limits, WriteModel};
 pub use error::{Conflict, Limit, LimitExceeded, StorageError};

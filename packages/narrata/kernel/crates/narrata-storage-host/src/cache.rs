@@ -457,9 +457,27 @@ impl StorageBackend for CacheBackend {
         &self,
         digests: &[ObjectDigest],
     ) -> Result<Vec<Option<Arc<[u8]>>>, StorageError> {
+        self.get_objects_bounded(digests, u64::MAX)
+    }
+
+    fn get_objects_bounded(
+        &self,
+        digests: &[ObjectDigest],
+        max_bytes: u64,
+    ) -> Result<Vec<Option<Arc<[u8]>>>, StorageError> {
         self.limits.check(Limit::ReadItems, digests.len() as u64)?;
         let mut guard = self.cache();
         let cache = &mut *guard;
+        narrata_storage::check_read_bytes(
+            digests
+                .iter()
+                .filter_map(|id| match cache.objects.get(id.as_bytes()) {
+                    Some(Some(ObjectEntry::Bytes(b))) => Some(b.len() as u64),
+                    _ => None,
+                })
+                .sum(),
+            max_bytes,
+        )?;
         let mut found = Vec::with_capacity(digests.len());
         for digest in digests {
             match cache.objects.get(digest.as_bytes()) {
@@ -512,11 +530,26 @@ impl StorageBackend for CacheBackend {
     }
 
     fn read_key(&self, space: KeySpace, key: &[u8]) -> Result<Option<KeyValue>, StorageError> {
+        self.read_key_bounded(space, key, u64::MAX)
+    }
+
+    fn read_key_bounded(
+        &self,
+        space: KeySpace,
+        key: &[u8],
+        max_bytes: u64,
+    ) -> Result<Option<KeyValue>, StorageError> {
         self.limits.check(Limit::KeyBytes, key.len() as u64)?;
         let key = storage_key(space, key);
         let mut cache = self.cache();
         match cache.keys.get(&key) {
-            Some(value) => Ok(value.cloned()),
+            Some(value) => {
+                narrata_storage::check_read_bytes(
+                    value.map_or(0, |v| v.value.len() as u64),
+                    max_bytes,
+                )?;
+                Ok(value.cloned())
+            }
             None => {
                 cache.wanted.keys.insert(key);
                 Err(StorageError::NotLoaded)
@@ -530,6 +563,17 @@ impl StorageBackend for CacheBackend {
         prefix: &[u8],
         after: Option<&[u8]>,
         limit: u32,
+    ) -> Result<KeyPage, StorageError> {
+        self.scan_keys_bounded(space, prefix, after, limit, u64::MAX)
+    }
+
+    fn scan_keys_bounded(
+        &self,
+        space: KeySpace,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        limit: u32,
+        max_bytes: u64,
     ) -> Result<KeyPage, StorageError> {
         self.limits.check_key_scan(prefix, limit)?;
         let start = storage_key(space, prefix);
@@ -551,6 +595,14 @@ impl StorageBackend for CacheBackend {
             });
             return Err(StorageError::NotLoaded);
         }
+        narrata_storage::check_read_bytes(
+            walk.found
+                .iter()
+                .take(limit as usize)
+                .map(|(k, v)| (k.len() - 2 + v.value.len()) as u64)
+                .sum(),
+            max_bytes,
+        )?;
         let more = walk.found.len() == need;
         let entries = walk
             .found

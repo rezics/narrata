@@ -189,6 +189,92 @@ fn is_empty(connection: &Connection) -> Result<bool, StorageError> {
 }
 
 impl StorageBackend for SqliteBackend {
+    fn get_objects_bounded(
+        &self,
+        digests: &[ObjectDigest],
+        max_bytes: u64,
+    ) -> Result<Vec<Option<Arc<[u8]>>>, StorageError> {
+        self.limits.check(Limit::ReadItems, digests.len() as u64)?;
+        // Keep length inspection and payload reads on one SQLite snapshot. An oversized BLOB
+        // never appears in a SELECT result, including lookahead in scans.
+        let _snapshot = self.connection.unchecked_transaction().map_err(map_error)?;
+        let mut sizes = self
+            .connection
+            .prepare_cached("SELECT length(bytes) FROM objects WHERE digest = ?1")
+            .map_err(map_error)?;
+        let mut total = 0_u64;
+        for id in digests {
+            let size = sizes
+                .query_row([id.as_bytes().as_slice()], |r| r.get::<_, u64>(0))
+                .optional()
+                .map_err(map_error)?
+                .unwrap_or(0);
+            total = total.saturating_add(size);
+            narrata_storage::check_read_bytes(total, max_bytes)?;
+        }
+        self.get_objects(digests)
+    }
+
+    fn read_key_bounded(
+        &self,
+        space: KeySpace,
+        key: &[u8],
+        max_bytes: u64,
+    ) -> Result<Option<KeyValue>, StorageError> {
+        self.limits.check(Limit::KeyBytes, key.len() as u64)?;
+        let _snapshot = self.connection.unchecked_transaction().map_err(map_error)?;
+        let size = self
+            .connection
+            .prepare_cached("SELECT length(value) FROM keys WHERE space = ?1 AND key = ?2")
+            .map_err(map_error)?
+            .query_row(params![i64::from(space.get()), key], |r| r.get::<_, u64>(0))
+            .optional()
+            .map_err(map_error)?
+            .unwrap_or(0);
+        narrata_storage::check_read_bytes(size, max_bytes)?;
+        self.read_key(space, key)
+    }
+
+    fn scan_keys_bounded(
+        &self,
+        space: KeySpace,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        limit: u32,
+        max_bytes: u64,
+    ) -> Result<KeyPage, StorageError> {
+        self.limits.check_key_scan(prefix, limit)?;
+        let _snapshot = self.connection.unchecked_transaction().map_err(map_error)?;
+        let (lower, exclusive) = match after {
+            Some(after) if after >= prefix => (after, true),
+            _ => (prefix, false),
+        };
+        let upper = prefix_successor(prefix);
+        // The metadata query is an indexed bounded range, with no key/value BLOBs returned.
+        let size = self
+            .connection
+            .prepare_cached(
+                "SELECT coalesce(sum(size), 0) FROM (
+             SELECT length(key) + length(value) AS size FROM keys WHERE space = ?1
+             AND (key > ?2 OR (?3 = 0 AND key = ?2)) AND (?4 IS NULL OR key < ?4)
+             ORDER BY key LIMIT ?5)",
+            )
+            .map_err(map_error)?
+            .query_row(
+                params![
+                    i64::from(space.get()),
+                    lower,
+                    exclusive,
+                    upper,
+                    i64::from(limit) + 1
+                ],
+                |r| r.get::<_, u64>(0),
+            )
+            .map_err(map_error)?;
+        narrata_storage::check_read_bytes(size, max_bytes)?;
+        self.scan_keys(space, prefix, after, limit)
+    }
+
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             write_model: WriteModel::AtomicConcurrent,
