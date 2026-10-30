@@ -18,7 +18,7 @@
 ## 下一步
 
 1. M1 固定包的公开接口、本地与 CI 证据已就绪；保持宿主能力状态为“提出”，不声称 REZICS 上线。
-2. [visits/读者地图/SQL 宿主](tasks/G-037.md)在原 worktree 以 Codex/high 运行 attempt 6。候选提交 3024622、1af88cc、1f8f906、177439b、ca88d58 尚未合入；核心、迟到地图游标关联和 SQL 私有输入快照修复均已复审通过。先前 R1（26 浏览器）、Web、真实 PG（57 通过/1 个 PGlite 权限对应项跳过）、脚本 53 及文档通过；最终新增边界/渲染与包入口仍须检查，不据旧 gate 直接验收。
+2. [visits/读者地图/SQL 宿主](tasks/G-037.md)在原 worktree 以 Codex/high 运行 attempt 7（fresh CLI 上下文，同任务/分支，成果完整保留）。d0e487f 及此前七个候选提交尚未合入；核心、游标、SQL、HTTP 形状、长图、独立入口与预算均已源码复审接受，仅余下述坐标范围 P2。d0e487f 的完整 R1（26 浏览器）、Web（含独立 Node/Bun/Worker 安装）与真实 PG（61 通过/1 个 PGlite 权限对应项跳过）均通过；最终范围修复后仍须绑定受影响检查。
 3. 随后完成[存档维护/浅恢复](tasks/G-038.md)与[阅读器跨构件/确认组合](tasks/G-039.md)。浅历史必须保留精确当前页上下文或在移动根前拒绝；不能用迁移页伪造原页。跨版本时间线/checkout/确认 UI 必须实际可用，不能只凭脱离产品的控制器测试关闭。
 4. M2/M3 全项当前版本审计、固定交付证据和归位后才关闭本 Goal；Web VN 仍待启动，不占用其路径。
 
@@ -27,6 +27,8 @@ medium 子代理的范围审计在 .temp/stage-coverage-audit.md：剩余能力�
 high 的提交评审见 .temp/review-map-core-commit.md、review-map-sql-commit.md、review-map-package.md。原核心、SQL 数值截断与冷竞争缺口已修复；1f8f906 游标修复见 review-map-race-fix.md，ca88d58 私有查询快照及实际稀疏边回归见 review-map-sql-repair.md，均接受源码、仍需最终 PG/包检查绑定。177439b 新增公开迁移/浅历史/循环/提议探针已在 review-map-public-probes.md 复核。HTTP JSON 与长图修复仍未提交；其浏览器证据已覆盖 8 类无效响应、unknown/quota/conflict、账号/新旅程迟到和 800 节点视图，errors=[]；manager 已查看新桌面/390px 长图，圆直径 36px、文字框 21px，末节点可达且无页面横溢。证据在 worker 的 .temp/reader-map-evidence/，须绑定最终提交并复审。
 
 attempt 5 加入解码器后，作者图 bundle 为 271,057 raw，超原 260,000；schema 解引用/双重否定实验未解决边界问题。manager 在预算/解码测试结束且无重型检查时停止并完整保留工作，以 .temp/map-entry-boundary-resume.md 恢复 attempt 6：新增同包 /reader-map 与 /reader-map/react 直接可选入口，复用既有 DTO/校验/组件，移出作者图 barrel；旧作者图与 reader 上限不变，新 readerMap bundle 按实际依赖单独设预算并完整计入 aggregate，不漏计或藏入作者模块。移除仅为压旧 cap 引入的 RefParser/编译语义实验，沿用直接的 Ajv standalone 生成；README/工具链/独立安装和冷首屏边界同步验证。简报已记录该决定，不新增运行时或包。
+
+d0e487f 的 .temp/review-map-package-repair.md 接受上述边界和两项原 UI 修复；readermap 53,937/7,662 raw/gzip，作者图回到原 221,680/50,240，aggregate 646,035/137,677，所有旧上限保持原值且通过。剩余新 P2：schema 只有 format:int32、Ajv validateFormats:false，未显式限制坐标，1e308 可过校验并使 SVG 乘法溢出。manager 等待 R1/Web/PG 全部结束后停止 attempt 6，用 .temp/map-coordinate-range-resume.md high/fresh 恢复 attempt 7，清除旧中断继承的 missing-tool-output 上下文；补真实 i32 坐标边界、极端有限整数与 HTTP 恢复回归，不重设计已接受模块。最新已通过安装证据在 C:/Users/edge/AppData/Local/Temp/.temp/narrata-web-install-DVIiyR，最终归档前保留其产物/截图与最终对应版本。
 
 真实 PG 18.6、fsync/synchronous_commit on 的 100,000 选择点测量：44,083 行，装载 34.13 秒，精确重试 0.82 秒；source/SQL 页均不超过 256 行，10 个参数。19,103 个发布对象的独立载入/验证为 156.62 秒，不混作 SQL 装载耗时。原始计数、表/索引大小在 worker 的 .temp/postgresql/map-validation/scale-loading.json，临时库已停。authoring-only opt-level=z 与分模块压缩已在独立安装 gate 下通过预算（reader 1,694,481/439,038，authoring Wasm 2,664,007/684,148 raw/gzip）；新工具/构建设置已写工具链，仍须结合最终修复重测受影响包。online/index.ts 薄 exportSave 接缝已补精确认领，scope 检查通过。
 
