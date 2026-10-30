@@ -24,6 +24,8 @@
 
 medium 子代理的范围审计在 .temp/stage-coverage-audit.md：剩余能力都有上述任务或 manager 收敛归属；交接已明确 M1 快照导出/恢复与 M2 有界冷库导入导出、浅历史/GC 的边界，未缩小原 Goal。最终 M3 仍须用完成后的包、源码、CI 与桌面/移动端证据逐项证明；ADR 0022 的关系规模证据已有 100,000 选择点、44,083 行及 15,640,925-byte 分片生成读数，新 SQL loader 的真实 PostgreSQL 装载时间/体积需另行测量，不能沿用旧纯投影数据。
 
+地图核心独立评审确认两处 P2（.temp/review-map-core.md）：无正文选择节点覆盖跨单元起始转移，导致实际关系边丢失；重放前缺祖先/超预算导致空 segments，被地图误判为 artifact 不匹配而丢失 incomplete 信息。manager 已按程序停止 attempt 2，保留其全部绑定/SQL 未提交改动，再以原会话 high 启动 attempt 3；修复、两组回归及原完整交付/真实 PG 规模证据的说明在 .temp/map-review-resume.md。没有接受该核心为最终结果，也没有合入 main。
+
 ## 接续约束与主机
 
 维护者 2026-10-29 要求子代理/worker 使用 high 或更低；默认 high，机械性工作可更低，不恢复 xhigh。Claude 先有空刷新锁、后 API403；Codex 也曾因模型容量退出。manager 保留全部工作接手最后预算与验证，没有因此重做或降低验收。后续先验证可用引擎，不把一次观测超时当作任务退出。
