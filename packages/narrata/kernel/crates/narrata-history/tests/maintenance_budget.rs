@@ -69,6 +69,28 @@ fn bounded_scans_and_dry_run<F: Fixture>() {
     let fixture = F::new();
     let mut history = open(&fixture);
     chain(&mut history, "kept", &[1, 2, 3, 4]);
+    chain(&mut history, "discarded", &[5, 6]);
+    let discarded = history
+        .scan_refs(&narrata_history::RefScope::All, None, 100)
+        .unwrap()
+        .items
+        .into_iter()
+        .filter(|(key, _)| key.owner().as_str() == "discarded")
+        .map(|(key, value)| narrata_history::RefMutation {
+            key,
+            expected: Some(value.revision),
+            next: None,
+        })
+        .collect();
+    history
+        .write_atomic(
+            &narrata_history::Transaction {
+                refs: discarded,
+                ..Default::default()
+            },
+            |_| Ok(Vec::new()),
+        )
+        .unwrap();
     let before = fixture.backend().scan_objects(None, 1024).unwrap();
     for bound in [
         MaintenanceBudget {
@@ -85,6 +107,22 @@ fn bounded_scans_and_dry_run<F: Fixture>() {
         },
         MaintenanceBudget {
             work: 0,
+            ..budget()
+        },
+        MaintenanceBudget {
+            object_reads: 2,
+            ..budget()
+        },
+        MaintenanceBudget {
+            bytes: 128,
+            ..budget()
+        },
+        MaintenanceBudget {
+            pages: 2,
+            ..budget()
+        },
+        MaintenanceBudget {
+            work: 8,
             ..budget()
         },
     ] {
@@ -120,6 +158,6 @@ fn bounded_scans_and_dry_run<F: Fixture>() {
         .unwrap();
     assert!(report.dry_run);
     assert!(report.reachable > 0);
-    assert!(report.removed.is_empty());
+    assert!(!report.removed.is_empty());
     assert_eq!(fixture.backend().scan_objects(None, 1024).unwrap(), before);
 }
