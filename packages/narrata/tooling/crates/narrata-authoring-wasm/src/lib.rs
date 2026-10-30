@@ -10,6 +10,7 @@ pub mod core;
 pub mod evolution;
 mod evolution_binding;
 pub mod interface;
+pub mod maintenance;
 mod maps_binding;
 
 use narrata_authoring::{CheckedPublication, publication::publication_from_pack, validate_record};

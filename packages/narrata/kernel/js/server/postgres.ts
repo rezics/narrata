@@ -30,6 +30,12 @@ export interface LibraryQuota {
   keys: number;
 }
 
+export interface LibraryUsage {
+  readonly store: StoreState;
+  readonly used: Readonly<Record<keyof LibraryQuota, string>>;
+  readonly quota: Readonly<LibraryQuota>;
+}
+
 export class LibraryUnavailable extends Error { override name = "LibraryUnavailable"; }
 export class LibraryQuotaExceeded extends Error { override name = "LibraryQuotaExceeded"; }
 export class SqlStoreFormatError extends Error { override name = "SqlStoreFormatError"; }
@@ -174,7 +180,14 @@ export class PostgresStore implements CacheStore {
     return encodeFlushReply(reply);
   }
 
-  private async checkQuota(sql: SqlTransaction): Promise<void> {
+  /** Authorized, consistent usage snapshot. Cleanup is explicit and need not free space. */
+  async usage(): Promise<LibraryUsage> {
+    return this.database.transaction("REPEATABLE READ READ ONLY", async sql => ({
+      store: await this.state(sql, false), used: await this.totals(sql), quota: { ...this.quota },
+    }));
+  }
+
+  private async totals(sql: SqlTransaction): Promise<Record<keyof LibraryQuota, string>> {
     const { rows } = await sql.query(`SELECT
       (SELECT count(*) FROM narrata_objects WHERE library_id = $1) AS objects,
       (SELECT count(*) FROM narrata_keys WHERE library_id = $1) AS keys,
@@ -182,6 +195,11 @@ export class PostgresStore implements CacheStore {
         + (SELECT coalesce(sum(octet_length(key)::bigint + octet_length(value)), 0) FROM narrata_keys WHERE library_id = $1) AS bytes`, [this.id]);
     const usage = rows[0];
     if (rows.length !== 1 || usage === undefined) throw new SqlStoreFormatError("SQL returned no quota totals");
+    return { bytes: unsigned(usage.bytes).toString(), objects: unsigned(usage.objects).toString(), keys: unsigned(usage.keys).toString() };
+  }
+
+  private async checkQuota(sql: SqlTransaction): Promise<void> {
+    const usage = await this.totals(sql);
     for (const dimension of ["bytes", "objects", "keys"] as const) {
       if (unsigned(usage[dimension]) > BigInt(this.quota[dimension])) {
         throw new LibraryQuotaExceeded(`library ${dimension} quota exceeded`);

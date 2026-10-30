@@ -18,7 +18,7 @@ const group = path => modulePath(path).split("/")[0];
 const nativeModules = new Set(["content/native.js", "testing/native-document.js"]);
 const isNativeContent = path => nativeModules.has(modulePath(path));
 // Authoring and server entries, their Wasm glue, generated types and sample; never on a reader route.
-const isAuthoring = path => ["authoring", "server", "authoring-wasm"].includes(group(path)) || ["generated/authoring.js", "testing/authoring.js"].includes(modulePath(path));
+const isAuthoring = path => ["authoring", "maintenance", "server", "authoring-wasm"].includes(group(path)) || ["generated/authoring.js", "testing/authoring.js"].includes(modulePath(path));
 // The raw dist/wasm module keeps legacy publishGraph; no package entry imports it.
 const isCompat = path => group(path) === "wasm";
 // Measure both independent optional capabilities with identical bundling settings. Every

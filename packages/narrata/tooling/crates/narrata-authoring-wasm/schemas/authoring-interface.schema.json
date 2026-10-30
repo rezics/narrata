@@ -7,6 +7,9 @@
     "authored_id": {
       "$ref": "#/$defs/AuthoredId"
     },
+    "checked_save": {
+      "$ref": "#/$defs/CheckedSave"
+    },
     "comparison_budget": {
       "$ref": "#/$defs/ComparisonBudgetV1"
     },
@@ -22,8 +25,20 @@
     "evolution_planning": {
       "$ref": "#/$defs/EvolutionPlanningV1"
     },
+    "import_selection": {
+      "$ref": "#/$defs/ImportSelection"
+    },
     "lock": {
       "$ref": "#/$defs/CompositionLock"
+    },
+    "maintenance_limits": {
+      "$ref": "#/$defs/MaintenanceLimits"
+    },
+    "maintenance_request": {
+      "$ref": "#/$defs/MaintenanceRequest"
+    },
+    "maintenance_result": {
+      "$ref": "#/$defs/MaintenanceResult"
     },
     "manifest": {
       "$ref": "#/$defs/ProjectManifest"
@@ -78,6 +93,11 @@
     }
   },
   "required": [
+    "maintenance_request",
+    "maintenance_result",
+    "maintenance_limits",
+    "import_selection",
+    "checked_save",
     "visits",
     "reader_map",
     "relation_index",
@@ -571,6 +591,21 @@
         "to"
       ]
     },
+    "CheckedSave": {
+      "type": "object",
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        }
+      },
+      "required": [
+        "artifact",
+        "cursor"
+      ]
+    },
     "ChoicePointId": {
       "type": "string",
       "pattern": "^choice-point:[0-9a-f]{32}$"
@@ -634,6 +669,28 @@
     "ClusterId": {
       "type": "string",
       "pattern": "^cluster:[0-9a-f]{32}$"
+    },
+    "CollectedKind": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "objects": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "objects",
+        "bytes"
+      ]
     },
     "CommitId": {
       "type": "string",
@@ -1266,6 +1323,10 @@
         }
       ]
     },
+    "ExecutionId": {
+      "type": "string",
+      "pattern": "^execution:[0-9a-f]{32}$"
+    },
     "Expr": {
       "oneOf": [
         {
@@ -1491,6 +1552,53 @@
         "port"
       ]
     },
+    "ImportSelection": {
+      "type": "object",
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "execution": {
+          "$ref": "#/$defs/ExecutionId"
+        },
+        "expected_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "now": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "execution",
+        "artifact",
+        "cursor",
+        "now"
+      ]
+    },
+    "IntegrityView": {
+      "type": "object",
+      "properties": {
+        "diagnostic": {
+          "type": "string"
+        },
+        "object": {
+          "$ref": "#/$defs/ObjectId"
+        }
+      },
+      "required": [
+        "object",
+        "diagnostic"
+      ]
+    },
     "LabelObject": {
       "type": "object",
       "properties": {
@@ -1612,6 +1720,306 @@
         "graph",
         "node",
         "instance"
+      ]
+    },
+    "MaintenanceLimits": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "load_bytes": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "loads": {
+          "description": "Host load calls and encoded reply bytes, including retries on a cold cache.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "object_reads": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "pages": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "work": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "object_reads",
+        "bytes",
+        "pages",
+        "work",
+        "page_size",
+        "loads",
+        "load_bytes"
+      ]
+    },
+    "MaintenanceRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "after": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RootKey"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "roots"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "after": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PinCursor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "pins"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "now": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "limit",
+            "now"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "delete_roots"
+            },
+            "roots": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ObservedRoot"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "roots"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "integrity"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "dry_run": {
+              "type": "boolean"
+            },
+            "grace_seconds": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "collect"
+            },
+            "now": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "now",
+            "grace_seconds",
+            "dry_run"
+          ]
+        }
+      ]
+    },
+    "MaintenanceResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ObservedRoot"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "roots"
+            },
+            "more": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "items",
+            "more"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PinView"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "pins"
+            },
+            "more": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "items",
+            "more"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "deleted"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "issues": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/IntegrityView"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "integrity"
+            }
+          },
+          "required": [
+            "kind",
+            "issues"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "dry_run": {
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "const": "collected"
+            },
+            "reachable": {
+              "type": "string"
+            },
+            "removed": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CollectedKind"
+              }
+            },
+            "retained": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CollectedKind"
+              }
+            },
+            "roots": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "roots",
+            "reachable",
+            "retained",
+            "removed",
+            "dry_run"
+          ]
+        }
       ]
     },
     "MigrationId": {
@@ -1760,6 +2168,26 @@
         "relation_part",
         "summary",
         "tombstones"
+      ]
+    },
+    "ObservedRoot": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "key": {
+          "$ref": "#/$defs/RootKey"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "revision",
+        "commit"
       ]
     },
     "OptionId": {
@@ -2246,6 +2674,47 @@
             "reason"
           ]
         }
+      ]
+    },
+    "PinCursor": {
+      "type": "object",
+      "properties": {
+        "object": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "owner": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "object"
+      ]
+    },
+    "PinView": {
+      "type": "object",
+      "properties": {
+        "expired": {
+          "type": "boolean"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "object": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "owner": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner",
+        "object",
+        "expired"
       ]
     },
     "PlanV1": {
@@ -3428,6 +3897,30 @@
         "title",
         "body",
         "reply"
+      ]
+    },
+    "RootKey": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "description": "Existing RefNamespace code: save=0, branch=1, bookmark=2, active=3, temporary=4.",
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "owner": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "owner",
+        "name"
       ]
     },
     "Scalar": {

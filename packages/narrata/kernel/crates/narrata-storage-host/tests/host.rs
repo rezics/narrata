@@ -108,6 +108,51 @@ fn aggregate_flush_limits_reject_before_changing_the_cache() {
 }
 
 #[test]
+fn aggregate_flush_bytes_and_combined_loads_include_all_batches_and_ranges() {
+    let host = MemoryHost::new(id(1));
+    let cache = CacheBackend::new();
+    answer(&cache, &host, |c| c.read_key(SPACE, b"init"));
+    let shared: std::sync::Arc<[u8]> = vec![0; 16 * 1024 * 1024].into();
+    let mut batch = Batch::new();
+    for n in 0..4 {
+        batch = batch.put_object(digest(n), shared.clone());
+    }
+    cache.share().apply(&batch).unwrap();
+    assert!(matches!(
+        cache
+            .share()
+            .apply(&Batch::new().put(SPACE, b"extra", b"value", Expect::Absent)),
+        Err(StorageError::Limit(_))
+    ));
+    assert_eq!(cache.unconfirmed().unwrap().batches.len(), 1);
+    assert!(cache.read_key(SPACE, b"extra").unwrap().is_none());
+
+    let cold = CacheBackend::new();
+    assert!(cold.read_key(SPACE, b"a").is_err());
+    assert!(cold.get_objects(&[digest(1), digest(2)]).is_err());
+    assert!(cold.scan_keys(SPACE, &[], None, 1024).is_err());
+    assert!(cold.scan_objects(None, 1024).is_err());
+    let request = cold.take_request().unwrap();
+    let value_items = request.keys.len()
+        + request.objects.len()
+        + request
+            .key_ranges
+            .iter()
+            .map(|r| r.limit as usize)
+            .sum::<usize>();
+    assert_eq!(value_items, 4);
+    assert_eq!(
+        value_items
+            + request
+                .object_ranges
+                .iter()
+                .map(|r| r.limit as usize)
+                .sum::<usize>(),
+        1024
+    );
+}
+
+#[test]
 fn direct_flush_object_puts_keep_existing_bytes_until_deleted() {
     let host = MemoryHost::new(id(1));
     let object = digest(1);

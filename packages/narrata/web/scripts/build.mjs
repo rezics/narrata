@@ -15,7 +15,7 @@ const dist = resolve(here, "dist");
 // Clear only this package's output and this worktree's dedicated staging directory.
 if (!stage.startsWith(resolve(root, ".temp") + sep) || !dist.startsWith(here + sep)) throw new Error("Build output escaped its worktree");
 rmSync(stage, { recursive: true, force: true });
-const cargo = (...args) => execFileSync("cargo", args, { cwd: root, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: resolve(root, "target"), ...(args.includes("narrata-authoring-wasm") && args.includes("build") ? { CARGO_PROFILE_WASM_OPT_LEVEL: "z" } : {}) } });
+const cargo = (...args) => execFileSync("cargo", args, { cwd: root, stdio: "inherit", env: { ...process.env, CARGO_TARGET_DIR: resolve(root, "target"), ...(args.includes("build") ? { CARGO_PROFILE_WASM_OPT_LEVEL: "z" } : {}) } });
 const cargoVersion = readFileSync(resolve(root, "Cargo.toml"), "utf8").match(/\[workspace.package\]\s+version = "([^"]+)"/)?.[1];
 if (JSON.parse(readFileSync(resolve(here, "package.json"))).version !== cargoVersion) throw new Error("npm and Cargo workspace versions differ");
 if (!check) {
@@ -94,7 +94,7 @@ if (!check) {
   cpSync(resolve(root, "packages/narrata/tooling/crates/narrata-authoring/sql/relations-v1.sql"), resolve(dist, "server/relations-v1.sql"));
   // Keep the expanded authoring/server capabilities inside their existing JS budget.
   // Per-module minification preserves ESM boundaries and package-relative Wasm URLs.
-  for (const directory of ["authoring", "server", "authoring-wasm"]) {
+  for (const directory of ["authoring", "maintenance", "storage", "server", "authoring-wasm"]) {
     for (const name of readdirSync(resolve(dist, directory)).filter(name => name.endsWith(".js"))) {
       const path = resolve(dist, directory, name);
       const result = await minify(path, readFileSync(path, "utf8"), { module: true });

@@ -49,6 +49,49 @@ only after the storage host persists and confirms their batches. A failed write 
 use `reload()` to discard unconfirmed changes before continuing. Another writer's newer state
 is rejected rather than overwritten. Without `storage`, the session stays in memory.
 
+## Save maintenance
+
+Load maintenance from the authoring entry on demand (`server` in Node/Bun). Supply a host-authorized
+library transport and its immutable StoreId, then register the exact trusted publications needed
+by the save, including historical artifacts after migrations.
+
+```ts
+const { loadAuthoring } = await import("@rezics/narrata/authoring");
+const api = await loadAuthoring();
+const maintenance = api.createMaintenance({ storage: library, storeId: libraryId });
+try {
+  await maintenance.registerPublication(publication);
+  const checked = await maintenance.inspectSave(checkpointBytes); // also reads legacy JSON
+  await maintenance.importSave(checkpointBytes, {
+    execution: newExecution, ...checked, expected_revision: null, now: trustedUnixSeconds,
+  });
+  const shallow = await maintenance.exportSave({ execution: newExecution, ...checked, ancestors: 0 });
+} finally { await maintenance.close(); }
+```
+
+`ancestors` is a minimum: shallow export retains the checked context needed for the exact current
+page, including local replies and call arguments. Inadequate older bundles fail with
+`history_truncated` before import moves a durable root. Full export/replay still refuse a genuinely
+truncated path. Existing `Book.exportSave()` and `Book.restore()` retain their save transports.
+
+`run({ kind: "roots", after: null, limit: 256 })` and `pins` return bounded pages; continue using the
+last item's key or owner/object pair when `more` is true. Root namespace codes distinguish saves,
+branches, bookmarks, active cursors and temporary roots. Deleting selected roots requires their
+observed decimal revision and commit via `delete_roots`; a stale selection must be read again.
+`integrity` is read-only. `collect` requires explicit `now`, `grace_seconds` and `dry_run`; its
+`removed` amounts are candidates in dry-run and reclaimed amounts after a confirmed sweep.
+
+Limits bound object reads, bytes, scan pages, work and cumulative cold-cache loads, including retries.
+Collection rejects a sweep that cannot fit one atomic flush. Incomplete or invalid scans never
+authorize collection. Quota rejection preserves durable progress: select roots
+to delete, inspect a dry-run, collect explicitly, then retry the import. Collection may free nothing.
+In Node/Bun, `openLibraryMaintenance(authorizedPostgresStore)` maps definite quota rejection to
+`WriteRejected("quota")`; `PostgresStore.usage()` returns consistent usage and configured quotas.
+Unknown writes pause the handle; `retryPending()` resends the original bytes, after which the host
+re-reads roots to establish the outcome. Pass the existing `AuthenticatedLibrary` as `storage` to
+inherit account closure and rejection of late replies. With a plain authorized transport, close
+the old maintenance handle on account switch or library removal.
+
 ## Authenticated online journeys
 
 Use `createOnlineSession` for server-backed saves. Supply a new `AuthenticatedLibrary` for each

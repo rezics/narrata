@@ -23,10 +23,7 @@
 `narrata-storage-sqlite` 按行读写；两者都通过 `testing` feature 中的一致性套件，以后的后端
 也用这套件验收。
 
-契约之上是 kernel 的历史层 `packages/narrata/kernel/crates/narrata-history`：受检对象、Ref、Pin、
-保留与 GC、完整性扫描、Checkpoint Bundle，以及领域注册的通用提交与会话 API，每个领域只需实现
-`Domain`。Stage 1–5 的效果账本、目录、复合存档与迁移由 `narrata_store::Store<B>` 作为一个
-注册方实现。两层的边界、种类分配与恢复的信任边界见
+两层的边界、种类分配与恢复的信任边界见
 [ADR 0015](../adr/0015-kernel-history-layer.md)；键布局、校验边界与 GC 栅栏见
 [ADR 0014](../adr/0014-save-engine-key-layout.md)。
 
@@ -37,7 +34,7 @@
 | 测试与 Wasm 内临时会话 | 内存 | 行为参考 |
 | CLI、调试、桌面工具 | SQLite | 按行读写；schema v2 旧库用 `narrata store migrate-v2` 显式迁移 |
 | 浏览器 | IndexedDB，经 `narrata-storage-host` 的缓存后端与 `packages/narrata/kernel/js`（[ADR 0017](../adr/0017-browser-storage-host-cache.md)） | 按需读取、先落盘后发布、多标签页冲突检测；浏览器会整源驱逐存储，Safari 删除 7 天无交互的脚本存储：申请持久化并提供导出 |
-| 本地游戏 | 存档字节 | 引擎导出 Checkpoint Bundle 字节（可选浅存档，只带最近 N 个祖先，[ADR 0019](../adr/0019-shallow-history-bundles.md)），宿主写入自己的存档系统；导入时引擎重新校验 |
+| 本地游戏 | 存档字节 | 宿主保存完整或浅 Checkpoint Bundle；节点浅导出把 N 作为下限，另保留重建当前页面所需的上下文（[ADR 0019](../adr/0019-shallow-history-bundles.md)） |
 | 网站登录用户 | 宿主服务器上的契约实现 | 每个"用户 × 作品"一个库，浏览器经批次协议增量同步；Narrata 不连接该数据库，结构变化由 Narrata 逐库迁移（[决定 15](../product/decisions.md#15-服务器存档实现同一个存储契约)、[ADR 0021](../adr/0021-server-save-storage.md)） |
 
 JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
@@ -55,8 +52,14 @@ JSON 只作为导出与调试格式，不作为可并发写入的存档后端。
 [Web 包](../../packages/narrata/web/README.md#authenticated-online-journeys)；状态与受检定位边界由代码和测试表达。
 正文及选项标签仍由内容方解析，不进入会话。
 
-## 当前缺口
+## 保留策略由宿主选择
 
-- 浅存档在 Wasm 中的导出、节点栈的重新发布迁移由 Goal
-  `web-and-rezics` 实施。
-- FFI 宿主仍用默认的内存后端加存档字节；Rust 宿主可以给协议引擎注入任意后端。
+库配额、可保留根数、grace、可信时钟与操作授权来自宿主。维护入口及句柄释放示例见
+[Web 包](../../packages/narrata/web/README.md#save-maintenance)；参数、结果、受检边界与预算由类型和测试表达。
+分支与命名存档代表读者明确保留的路线，达到配额不能成为自动删除它们的理由。宿主先展示可删除的根、
+读取新修订号，在读者选择后 CAS 删除，再展示 dry-run 与执行 GC；全部对象仍被其他根保活时可能没有空间可回收。
+配额或导入失败后保留原库，允许重新打开、清理后重试；未确认的写入不能宣称保存成功。
+
+浅导出用于搬运一个选定提交，不能把它重新导入原库当作原地压缩。在线浅压缩、影子库构建与 CAS 切换、
+布局迁移和后台调度仍按 [ADR 0021](../adr/0021-server-save-storage.md) 推迟。宿主不得把有限扫描当作完整检查，
+也不能用 SQL 重新解释 Narrata 对象图。

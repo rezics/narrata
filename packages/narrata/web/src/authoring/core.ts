@@ -8,6 +8,8 @@ import type {
   RelationIndex, RelationKind, RelationPart, RelationRow, AuthorRelationQuery, AuthorRelationPage,
 } from "../generated/authoring.js";
 import { Evolution, EvolutionPlan, planEvolution, readEvolution } from "./evolution.js";
+import { Maintenance, type MaintenanceOptions } from "../maintenance/index.js";
+export * from "../maintenance/index.js";
 export * from "./evolution.js";
 export * from "./impact.js";
 export * from "./evolution-controller.js";
@@ -281,6 +283,7 @@ export interface Authoring {
   readEvolution: typeof readEvolution;
   /** A separate assessment/application context. Only register trusted publications. */
   createEvolution(): Evolution;
+  createMaintenance(options: MaintenanceOptions): Maintenance;
   /** Checks one record's encoding, fields and independently decidable constraints. */
   validateRecord(record: RecordInput): RecordCheck;
   createDrafts(): Drafts;
@@ -297,6 +300,7 @@ const authoring: Authoring = {
   planEvolution,
   readEvolution,
   createEvolution: () => new Evolution(),
+  createMaintenance: options => new Maintenance(options),
   validateRecord(record) {
     const result = records(rawValidateRecord(recordBytes(record)));
     const checked = result.records[0];

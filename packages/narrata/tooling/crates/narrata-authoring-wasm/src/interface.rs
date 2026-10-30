@@ -81,6 +81,11 @@ pub struct MintedIds {
 /// Every exchanged shape, so one generated declaration file shares its definitions.
 #[derive(JsonSchema)]
 pub struct AuthoringInterface {
+    pub maintenance_request: crate::maintenance::MaintenanceRequest,
+    pub maintenance_result: crate::maintenance::MaintenanceResult,
+    pub maintenance_limits: crate::maintenance::MaintenanceLimits,
+    pub import_selection: crate::maintenance::ImportSelection,
+    pub checked_save: crate::maintenance::CheckedSave,
     pub visits: narrata_nodes::history::visits::VisitReportV1,
     pub reader_map: narrata_authoring::maps::ReaderMapV1,
     pub relation_index: narrata_authoring::relations::RelationIndex,

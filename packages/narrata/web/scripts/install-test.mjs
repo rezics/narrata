@@ -39,6 +39,7 @@ for (const [kind, path] of [["reader", "dist/reader-wasm/narrata_nodes_wasm_bg.w
 const publicDirectory = join(directory, "public");
 mkdirSync(join(publicDirectory, "objects"), { recursive: true });
 writeFileSync(join(publicDirectory, "manifest.cbor"), parts.manifest);
+writeFileSync(join(publicDirectory, "story.narpack"), demoPack);
 for (const [id, bytes] of parts.objects) writeFileSync(join(publicDirectory, "objects", `${id.slice(7)}.cbor`), bytes);
 writeFileSync(join(directory, "objects.json"), JSON.stringify(Object.fromEntries([...parts.objects].map(([id, bytes]) => [id, [...bytes]]))));
 writeFileSync(join(directory, "manifest.cbor"), parts.manifest);
@@ -144,11 +145,24 @@ execFileSync("bun", [join(directory, "node.mjs"), "default"], { cwd: directory, 
 execFileSync("bun", [join(directory, "authoring.mjs"), "default"], { cwd: directory, stdio: "inherit" });
 
 npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "react@19.2.8", "react-dom@19.2.8", "@types/react@^19.0.0", "@types/react-dom@^19.0.0", `vitest@${packageMetadata.devDependencies.vitest}`, `fake-indexeddb@${packageMetadata.devDependencies["fake-indexeddb"]}`);
+cpSync(resolve(here,"scripts/install/maintenance.mjs"),join(directory,"maintenance.mjs"));
+writeFileSync(join(directory,"maintenance-node.mjs"), `
+import "fake-indexeddb/auto";
+import { readFile, writeFile } from "node:fs/promises";
+import { loadAuthoring } from "@rezics/narrata/server";
+import { verifyMaintenance } from "./maintenance.mjs";
+const evidence = await verifyMaintenance(await loadAuthoring(), new Uint8Array(await readFile(new URL("./public/story.narpack",import.meta.url))));
+await writeFile(new URL("./maintenance-" + (globalThis.Bun ? "bun" : "node") + ".json",import.meta.url),JSON.stringify(evidence,null,2));
+console.log("Installed maintenance",evidence);
+`);
+execFileSync(process.execPath,[join(directory,"maintenance-node.mjs")],{cwd:directory,stdio:"inherit"});
+execFileSync("bun",[join(directory,"maintenance-node.mjs")],{cwd:directory,stdio:"inherit"});
 // The fault matrix imports only the unpacked public entries, never workspace implementations.
 cpSync(resolve(here, "test/online.test.ts"), join(directory, "online.test.ts"));
+cpSync(resolve(here, "test/maintenance.test.ts"), join(directory, "maintenance.test.ts"));
 writeFileSync(join(directory, "story.narpack"), demoPack);
 writeFileSync(join(directory, "fixture.ts"), readFileSync(resolve(here, "test/fixture.ts"), "utf8").replace("../../../../products/gamebook-demo/story.narpack", "story.narpack"));
-execFileSync(process.execPath, [join(directory, "node_modules/vitest/vitest.mjs"), "run", "online.test.ts"], { cwd: directory, stdio: "inherit" });
+execFileSync(process.execPath, [join(directory, "node_modules/vitest/vitest.mjs"), "run", "online.test.ts", "maintenance.test.ts"], { cwd: directory, stdio: "inherit" });
 cpSync(resolve(here, "test/reader-types.tsx"), join(directory, "reader-types.tsx"));
 cpSync(resolve(here, "test/graph-types.tsx"), join(directory, "graph-types.tsx"));
 // Run the reference host unchanged against the unpacked public tarball.
@@ -203,6 +217,10 @@ window.ready = new URLSearchParams(location.search).has("reference") ? (async ()
     firstScreenRequests = firstScreenUrls.length;
   } });
   window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), firstScreen: () => firstScreenRequests, firstScreenUrls: () => firstScreenUrls,
+    maintenance: async () => {
+      const [{loadAuthoring},{verifyMaintenance}] = await Promise.all([import("@rezics/narrata/authoring"),import("./maintenance.mjs")]);
+      return verifyMaintenance(await loadAuthoring(),await bytes("/story.narpack"));
+    },
     failContentOnce: async () => { failContent = true; const failed = await controller.refresh(); const phase = controller.getSnapshot().phase; const retried = await controller.retry(); return { failed, phase, retried, after: controller.getSnapshot().phase }; },
     author: () => new Promise((done, fail) => {
       const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
@@ -306,6 +324,8 @@ try {
   const authored = await page.evaluate(() => window.installed.author());
   assert.equal(authored.firstScreen, 1, "Published A's first screen fetches only the entry chunk");
   assert.ok(served.includes("authoring") && !served.includes("compat"), "The Worker loads the authoring Wasm on demand; nothing loads the compatibility module");
+  const maintenance = await page.evaluate(() => window.installed.maintenance());
+  writeFileSync(join(directory,"maintenance-browser.json"),JSON.stringify(maintenance,null,2));
   assert.deepEqual(errors, []);
   writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored }, null, 2));
   await page.screenshot({ path: join(directory, "desktop-reader.png"), fullPage: true });

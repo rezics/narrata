@@ -1,6 +1,8 @@
 /* Generated from Rust authoring interface JSON Schema. Run task web:build. */
 
 export type AuthoredId = string;
+export type ArtifactId = string;
+export type CommitId = string;
 export type ApplyV1 =
   | {
       kind: "migrated";
@@ -20,9 +22,7 @@ export type ApplyV1 =
       diagnostic: Diagnostic2;
       kind: "failed";
     };
-export type CommitId = string;
 export type ExternalEffectsV1 = "not_applicable";
-export type ArtifactId = string;
 export type NodeId = string;
 /**
  * This interface was referenced by `undefined`'s JSON-Schema definition
@@ -99,6 +99,58 @@ export type EvolutionPlanningV1 =
       descriptor: EvolutionDescriptorV1;
       kind: "descriptor";
       migration_id: MigrationId;
+    };
+export type ExecutionId = string;
+export type MaintenanceRequest =
+  | {
+      after?: RootKey | null;
+      kind: "roots";
+      limit: number;
+    }
+  | {
+      after?: PinCursor | null;
+      kind: "pins";
+      limit: number;
+      now: number;
+    }
+  | {
+      kind: "delete_roots";
+      roots: ObservedRoot[];
+    }
+  | {
+      kind: "integrity";
+    }
+  | {
+      dry_run: boolean;
+      grace_seconds: number;
+      kind: "collect";
+      now: number;
+    };
+export type MaintenanceResult =
+  | {
+      items: ObservedRoot[];
+      kind: "roots";
+      more: boolean;
+    }
+  | {
+      items: PinView[];
+      kind: "pins";
+      more: boolean;
+    }
+  | {
+      kind: "deleted";
+    }
+  | {
+      issues: IntegrityView[];
+      kind: "integrity";
+    }
+  | {
+      dry_run: boolean;
+      kind: "collected";
+      reachable: string;
+      removed: CollectedKind[];
+      retained: CollectedKind[];
+      roots: string;
     };
 export type R1ArtifactId = string;
 /**
@@ -378,12 +430,17 @@ export type Role = "title" | "body" | "reply";
  */
 export interface AuthoringInterface {
   authored_id: AuthoredId;
+  checked_save: CheckedSave;
   comparison_budget: ComparisonBudgetV1;
   evolution_apply: ApplyV1;
   evolution_assessment: AssessmentV1;
   evolution_declarations: RecoveryDeclarationsV1;
   evolution_planning: EvolutionPlanningV1;
+  import_selection: ImportSelection;
   lock: CompositionLock;
+  maintenance_limits: MaintenanceLimits;
+  maintenance_request: MaintenanceRequest;
+  maintenance_result: MaintenanceResult;
   manifest: ProjectManifest;
   minted_ids: MintedIds;
   object_reference: ObjectReference;
@@ -401,6 +458,10 @@ export interface AuthoringInterface {
   relation_part: RelationPart;
   relation_query: AuthorRelationQuery;
   visits: VisitReportV1;
+}
+export interface CheckedSave {
+  artifact: ArtifactId;
+  cursor: CommitId;
 }
 /**
  * Per-assessment limits, also bound to the confirmation in this driver. Values may only
@@ -497,6 +558,13 @@ export interface EvolutionDescriptorV1 {
   recoveries: Recovery[];
   to_artifact: ArtifactId;
 }
+export interface ImportSelection {
+  artifact: ArtifactId;
+  cursor: CommitId;
+  execution: ExecutionId;
+  expected_revision?: string | null;
+  now: number;
+}
 /**
  * Written next to the project manifest as `project.lock.json`.
  */
@@ -517,6 +585,50 @@ export interface PackageLock {
   digest: string;
   id: string;
   version: string;
+}
+export interface MaintenanceLimits {
+  bytes: number;
+  load_bytes: number;
+  /**
+   * Host load calls and encoded reply bytes, including retries on a cold cache.
+   */
+  loads: number;
+  object_reads: number;
+  page_size: number;
+  pages: number;
+  work: number;
+}
+export interface RootKey {
+  name: string;
+  /**
+   * Existing RefNamespace code: save=0, branch=1, bookmark=2, active=3, temporary=4.
+   */
+  namespace: number;
+  owner: string;
+}
+export interface PinCursor {
+  object: ObjectId;
+  owner: string;
+}
+export interface ObservedRoot {
+  commit: CommitId;
+  key: RootKey;
+  revision: string;
+}
+export interface PinView {
+  expired: boolean;
+  expires_at?: string | null;
+  object: ObjectId;
+  owner: string;
+}
+export interface IntegrityView {
+  diagnostic: string;
+  object: ObjectId;
+}
+export interface CollectedKind {
+  bytes: string;
+  kind: number;
+  objects: string;
 }
 /**
  * Resolved by tooling, never by the deterministic runtime.

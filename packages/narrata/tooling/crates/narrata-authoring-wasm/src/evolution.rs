@@ -265,30 +265,7 @@ fn shallow<B: narrata_storage::StorageBackend>(
     session: &Session<B>,
     ancestors: u32,
 ) -> Result<Vec<u8>> {
-    let root = narrata_history::ObjectId::from_bytes(*session.cursor()?.as_bytes());
-    let bundle = session
-        .history()
-        .export_shallow(root, u64::from(ancestors), &Default::default())
-        .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
-    let total = bundle
-        .manifest
-        .checkpoint
-        .objects
-        .iter()
-        .fold(0_u64, |total, object| total.saturating_add(object.bytes))
-        .saturating_add(bundle.manifest.encode().len() as u64 + 80)
-        .saturating_add(bundle.manifest.checkpoint.objects.len() as u64 * 44);
-    // Match the existing node save transport's 64 MiB hex limit before allocation.
-    if total > 32 * 1024 * 1024 {
-        return Err(Error::new(
-            "limit",
-            "checkpoint",
-            "checkpoint exceeds 64 MiB of hex",
-        ));
-    }
-    bundle
-        .to_bytes()
-        .map_err(|e| Error::new("save", "checkpoint", e.to_string()))
+    session.export_shallow(ancestors)
 }
 
 fn unavailable(error: Error) -> AssessmentV1 {

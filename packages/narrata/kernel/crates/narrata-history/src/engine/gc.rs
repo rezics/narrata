@@ -57,6 +57,12 @@ impl<B> MaintenanceBackend<B> {
     pub fn into_inner(self) -> B {
         self.inner
     }
+    /// Charge checked input preparation that happens outside storage reads. The caller
+    /// bounds decoding first; retries can reuse that immutable checked input.
+    pub fn account_input(&self, objects: u64, bytes: u64) -> Result<(), HistoryError> {
+        self.charge(objects, bytes, 0, objects.saturating_add(1))
+            .map_err(HistoryError::from)
+    }
     fn charge(
         &self,
         objects: u64,
