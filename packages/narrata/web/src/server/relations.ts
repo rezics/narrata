@@ -6,6 +6,8 @@ import { loadRelations, queryRelations, readReaderRelations } from "./relation-d
 import type { TransactionalSql } from "./postgres.js";
 export type { SqlParameter, SqlTransaction, TransactionalSql } from "./postgres.js";
 export { RelationStoreError } from "./relation-driver.js";
+/** Read this package asset with the host's filesystem API, then install it explicitly. */
+export const referenceRelationsSql = new URL("./relations-v1.sql", import.meta.url);
 
 /** The application installs relations-v1.sql, supplies authorized connections, and decides
  * which callers may use complete author queries or visits-constrained reader queries. */

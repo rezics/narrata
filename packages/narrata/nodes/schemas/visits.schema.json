@@ -355,6 +355,7 @@
           "$ref": "#/$defs/OptionId"
         }
       },
+      "additionalProperties": false,
       "required": [
         "option",
         "enabled"
@@ -373,6 +374,7 @@
               "const": "object"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
             "id"
@@ -389,6 +391,7 @@
               "const": "artifact"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
             "at"
@@ -405,6 +408,7 @@
               "const": "descriptor"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
             "at"
@@ -418,6 +422,7 @@
               "const": "limit"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind"
           ]

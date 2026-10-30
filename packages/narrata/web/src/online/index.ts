@@ -123,9 +123,15 @@ export class OnlineSession {
   }
   /** Exports only confirmed progress for host tools such as a server-generated reader map. */
   exportSave(): Promise<string> {
+    return this.exportConfirmedSave().then(value => value.save);
+  }
+  /** Identity and checkpoint share one queued read, for checking external responses. */
+  exportConfirmedSave(): Promise<{ readonly save: string; readonly artifactId: string; readonly cursor: CommitId }> {
     return this.enqueue(async () => {
       if (this.snapshot.status !== "saved") throw new Error("Resolve the online save before exporting.");
-      return this.checked(this.opened().exportSave());
+      const save = await this.checked(this.opened().exportSave());
+      const view = (await this.checked(this.opened().inspect())).view;
+      return { save, artifactId: view.artifact_id, cursor: view.cursor };
     });
   }
   nextContentUnits(): Promise<ContentRef[]> {

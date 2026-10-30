@@ -1,25 +1,5 @@
 # @rezics/narrata
 
-For a revealed map, initialize the authoring/server module, register the exact trusted
-publications on `api.createEvolution()`, restore the checkpoint (or connect an authorized
-store), and call `visits()`. `visits.readerMap(publication)` returns only revealed references,
-executed connections and visible option placeholders. Resolve content through the host;
-`RevealedReaderMap` in the optional graph React entry renders this data without program objects.
-Free visits and relation handles, then close the evolution context. The `/?reference` example
-requests the map from its Node host using the same confirmed checkpoint and artifact.
-
-`Publication.relationRows`, `relationPart` and `queryRelations` provide bounded Rust-backed
-author access. `visits.readerRelations(publication)` creates a separate sparse reader allowlist;
-it preserves original edge numbers. `PostgresRelations` from the server entry accepts an
-authorized `TransactionalSql`, loads the complete projection atomically, and validates every
-row on retries and query readback. Install the repository's authoritative `relations-v1.sql`
-before using it; the adapter installs no schema or migrations. `load(publication)`,
-`query(publication, query)` and `readReader(allowlist)` have separate host authorization needs.
-Structural first/route queries do not prove first reading or an executable narrative route.
-Client checkpoints and visits support personal spoiler protection, never entitlement or rewards.
-Incomplete history retains missing-object metadata; keep old publications and migration evidence
-to recover complete maps. Reader imports and their first screen never initialize authoring/trace.
-
 The ESM package for hosts that run Narrata Gamebooks in a browser, Node or Bun. Content references
 in `BookView` are resolved by the host; the runtime maintains structure, state and history.
 
@@ -270,6 +250,39 @@ legacy pack of at most 64 MiB). Handles hold Wasm memory until `free()`. Reader 
 `object:` plus the publication's hex object ID; `object()` accepts either form. Existing saves
 stay bound to their artifact: reopen an old journey on its own publication. `splitSource` and
 `minter.fill` convert R2 project files, given as the manifest and one package per alias.
+
+## Reader maps and relation hosting
+
+For a revealed map, initialize the authoring/server module, register the exact trusted
+publications on `api.createEvolution()`, restore the checkpoint (or connect an authorized
+store), and call `visits()`. `visits.readerMap(publication)` returns only revealed references,
+executed connections and visible option placeholders. Resolve content through the host;
+`RevealedReaderMap` in the optional `@rezics/narrata/reader-map/react` entry renders this data
+without program objects or author-graph imports. The framework-free `@rezics/narrata/reader-map`
+entry provides the transport decoder; both entries load only when the host requests a map.
+Free visits and relation handles, then close the evolution context. The `/?reference` example
+requests the map from its Node host using the same confirmed checkpoint and artifact.
+
+`Publication.relationRows`, `relationPart` and `queryRelations` provide bounded Rust-backed
+author access. `visits.readerRelations(publication)` creates a separate sparse reader allowlist;
+it preserves original edge numbers. `PostgresRelations` from the server entry accepts an
+authorized `TransactionalSql`, loads the complete projection atomically, and validates every
+row on retries and query readback. Install the repository's authoritative `relations-v1.sql`
+before using it; the adapter installs no schema or migrations. `load(publication)`,
+`query(publication, query)` and `readReader(allowlist)` have separate host authorization needs.
+The server entry exports `referenceRelationsSql`, a package-relative URL to the exact DDL asset;
+read it with the host's filesystem API and install it explicitly before loading projections.
+Structural first/route queries do not prove first reading or an executable narrative route.
+Client checkpoints and visits support personal spoiler protection, never entitlement or rewards.
+Incomplete history retains missing-object metadata; keep old publications and migration evidence
+to recover complete maps. Reader imports and their first screen never initialize authoring/trace.
+For an HTTP map response, use `@rezics/narrata/reader-map`'s `readReaderMapResponse(response, identity)`
+with the artifact and cursor from `OnlineSession.exportConfirmedSave()`. It validates the generated
+schema, supported versions, single-source identity and transport limits before rendering. Discard
+responses after the reader's binding or confirmed cursor changes. The reference endpoint retains
+its 256 KiB checkpoint request cap; it is a host for the finite reference story, not a general
+64 MiB checkpoint transport. The optional map renderer keeps readable SVG dimensions inside a
+scrollable viewport, so long revealed journeys remain accessible on narrow screens.
 
 ## Author graph
 

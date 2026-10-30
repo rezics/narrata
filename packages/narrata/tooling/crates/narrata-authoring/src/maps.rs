@@ -15,6 +15,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReaderUnitV1 {
     pub unit_id: Digest,
     pub content: ContentRef,
@@ -24,6 +25,7 @@ pub struct ReaderUnitV1 {
 }
 
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReaderNodeV1 {
     pub node: NodeId,
     pub unit_id: Option<Digest>,
@@ -32,6 +34,7 @@ pub struct ReaderNodeV1 {
 }
 
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReaderEdgeV1 {
     pub source: NodeId,
     pub target: NodeId,
@@ -40,6 +43,7 @@ pub struct ReaderEdgeV1 {
 }
 
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReaderMapSourceV1 {
     pub cursor: CommitId,
     pub complete: bool,
@@ -48,6 +52,7 @@ pub struct ReaderMapSourceV1 {
 }
 
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReaderMapV1 {
     pub format_version: u16,
     pub artifact_id: ArtifactId,

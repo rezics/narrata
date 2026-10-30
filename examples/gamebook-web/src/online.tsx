@@ -8,7 +8,7 @@ import { decodeLoaded, encodeLoadRequest, equalBytes, IndexedDbStore } from "@re
 import type { CacheStore, StoreState } from "@rezics/narrata/storage";
 import type { Publication } from "@rezics/narrata/authoring";
 import type { ReaderMapV1 } from "@rezics/narrata/authoring";
-const RevealedReaderMap = lazy(() => import("@rezics/narrata/graph/react").then(module => ({ default: module.RevealedReaderMap })));
+const RevealedReaderMap = lazy(() => import("@rezics/narrata/reader-map/react").then(module => ({ default: module.RevealedReaderMap })));
 
 // This is host-owned sample content. Program artifacts and online saves contain only references.
 const text: Readonly<Record<string, string>> = {
@@ -86,7 +86,7 @@ interface LibraryRecord { store: IndexedDbStore; state: StoreState; active: bool
 interface Binding { session: OnlineSession; controller: ReaderController }
 interface HostSnapshot { binding: Binding; account: string; publication: "A" | "B" }
 export interface OnlineReferenceSource {
-  readerMap?(save: string, artifact: string): Promise<ReaderMapV1>;
+  readerMap?(save: string, artifact: string, cursor: string): Promise<ReaderMapV1>;
   currentArtifact(): Promise<string>;
   loadArtifact(artifact: string): Promise<ArtifactSource>;
   resolve: ContentResolver["resolve"];
@@ -184,9 +184,10 @@ export async function createOnlineReference(remote?: OnlineReferenceSource) {
     readerMap: async () => {
       if (!remote?.readerMap) throw new Error("Map service unavailable");
       const binding = snapshot.binding;
-      const view = (await binding.session.inspect()).view;
-      const map = await remote.readerMap(await binding.session.exportSave(), view.artifact_id);
-      if (binding !== snapshot.binding) throw new LibraryClosed();
+      const exported = await binding.session.exportConfirmedSave();
+      const map = await remote.readerMap(exported.save, exported.artifactId, exported.cursor);
+      const current = snapshot.binding.session.getSnapshot();
+      if (binding !== snapshot.binding || current.status !== "saved" || !current.progress || current.progress.view.cursor !== map.sources[0]?.cursor || current.progress.view.artifact_id !== map.artifact_id) return undefined;
       return map;
     },
     getSnapshot: () => snapshot,
@@ -242,7 +243,7 @@ function OnlineReference({ host }: { host: ReferenceHost }) {
   const save = useSyncExternalStore(state.binding.session.subscribe, state.binding.session.getSnapshot);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
-  const [map, setMap] = useState<{ cursor: string; data: ReaderMapV1 } | null>(null);
+  const [map, setMap] = useState<{ binding: Binding; cursor: string; data: ReaderMapV1 } | null>(null);
   const busy = save.status === "saving" || pending;
   async function action(operation: () => Promise<unknown>) {
     setPending(true); setError(false);
@@ -256,7 +257,7 @@ function OnlineReference({ host }: { host: ReferenceHost }) {
       <button disabled={busy || save.status === "unknown"} onClick={() => { void action(host.reopen); }}>Reopen this journey</button>
       <button disabled={busy} onClick={() => { void action(host.newJourney); }}>Start a new journey</button>
       <button disabled={pending} onClick={() => { void action(host.switchAccount); }}>Switch account</button>
-      {host.canMap ? <button disabled={busy || save.status !== "saved"} onClick={() => { void action(async () => { const data = await host.readerMap(); setMap({ cursor: data.sources[0]?.cursor ?? "", data }); }); }}>Show revealed map</button> : null}
+      {host.canMap ? <button disabled={busy || save.status !== "saved"} onClick={() => { setMap(null); void action(async () => { const data = await host.readerMap(); if (data) setMap({ binding: state.binding, cursor: data.sources[0]?.cursor ?? "", data }); }); }}>Show revealed map</button> : null}
     </nav>
     {error ? <p role="alert">The host action failed. Your saved journey is preserved; try the action again.</p> : null}
     <details><summary>Simulate a save failure</summary>
@@ -264,7 +265,7 @@ function OnlineReference({ host }: { host: ReferenceHost }) {
       <button onClick={() => host.setFault("quota")}>Reject the next save: storage full</button>
     </details>
     <Reader controller={state.binding.controller} slots={slots} showPath={false} showState={false} />
-    {map && map.cursor === save.progress?.view.cursor ? <Suspense fallback={<p role="status">Opening map…</p>}><RevealedReaderMap map={map.data} /></Suspense> : null}
+    {map && save.status === "saved" && save.progress && map.binding === state.binding && map.data.artifact_id === save.progress.view.artifact_id && map.cursor === save.progress.view.cursor ? <Suspense fallback={<p role="status">Opening map…</p>}><RevealedReaderMap map={map.data} /></Suspense> : null}
   </main>;
 }
 export async function mountOnlineReference(element: HTMLElement, source?: OnlineReferenceSource) {

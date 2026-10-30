@@ -2628,6 +2628,7 @@
           "$ref": "#/$defs/NodeId"
         }
       },
+      "additionalProperties": false,
       "required": [
         "source",
         "target"
@@ -2655,6 +2656,7 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "cursor",
         "complete",
@@ -2708,6 +2710,7 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "format_version",
         "artifact_id",
@@ -2744,6 +2747,7 @@
           "format": "int32"
         }
       },
+      "additionalProperties": false,
       "required": [
         "node",
         "x",
@@ -2774,6 +2778,7 @@
           "format": "int32"
         }
       },
+      "additionalProperties": false,
       "required": [
         "unit_id",
         "content",
@@ -3800,6 +3805,7 @@
           "$ref": "#/$defs/OptionId"
         }
       },
+      "additionalProperties": false,
       "required": [
         "option",
         "enabled"
@@ -3818,6 +3824,7 @@
               "const": "object"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
             "id"
@@ -3834,6 +3841,7 @@
               "const": "artifact"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
             "at"
@@ -3850,6 +3858,7 @@
               "const": "descriptor"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
             "at"
@@ -3863,6 +3872,7 @@
               "const": "limit"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind"
           ]

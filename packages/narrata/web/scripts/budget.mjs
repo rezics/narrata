@@ -21,18 +21,25 @@ const isNativeContent = path => nativeModules.has(modulePath(path));
 const isAuthoring = path => ["authoring", "server", "authoring-wasm"].includes(group(path)) || ["generated/authoring.js", "testing/authoring.js"].includes(modulePath(path));
 // The raw dist/wasm module keeps legacy publishGraph; no package entry imports it.
 const isCompat = path => group(path) === "wasm";
-// Include Sigma, graphology and their transitive modules, not just our import wrappers.
-const graphBuild = await build({ configFile: false, logLevel: "error", build: { write: false, minify: true,
-  lib: { entry: { graph: resolve(here, "dist/graph/index.js"), react: resolve(here, "dist/graph/react.js") }, formats: ["es"] },
-  rolldownOptions: { external: ["react", "react/jsx-runtime"] } } });
-const graphChunks = (Array.isArray(graphBuild) ? graphBuild : [graphBuild]).flatMap(result => result.output).filter(item => item.type === "chunk").map(item => Buffer.from(item.code));
-const graph = { raw: graphChunks.reduce((sum, chunk) => sum + chunk.length, 0), gzip: graphChunks.reduce((sum, chunk) => sum + gzipSync(chunk, { level: 9 }).length, 0) };
+// Measure both independent optional capabilities with identical bundling settings. Every
+// transitive module is included; only the host's optional React peer stays external.
+async function bundled(entry) {
+  const result = await build({ configFile: false, logLevel: "error", build: { write: false, minify: true,
+    lib: { entry: Object.fromEntries(Object.entries(entry).map(([name, path]) => [name, resolve(here, path)])), formats: ["es"] },
+    rolldownOptions: { external: ["react", "react/jsx-runtime"] } } });
+  const chunks = (Array.isArray(result) ? result : [result]).flatMap(result => result.output).filter(item => item.type === "chunk").map(item => Buffer.from(item.code));
+  return { raw: chunks.reduce((sum, chunk) => sum + chunk.length, 0), gzip: chunks.reduce((sum, chunk) => sum + gzipSync(chunk, { level: 9 }).length, 0) };
+}
+const graph = await bundled({ graph: "dist/graph/index.js", react: "dist/graph/react.js" });
+const readerMap = await bundled({ map: "dist/graph/reader-map.js", react: "dist/graph/reader-map-react.js" });
+// All graph-directory JS is already included in one of these two bundles (including the
+// generated map validator), so ordinary modules must not count those files a second time.
 const ordinary = measure(javascript.filter(path => group(path) !== "graph"));
 export const sizes = {
   readerWasm: wasm("reader-wasm/narrata_nodes_wasm_bg.wasm"),
   compatWasm: wasm("wasm/narrata_nodes_wasm_bg.wasm"),
   authoringWasm: wasm("authoring-wasm/narrata_authoring_wasm_bg.wasm"),
-  javascript: { raw: ordinary.raw + graph.raw, gzip: ordinary.gzip + graph.gzip },
+  javascript: { raw: ordinary.raw + graph.raw + readerMap.raw, gzip: ordinary.gzip + graph.gzip + readerMap.gzip },
   runtime: measure(javascript.filter(path => !["react", "testing", "graph"].includes(group(path)) && !isNativeContent(path) && !isAuthoring(path) && !isCompat(path))),
   authoring: measure(javascript.filter(isAuthoring)),
   compat: measure(javascript.filter(isCompat)),
@@ -40,6 +47,7 @@ export const sizes = {
   testing: measure(javascript.filter(path => group(path) === "testing" && !isNativeContent(path) && !isAuthoring(path))),
   nativeContent: measure(javascript.filter(isNativeContent)),
   graph,
+  readerMap,
 };
 console.log(JSON.stringify(sizes, null, 2));
 const budget = JSON.parse(readFileSync(resolve(here, "size-budget.json")));

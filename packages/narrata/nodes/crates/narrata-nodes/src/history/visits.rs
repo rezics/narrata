@@ -64,6 +64,7 @@ pub struct VisitEventV1 {
 
 /// The only information about an unvisited choice target that may leave the map core.
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct VisitFrontierV1 {
     pub option: OptionId,
     pub label: Option<ContentRef>,
@@ -71,7 +72,7 @@ pub struct VisitFrontierV1 {
 }
 
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum VisitMissingV1 {
     Object { id: ObjectId },
     Artifact { at: CommitId },

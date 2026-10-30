@@ -1,5 +1,10 @@
 import { createGraphController, mountAuthorGraph, type GraphOptions } from "@rezics/narrata/graph";
 import { AuthorGraph } from "@rezics/narrata/graph/react";
+import { decodeReaderMap, type ReaderMapV1 } from "@rezics/narrata/reader-map";
+import { RevealedReaderMap } from "@rezics/narrata/reader-map/react";
+declare const revealed: ReaderMapV1;
+void (<RevealedReaderMap map={revealed} />);
+void decodeReaderMap;
 const options: GraphOptions = { indexId: "0".repeat(64), fetchObject: async () => new Uint8Array(), resolver: { resolve: async () => [] } };
 const controller = createGraphController(options);
 void controller.enterCluster(0);

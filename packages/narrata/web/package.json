@@ -45,6 +45,14 @@
       "types": "./dist/graph/react.d.ts",
       "import": "./dist/graph/react.js"
     },
+    "./reader-map": {
+      "types": "./dist/graph/reader-map.d.ts",
+      "import": "./dist/graph/reader-map.js"
+    },
+    "./reader-map/react": {
+      "types": "./dist/graph/reader-map-react.d.ts",
+      "import": "./dist/graph/reader-map-react.js"
+    },
     "./content/native": {
       "types": "./dist/content/native.d.ts",
       "import": "./dist/content/native.js"

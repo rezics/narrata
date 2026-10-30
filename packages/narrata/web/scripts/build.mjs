@@ -70,6 +70,15 @@ const validator = ajv.compile(JSON.parse(readFileSync(schemaPath, "utf8")));
 const code = standalone(ajv, validator).replace(/require\("ajv\/dist\/runtime\/ucs2length"\)\.default/g, '(value => Array.from(value).length)');
 writeFileSync(resolve(stage, "src/generated/validate-book.js"), code);
 writeFileSync(resolve(stage, "src/generated/validate-book.d.ts"), 'import type { BookView } from "./book-view.js";\ndeclare const validate: (value: unknown) => value is BookView;\nexport default validate;\n');
+const mapSchemaPath = resolve(check ? root : stage, check ? "packages/narrata/nodes/schemas/reader-map.schema.json" : "schemas/reader-map.schema.json");
+const mapValidator = ajv.compile(JSON.parse(readFileSync(mapSchemaPath, "utf8")));
+const mapCode = standalone(ajv, mapValidator).replace(/require\("ajv\/dist\/runtime\/ucs2length"\)\.default/g, '(value => Array.from(value).length)');
+// The transport exposes one recoverable error, not Ajv diagnostics. Minify only this new
+// optional validator, retaining its ESM exports and the existing reader/graph caps.
+const compactMapValidator = await minify("validate-reader-map.js", mapCode, { module: true });
+if (compactMapValidator.errors.length) throw new Error(JSON.stringify(compactMapValidator.errors));
+writeFileSync(resolve(stage, "src/graph/validate-reader-map.js"), compactMapValidator.code);
+writeFileSync(resolve(stage, "src/graph/validate-reader-map.d.ts"), 'import type { ReaderMapV1 } from "../generated/authoring.js";\ndeclare const validate: (value: unknown) => value is ReaderMapV1;\nexport default validate;\n');
 writeFileSync(resolve(stage, "tsconfig.json"), JSON.stringify({ compilerOptions: {
   target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"],
   strict: true, noUncheckedIndexedAccess: true, exactOptionalPropertyTypes: true, noImplicitOverride: true,
@@ -80,6 +89,9 @@ writeFileSync(resolve(stage, "tsconfig.json"), JSON.stringify({ compilerOptions:
 writeFileSync(resolve(stage, "package.json"), '{"type":"module"}\n');
 execFileSync(process.execPath, [resolve(here, "node_modules/typescript/bin/tsc"), "-p", resolve(stage, "tsconfig.json"), ...(check ? ["--noEmit"] : [])], { cwd: here, stdio: "inherit" });
 if (!check) {
+  cpSync(resolve(stage, "src/graph/validate-reader-map.js"), resolve(dist, "graph/validate-reader-map.js"));
+  cpSync(resolve(stage, "src/graph/validate-reader-map.d.ts"), resolve(dist, "graph/validate-reader-map.d.ts"));
+  cpSync(resolve(root, "packages/narrata/tooling/crates/narrata-authoring/sql/relations-v1.sql"), resolve(dist, "server/relations-v1.sql"));
   // Keep the expanded authoring/server capabilities inside their existing JS budget.
   // Per-module minification preserves ESM boundaries and package-relative Wasm URLs.
   for (const directory of ["authoring", "server", "authoring-wasm"]) {

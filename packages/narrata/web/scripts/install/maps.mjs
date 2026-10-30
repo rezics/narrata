@@ -1,3 +1,4 @@
+import { decodeReaderMap } from "@rezics/narrata/reader-map";
 const stable = value => JSON.stringify(value, (_, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
 /** The same frozen Rust outputs are consumed from an independently installed Node/Bun
  * package and a browser Worker. No repository runtime implementation is imported. */
@@ -26,6 +27,7 @@ export async function verifyMaps(api, load) {
       try {
         const expected = JSON.parse(decoder.decode(await load(name + ".map.json")));
         const actual = visits.readerMap(publication);
+        decodeReaderMap(actual, { artifactId: publication.artifactId, cursor: visits.report().sources[0].cursor });
         if (stable(actual) !== stable(expected)) throw new Error("Installed reader map differs: " + name);
         if (!visits.report().sources[0].complete) throw new Error("Incomplete frozen visits");
         const allowed = visits.readerRelations(publication);

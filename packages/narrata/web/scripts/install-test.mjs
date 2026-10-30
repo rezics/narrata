@@ -24,7 +24,7 @@ npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", ta
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./content/native"]);
+assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./reader-map", "./reader-map/react", "./content/native"]);
 assert.deepEqual(manifest.dependencies, { graphology: "0.26.0", sigma: "3.0.3" }, "Only the lazy graph entry uses runtime dependencies");
 assert.deepEqual(manifest.peerDependenciesMeta, { react: { optional: true } });
 assert.equal(existsSync(join(directory, "node_modules/react")), false, "Framework-free hosts must not install React");
@@ -114,7 +114,7 @@ cpSync(resolve(here, "../../../fixtures/compat/nodes-evolution-v1/deleted-lower-
 writeFileSync(join(directory, "authoring.mjs"), `
 import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
-import { loadAuthoring } from "@rezics/narrata/server";
+import { loadAuthoring, referenceRelationsSql } from "@rezics/narrata/server";
 import { openBook } from "@rezics/narrata/reader";
 import { shortStorySource, shortStoryOutline } from "@rezics/narrata/testing";
 import { author, read } from "./journey.mjs";
@@ -122,6 +122,7 @@ import { constructAndEdit } from "./source.ts";
 import { verifyMaps } from "./maps.mjs";
 const wasm = new URL("./node_modules/@rezics/narrata/dist/authoring-wasm/narrata_authoring_wasm_bg.wasm", import.meta.url);
 const mode = process.argv[2];
+assert.equal(await readFile(referenceRelationsSql, "utf8"), ${JSON.stringify(readFileSync(resolve(here, "../tooling/crates/narrata-authoring/sql/relations-v1.sql"), "utf8"))});
 // "browser-entry" proves the browser subpath also locates its Wasm from a file URL.
 const api = mode === "browser-entry" ? await (await import("@rezics/narrata/authoring")).loadAuthoring()
   : await loadAuthoring(mode === "bytes" ? new Uint8Array(await readFile(wasm)) : mode === "url" ? wasm : undefined);
