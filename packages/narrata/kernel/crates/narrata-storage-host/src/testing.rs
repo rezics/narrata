@@ -20,7 +20,8 @@ use crate::{
 };
 
 /// Loads and retries one operation may take before a driver gives up.
-const ATTEMPTS: usize = 64;
+// A maximum-size batch can need 10,000 absence reads, in four-value host replies.
+const ATTEMPTS: usize = 4096;
 
 /// Lookups a host has served: requested keys and objects, and entries returned by ranges.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

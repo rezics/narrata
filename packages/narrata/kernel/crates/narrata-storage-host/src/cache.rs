@@ -113,12 +113,40 @@ impl CacheBackend {
     /// What calls failed with [`StorageError::NotLoaded`] lacked since the last request.
     pub fn take_request(&self) -> Option<LoadRequest> {
         let wanted = std::mem::take(&mut self.cache().wanted);
-        let request = LoadRequest {
-            keys: wanted.keys.into_iter().collect(),
-            objects: wanted.objects.into_iter().collect(),
-            key_ranges: wanted.key_ranges.into_iter().collect(),
-            object_ranges: wanted.object_ranges.into_iter().collect(),
-        };
+        // A load has one combined item limit, including scan lookahead. Values can each
+        // occupy 16 MiB, so request at most four value-bearing items per 64 MiB reply.
+        // Unrequested misses are discovered again on retry; a short range is never
+        // passed off as a complete answer to a larger request.
+        let mut items = self.limits.max_read_items.min(1024);
+        let mut values = items.min(4);
+        let mut request = LoadRequest::default();
+        for key in wanted.keys.into_iter().take(values as usize) {
+            request.keys.push(key);
+            items -= 1;
+            values -= 1;
+        }
+        for object in wanted.objects.into_iter().take(values as usize) {
+            request.objects.push(object);
+            items -= 1;
+            values -= 1;
+        }
+        for mut range in wanted.key_ranges {
+            if values == 0 {
+                break;
+            }
+            range.limit = range.limit.min(values);
+            items -= range.limit;
+            values -= range.limit;
+            request.key_ranges.push(range);
+        }
+        for mut range in wanted.object_ranges {
+            if items == 0 {
+                break;
+            }
+            range.limit = range.limit.min(items);
+            items -= range.limit;
+            request.object_ranges.push(range);
+        }
         (wanted.store || !request.is_empty()).then_some(request)
     }
 
@@ -321,6 +349,45 @@ impl CacheBackend {
 
         let next = cache.issued.checked_add(1).ok_or(StorageError::Full)?;
         let revision = Revision::new(next).ok_or(StorageError::Full)?;
+        let pending = Persist {
+            base: cache.issued,
+            revision: next,
+            put_objects: put_objects
+                .iter()
+                .map(|(id, bytes)| (*id, Arc::clone(bytes)))
+                .collect(),
+            delete_objects: delete_objects.iter().copied().collect(),
+            put_keys: put_keys
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+            delete_keys: delete_keys.iter().cloned().collect(),
+        };
+        let (mut operations, mut bytes) = (0, 0);
+        for batch in cache.unconfirmed.iter().chain(std::iter::once(&pending)) {
+            operations += (batch.put_objects.len()
+                + batch.delete_objects.len()
+                + batch.put_keys.len()
+                + batch.delete_keys.len()) as u64;
+            bytes += batch
+                .put_objects
+                .iter()
+                .map(|(_, value)| value.len() as u64)
+                .sum::<u64>()
+                + batch
+                    .put_keys
+                    .iter()
+                    .map(|(key, value)| (key.len() - 2 + value.len()) as u64)
+                    .sum::<u64>()
+                + batch
+                    .delete_keys
+                    .iter()
+                    .map(|key| (key.len() - 2) as u64)
+                    .sum::<u64>();
+        }
+        let transport = Limits::DEFAULT;
+        transport.check(Limit::BatchOps, operations)?;
+        transport.check(Limit::BatchBytes, bytes)?;
         for (digest, bytes) in &put_objects {
             cache.objects.set(
                 digest.as_bytes().to_vec(),
@@ -347,14 +414,7 @@ impl CacheBackend {
             objects_inserted: put_objects.len() as u64,
             objects_deleted: delete_objects.len() as u64,
         };
-        cache.unconfirmed.push(Persist {
-            base: cache.issued,
-            revision: next,
-            put_objects: put_objects.into_iter().collect(),
-            delete_objects: delete_objects.into_iter().collect(),
-            put_keys: put_keys.into_iter().collect(),
-            delete_keys: delete_keys.into_iter().collect(),
-        });
+        cache.unconfirmed.push(pending);
         cache.issued = next;
         debug_assert_eq!(
             cache.issued,

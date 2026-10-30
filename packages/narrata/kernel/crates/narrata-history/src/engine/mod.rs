@@ -12,7 +12,9 @@ mod write;
 
 use std::fmt;
 
-pub use gc::{GcKindReport, GcReport, IntegrityIssue, RetentionPolicy};
+pub use gc::{
+    GcKindReport, GcReport, IntegrityIssue, MaintenanceBackend, MaintenanceBudget, RetentionPolicy,
+};
 use narrata_storage::{
     Batch, Expect, KeyEntry, KeyPage, KeySpace, KeyValue, Limits, MemoryBackend, ObjectDigest,
     Revision, StorageBackend, StorageError,

@@ -86,8 +86,22 @@ fn name(execution: ExecutionId) -> RefName {
 fn bundle_error(error: BundleError<HistoryError>) -> Error {
     match error {
         BundleError::Store(error) => history_error(error),
-        other => Error::new("save", "checkpoint", other.to_string()),
+        BundleError::MissingObject(id) => history_error(HistoryError::MissingObject(id)),
+        BundleError::Container(error) => container_error(error),
+        other => Error::new("corrupt_save", "checkpoint", other.to_string()),
     }
+}
+fn container_error(error: narrata_history::ContainerError) -> Error {
+    let code = if matches!(
+        error,
+        narrata_history::ContainerError::Limit(_)
+            | narrata_history::ContainerError::Object(narrata_history::ObjectError::Limit)
+    ) {
+        "limit"
+    } else {
+        "corrupt_save"
+    };
+    Error::new(code, "checkpoint", error.to_string())
 }
 
 impl Session {
@@ -119,7 +133,7 @@ impl Session {
             })?;
             Commit::decode(object.bytes())?.artifact
         };
-        let mut session = Self::restore(registry.program(artifact)?.clone(), text)?;
+        let mut session = Self::restore_unchecked(registry.program(artifact)?.clone(), text)?;
         session.programs.extend(registry.programs.clone());
         Ok(session)
     }
@@ -129,6 +143,46 @@ impl Session {
     /// Restores a hexadecimal kernel checkpoint, or imports a legacy JSON session.
     /// Checkpoints carry the cursor and its ancestors; live-store sibling branches stay there.
     pub fn restore(program: Arc<Program>, text: &str) -> Result<Self> {
+        // Compatibility snapshot reader: evolution can assess a state even when its old
+        // page is truncated. Imports into a readable library validate page context first.
+        Self::restore_unchecked(program, text)
+    }
+    /// Import a prevalidated snapshot into a cold or existing library. Only the selected
+    /// execution's active root moves; its observed revision is supplied by the caller.
+    pub fn import_snapshot<B: StorageBackend>(
+        &self,
+        backend: B,
+        execution: ExecutionId,
+        expected: Option<narrata_history::RefRevision>,
+        bytes: &[u8],
+        observed_at: u64,
+    ) -> Result<CommitId> {
+        Self::checked_checkpoint(&self.programs, self.program.clone(), bytes)?;
+        self.page()?;
+        self.interaction(None)?;
+        if checkpoint_root(bytes)? != kernel(self.current.id) {
+            return Err(Error::new(
+                "incompatible_save",
+                "cursor",
+                "snapshot and bundle cursor differ",
+            ));
+        }
+        let mut history =
+            History::open(backend, DomainKinds::<NodeDomain>::new()).map_err(history_error)?;
+        let (_, loaded) = history
+            .import(
+                &NodeDomain(self.program.clone()),
+                bytes,
+                BundleLimits::default(),
+                RefKey::active(name(execution))
+                    .map_err(|e| Error::new("name", "execution", e.to_string()))?,
+                expected,
+                observed_at,
+            )
+            .map_err(bundle_error)?;
+        Ok(node(loaded.commit))
+    }
+    fn restore_unchecked(program: Arc<Program>, text: &str) -> Result<Self> {
         if text.trim_start().starts_with('{') {
             let (execution, cursor, objects, commits) = legacy(&program, text)?;
             let mut history = History::in_memory(DomainKinds::<NodeDomain>::new());
@@ -353,7 +407,8 @@ impl<B: StorageBackend> Session<B> {
             .children(kernel(parent), after.map(kernel).as_ref(), limit)
             .map_err(history_error)
     }
-    /// Headers reachable from this session's cursor, branches and imported legacy bookmarks.
+    /// Retained headers reachable from the cursor, branches and legacy bookmarks. A boundary
+    /// keeps its original missing parent ID; this list does not claim a complete replay path.
     pub fn commits(&self) -> Result<impl Iterator<Item = (CommitId, Commit)>> {
         let mut pending = vec![self.current.id];
         for namespace in [RefNamespace::Branch, RefNamespace::Bookmark] {
@@ -379,7 +434,10 @@ impl<B: StorageBackend> Session<B> {
             if seen.contains_key(&id) {
                 continue;
             }
-            let r = self.load(id)?;
+            let r = match self.load(id) {
+                Err(error) if error.code == "history_truncated" => continue,
+                result => result?,
+            };
             pending.extend(r.commit.parent);
             seen.insert(id, r.commit);
         }
@@ -616,6 +674,109 @@ impl<B: StorageBackend> Session<B> {
         }
         Ok(parts.into_iter().rev().flatten().collect())
     }
+    /// A shallow checkpoint retains at least the ancestors needed to reconstruct this exact
+    /// page. Local responses can extend back across several commits; the state alone carries
+    /// neither their presentation nor the argument values used when they were entered.
+    pub fn export_shallow(&self, ancestors: u32) -> Result<Vec<u8>> {
+        let mut required = ancestors;
+        let mut distance = 0_u32;
+        let mut id = self.current.id;
+        loop {
+            let step = self.step(id)?;
+            let record = self.load(id)?;
+            if record.commit.parent.is_some() {
+                required = required.max(distance.saturating_add(1));
+            }
+            if step.entered || record.state.finished.is_some() || record.commit.parent.is_none() {
+                break;
+            }
+            id = record
+                .commit
+                .parent
+                .ok_or_else(|| Error::new("save", "page", "missing parent"))?;
+            distance = distance
+                .checked_add(1)
+                .ok_or_else(|| Error::new("limit", "page", "page history exceeds limit"))?;
+        }
+        let bundle = self
+            .history
+            .export_shallow(
+                kernel(self.current.id),
+                u64::from(required),
+                &BTreeSet::new(),
+            )
+            .map_err(bundle_error)?;
+        let total = bundle
+            .manifest
+            .checkpoint
+            .objects
+            .iter()
+            .fold(0_u64, |sum, o| sum.saturating_add(o.bytes))
+            .saturating_add(bundle.manifest.encode().len() as u64 + 80)
+            .saturating_add(bundle.manifest.checkpoint.objects.len() as u64 * 44);
+        if total > (MAX_EXPORT_BYTES / 2) as u64
+            || bundle.manifest.checkpoint.objects.len() as u64 > BundleLimits::default().max_objects
+        {
+            return Err(Error::new(
+                "limit",
+                "checkpoint",
+                "checkpoint exceeds 32 MiB",
+            ));
+        }
+        let bytes = bundle
+            .to_bytes()
+            .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
+        if bytes.len() > MAX_EXPORT_BYTES / 2 {
+            return Err(Error::new(
+                "limit",
+                "checkpoint",
+                "checkpoint exceeds 32 MiB",
+            ));
+        }
+        // The old proposal importer may derive identities from the whole original path.
+        // Validate the actual candidate rather than assuming one extra parent is sufficient.
+        let checked = Self::checked_checkpoint(&self.programs, self.program.clone(), &bytes)?;
+        if checked.page()? != self.page()?
+            || checked.state()? != self.state()?
+            || checked.interaction(None)? != self.interaction(None)?
+        {
+            return Err(Error::new(
+                "history_truncated",
+                "page",
+                "shallow checkpoint cannot reconstruct the exact page",
+            ));
+        }
+        Ok(bytes)
+    }
+
+    /// Validate in an isolated store before moving any caller-owned persistent root.
+    pub(crate) fn checked_checkpoint(
+        programs: &BTreeMap<ArtifactId, Arc<Program>>,
+        program: Arc<Program>,
+        bytes: &[u8],
+    ) -> Result<Session> {
+        let root = checkpoint_root(bytes)?;
+        let mut execution = [0; 16];
+        execution.copy_from_slice(&root.as_bytes()[..16]);
+        let execution = ExecutionId::from_bytes(execution);
+        let mut history = History::in_memory(DomainKinds::<NodeDomain>::new());
+        history
+            .import(
+                &NodeDomain(program.clone()),
+                bytes,
+                BundleLimits::default(),
+                RefKey::active(name(execution))
+                    .map_err(|e| Error::new("name", "session", e.to_string()))?,
+                None,
+                0,
+            )
+            .map_err(bundle_error)?;
+        let mut session = Session::resume(program, execution, history.into_backend())?;
+        session.programs.extend(programs.clone());
+        session.page()?;
+        session.interaction(None)?;
+        Ok(session)
+    }
     fn interim_id(&self, id: CommitId) -> Result<CommitId> {
         let mut path = Vec::new();
         let mut next = Some(id);
@@ -735,6 +896,9 @@ impl<B: StorageBackend> Session<B> {
     /// Imports into this backend and moves this execution's cursor only after checked import.
     pub fn import(&mut self, text: &str) -> Result<()> {
         if text.trim_start().starts_with('{') {
+            let checked = Session::restore(self.program.clone(), text)?;
+            checked.page()?;
+            checked.interaction(None)?;
             let (_, cursor, objects, commits) = legacy(&self.program, text)?;
             return self.import_objects(objects, commits, cursor);
         }
@@ -772,6 +936,7 @@ impl<B: StorageBackend> Session<B> {
                 )
             })?
             .clone();
+        Self::checked_checkpoint(&self.programs, program.clone(), &bytes)?;
         let key = RefKey::active(name(self.execution))
             .map_err(|e| Error::new("name", "session", e.to_string()))?;
         let expected = self
@@ -1228,24 +1393,37 @@ fn evolution_diagnostic(error: &Error) -> crate::Diagnostic {
 }
 
 fn checkpoint_objects(bytes: &[u8]) -> Result<(narrata_history::ObjectId, Vec<Object>)> {
+    let unknown = std::cell::Cell::new(None);
     let allowed = |kind| {
-        matches!(
+        let known = matches!(
             kind,
             wire::KIND_COMMIT
                 | wire::KIND_STATE
                 | wire::KIND_INPUT
                 | narrata_history::migration::MIGRATION_INPUT_KIND
-        )
+        );
+        if !known {
+            unknown.set(Some(kind));
+        }
+        known
+    };
+    let error = |e| match unknown.get() {
+        Some(kind) => Error::new(
+            "unregistered_kind",
+            "checkpoint",
+            format!("unregistered kind {kind:#06x}"),
+        ),
+        None => container_error(e),
     };
     if bytes.starts_with(narrata_history::SHALLOW_MAGIC) {
         let bundle =
             narrata_history::ShallowBundle::from_bytes(bytes, BundleLimits::default(), allowed)
-                .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
+                .map_err(error)?;
         Ok((bundle.manifest.checkpoint.root, bundle.objects))
     } else {
         let bundle =
             narrata_history::CheckpointBundle::from_bytes(bytes, BundleLimits::default(), allowed)
-                .map_err(|e| Error::new("save", "checkpoint", e.to_string()))?;
+                .map_err(error)?;
         Ok((bundle.manifest.root, bundle.objects))
     }
 }

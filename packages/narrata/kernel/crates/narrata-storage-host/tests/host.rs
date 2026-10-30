@@ -15,6 +15,99 @@ use narrata_storage_host::{
 const SPACE: KeySpace = KeySpace::new(4);
 
 #[test]
+fn cold_default_scans_bound_lookahead_and_preserve_every_continuation() {
+    let host = MemoryHost::new(id(1));
+    let writer = CacheBackend::new();
+    answer(&writer, &host, |cache| cache.read_key(SPACE, b"init"));
+    let mut batch = Batch::new();
+    for n in 0_u32..1025 {
+        batch = batch
+            .put(SPACE, n.to_be_bytes(), b"value", Expect::Absent)
+            .put_object(
+                ObjectDigest::from_bytes({
+                    let mut d = [0; 32];
+                    d[..4].copy_from_slice(&n.to_be_bytes());
+                    d
+                }),
+                b"object".as_slice(),
+            );
+    }
+    writer.share().apply(&batch).unwrap();
+    flush(&writer, &host).unwrap();
+    let cache = CacheBackend::new();
+    let mut after = None;
+    let mut keys = Vec::new();
+    loop {
+        let page = loop {
+            match cache.scan_keys(SPACE, &[], after.as_deref(), 1024) {
+                Ok(page) => break page,
+                Err(StorageError::NotLoaded) => {
+                    let request = cache.take_request().unwrap();
+                    assert!(
+                        request.keys.len()
+                            + request.objects.len()
+                            + request
+                                .key_ranges
+                                .iter()
+                                .chain(&request.object_ranges)
+                                .map(|r| r.limit as usize)
+                                .sum::<usize>()
+                            <= 1024
+                    );
+                    assert!(request.key_ranges.iter().map(|r| r.limit).sum::<u64>() <= 4);
+                    cache.load(&host.load(&request)).unwrap();
+                }
+                other => panic!("unexpected scan: {other:?}"),
+            }
+        };
+        after = page.entries.last().map(|e| e.key.clone());
+        keys.extend(page.entries.into_iter().map(|e| e.key));
+        if !page.more {
+            break;
+        }
+    }
+    assert_eq!(keys.len(), 1025);
+    assert!(keys.windows(2).all(|w| w[0] < w[1]));
+    let first = answer(&cache, &host, |c| c.scan_objects(None, 1024));
+    assert_eq!(first.digests.len(), 1024);
+    assert!(first.more);
+    let second = answer(&cache, &host, |c| {
+        c.scan_objects(first.digests.last(), 1024)
+    });
+    assert_eq!(second.digests.len(), 1);
+    assert!(!second.more);
+}
+
+#[test]
+fn aggregate_flush_limits_reject_before_changing_the_cache() {
+    let host = MemoryHost::new(id(1));
+    let cache = CacheBackend::new();
+    answer(&cache, &host, |c| c.read_key(SPACE, b"init"));
+    let mut first = Batch::new();
+    for n in 0_u32..6000 {
+        first = first.put(SPACE, n.to_be_bytes(), b"first", Expect::Absent);
+    }
+    cache.share().apply(&first).unwrap();
+    let before = cache.unconfirmed().unwrap().encode();
+    let mut second = Batch::new();
+    for n in 6000_u32..10001 {
+        second = second.put(SPACE, n.to_be_bytes(), b"second", Expect::Absent);
+    }
+    assert!(matches!(
+        cache.share().apply(&second),
+        Err(StorageError::Limit(_))
+    ));
+    assert_eq!(cache.unconfirmed().unwrap().encode(), before);
+    assert!(
+        cache
+            .read_key(SPACE, &6000_u32.to_be_bytes())
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(host.load(&LoadRequest::default()).store.revision, 0);
+}
+
+#[test]
 fn direct_flush_object_puts_keep_existing_bytes_until_deleted() {
     let host = MemoryHost::new(id(1));
     let object = digest(1);

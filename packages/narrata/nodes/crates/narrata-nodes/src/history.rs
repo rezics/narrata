@@ -2,6 +2,7 @@
 
 pub mod evolution;
 pub mod locator;
+pub mod maintenance;
 #[cfg(feature = "trace")]
 pub mod visits;
 
@@ -58,7 +59,7 @@ impl Domain for NodeDomain {
     }
 }
 
-pub(crate) fn history_error(error: HistoryError) -> Error {
+pub fn history_error(error: HistoryError) -> Error {
     if let HistoryError::MissingObject(id) = &error {
         return Error::new(
             "needs_object",
@@ -69,6 +70,12 @@ pub(crate) fn history_error(error: HistoryError) -> Error {
     let code = match &error {
         HistoryError::HeadMoved { .. } | HistoryError::RefConflict(_) => "stale_input",
         HistoryError::ArtifactMismatch { .. } => "incompatible_save",
+        HistoryError::HistoryTruncated(_) => "history_truncated",
+        HistoryError::UnregisteredKind { .. } => "unregistered_kind",
+        HistoryError::Corrupt(..) | HistoryError::CorruptStore(_) => "corrupt_save",
+        HistoryError::Limit(_) | HistoryError::Storage(narrata_storage::StorageError::Limit(_)) => {
+            "limit"
+        }
         _ => "history",
     };
     Error::new(code, "history", error.to_string())

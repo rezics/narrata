@@ -19,6 +19,171 @@ use super::{
 };
 use crate::{HistoryError, Object, ObjectId, Reference, Registry, Root, layout, shallow};
 
+/// Per-call read/work bounds for maintenance. Repeated reads are charged again: this bounds
+/// graph traversal and retries as well as the size of the inventory. It is not a wire format.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MaintenanceBudget {
+    pub object_reads: u64,
+    pub bytes: u64,
+    pub pages: u64,
+    pub work: u64,
+    pub page_size: u32,
+}
+
+/// A budgeted view of the existing backend, used by both native and Wasm maintenance. Missing
+/// cache pages still return NotLoaded; the host must also bound cumulative loads across retries.
+pub struct MaintenanceBackend<B> {
+    inner: B,
+    remaining: std::rc::Rc<std::cell::Cell<MaintenanceBudget>>,
+}
+
+impl<B> MaintenanceBackend<B> {
+    pub fn new(inner: B, budget: MaintenanceBudget) -> Result<Self, HistoryError> {
+        Self::with_remaining(inner, std::rc::Rc::new(std::cell::Cell::new(budget)))
+    }
+    /// Reuse one operation's counters when a cold cache retries the synchronous traversal.
+    pub fn with_remaining(
+        inner: B,
+        remaining: std::rc::Rc<std::cell::Cell<MaintenanceBudget>>,
+    ) -> Result<Self, HistoryError> {
+        let budget = remaining.get();
+        if budget.page_size == 0 || budget.page_size > 1024 {
+            return Err(HistoryError::Limit(
+                "maintenance page size must be 1..=1024",
+            ));
+        }
+        Ok(Self { inner, remaining })
+    }
+    pub fn into_inner(self) -> B {
+        self.inner
+    }
+    fn charge(
+        &self,
+        objects: u64,
+        bytes: u64,
+        pages: u64,
+        work: u64,
+    ) -> Result<(), narrata_storage::StorageError> {
+        let mut left = self.remaining.get();
+        for (available, used, limit) in [
+            (
+                &mut left.object_reads,
+                objects,
+                narrata_storage::Limit::ReadItems,
+            ),
+            (&mut left.bytes, bytes, narrata_storage::Limit::BatchBytes),
+            (&mut left.pages, pages, narrata_storage::Limit::ReadItems),
+            (&mut left.work, work, narrata_storage::Limit::BatchOps),
+        ] {
+            *available =
+                available
+                    .checked_sub(used)
+                    .ok_or(narrata_storage::StorageError::Limit(
+                        narrata_storage::LimitExceeded {
+                            limit,
+                            requested: used,
+                            max: *available,
+                        },
+                    ))?;
+        }
+        self.remaining.set(left);
+        Ok(())
+    }
+}
+
+impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
+    fn capabilities(&self) -> narrata_storage::Capabilities {
+        let mut capabilities = self.inner.capabilities();
+        capabilities.limits.max_read_items = capabilities
+            .limits
+            .max_read_items
+            .min(u64::from(self.remaining.get().page_size));
+        capabilities
+    }
+    fn get_objects(
+        &self,
+        ids: &[narrata_storage::ObjectDigest],
+    ) -> Result<Vec<Option<std::sync::Arc<[u8]>>>, narrata_storage::StorageError> {
+        self.charge(ids.len() as u64, 0, 0, ids.len() as u64)?;
+        let values = self.inner.get_objects(ids)?;
+        self.charge(
+            0,
+            values.iter().flatten().map(|b| b.len() as u64).sum(),
+            0,
+            0,
+        )?;
+        Ok(values)
+    }
+    fn scan_objects(
+        &self,
+        after: Option<&narrata_storage::ObjectDigest>,
+        limit: u32,
+    ) -> Result<narrata_storage::ObjectPage, narrata_storage::StorageError> {
+        self.charge(0, 0, 1, u64::from(limit))?;
+        self.inner
+            .scan_objects(after, limit.min(self.remaining.get().page_size))
+    }
+    fn read_key(
+        &self,
+        space: narrata_storage::KeySpace,
+        key: &[u8],
+    ) -> Result<Option<narrata_storage::KeyValue>, narrata_storage::StorageError> {
+        self.charge(0, key.len() as u64, 0, 1)?;
+        let value = self.inner.read_key(space, key)?;
+        self.charge(0, value.as_ref().map_or(0, |v| v.value.len() as u64), 0, 0)?;
+        Ok(value)
+    }
+    fn scan_keys(
+        &self,
+        space: narrata_storage::KeySpace,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        limit: u32,
+    ) -> Result<narrata_storage::KeyPage, narrata_storage::StorageError> {
+        self.charge(0, 0, 1, u64::from(limit))?;
+        let page = self.inner.scan_keys(
+            space,
+            prefix,
+            after,
+            limit.min(self.remaining.get().page_size),
+        )?;
+        self.charge(
+            0,
+            page.entries
+                .iter()
+                .map(|e| (e.key.len() + e.value.len()) as u64)
+                .sum(),
+            0,
+            0,
+        )?;
+        Ok(page)
+    }
+    fn apply(
+        &mut self,
+        batch: &narrata_storage::Batch,
+    ) -> Result<narrata_storage::Applied, narrata_storage::StorageError> {
+        let work = (batch.put_objects.len() + batch.delete_objects.len() + batch.keys.len()) as u64;
+        let bytes = batch
+            .put_objects
+            .iter()
+            .map(|(_, b)| b.len() as u64)
+            .sum::<u64>()
+            + batch
+                .keys
+                .iter()
+                .map(|k| {
+                    k.key.len() as u64
+                        + match &k.action {
+                            narrata_storage::KeyAction::Put(value) => value.len() as u64,
+                            _ => 0,
+                        }
+                })
+                .sum::<u64>();
+        self.charge(0, bytes, 0, work)?;
+        self.inner.apply(batch)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RetentionPolicy {
     pub now: u64,
@@ -46,6 +211,8 @@ pub struct GcKindReport {
 pub struct GcReport {
     pub roots: u64,
     pub reachable: u64,
+    /// Marked objects (roots and grace-protected closure), by kind.
+    pub retained: BTreeMap<u16, GcKindReport>,
     /// Removed objects and bytes by kind code.
     pub removed: BTreeMap<u16, GcKindReport>,
     pub dry_run: bool,
@@ -75,12 +242,27 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
     }
 
     pub fn collect(&mut self, policy: RetentionPolicy) -> Result<GcReport, R::Error> {
+        self.collect_mode(policy, false)
+    }
+
+    /// Bounded maintenance uses one atomic sweep after complete marking and planning. If
+    /// the full deletion cannot fit, no candidate is deleted. Native background collection
+    /// may continue to use the existing fenced, ordered batches through `collect`.
+    pub fn collect_atomic(&mut self, policy: RetentionPolicy) -> Result<GcReport, R::Error> {
+        self.collect_mode(policy, true)
+    }
+
+    fn collect_mode(
+        &mut self,
+        policy: RetentionPolicy,
+        atomic: bool,
+    ) -> Result<GcReport, R::Error> {
         let mut report = GcReport {
             dry_run: policy.dry_run,
             ..GcReport::default()
         };
         for _ in 0..super::RETRIES {
-            match self.collect_once(policy, &mut report) {
+            match self.collect_once(policy, &mut report, atomic) {
                 Ok(()) => return Ok(report),
                 Err(Attempt::Retry) => {}
                 Err(Attempt::Fail(error)) => return Err(error),
@@ -93,6 +275,7 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
         &mut self,
         policy: RetentionPolicy,
         report: &mut GcReport,
+        atomic: bool,
     ) -> Result<(), Attempt<R::Error>> {
         let reader = self.reader();
         let graph = reader
@@ -123,6 +306,18 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             .map(|(id, _)| (*id, None));
         let marked = self.mark(roots.into_iter().chain(young).collect())?;
         report.reachable = marked.len() as u64;
+        report.retained.clear();
+        for object in self
+            .reader()
+            .objects(&marked.iter().copied().collect::<Vec<_>>())
+            .map_err(Attempt::history)?
+            .into_iter()
+            .flatten()
+        {
+            let entry = report.retained.entry(object.kind()).or_default();
+            entry.objects += 1;
+            entry.bytes += object.bytes().len() as u64;
+        }
 
         let candidates = touched
             .iter()
@@ -167,6 +362,11 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             let size = deletion.len() as u64 + u64::from(object.is_some());
             let weight = deletion.iter().map(Op::bytes).sum::<u64>();
             if !counted.is_empty() && !fits(ops + size, bytes + weight) {
+                if atomic {
+                    return Err(Attempt::history(HistoryError::Limit(
+                        "atomic collection exceeds backend batch limits",
+                    )));
+                }
                 let full = std::mem::replace(&mut batch, deletion_batch(graph));
                 self.apply(full)?;
                 for object in counted.drain(..) {
@@ -367,6 +567,12 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
                             }
                             Some(_) => match self.graph_references(&object) {
                                 Ok(references) => pending.push((id, references)),
+                                Err(
+                                    error @ (HistoryError::Storage(_)
+                                    | HistoryError::Limit(_)
+                                    | HistoryError::Busy
+                                    | HistoryError::Io(_)),
+                                ) => return Err(error.into()),
                                 Err(error) => issues.push(IntegrityIssue {
                                     object: id,
                                     diagnostic: diagnostic(error),
