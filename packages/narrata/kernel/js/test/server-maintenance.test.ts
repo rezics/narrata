@@ -188,7 +188,8 @@ for (const real of [false,true]) describe.skipIf(real && !url)(`public maintenan
     const collector=(await loadAuthoring()).createMaintenance({storeId:f.id,storage:{load:r=>store.load(r),persist:async r=>{const before=hook;hook=undefined;await before?.();return store.persist(r);}}});
     const deleter=await openLibraryMaintenance(store);await collector.registerPublication(publication);await deleter.registerPublication(publication);
     try {
-      await choose(firstBook);await collector.run({kind:"delete_roots",roots:(await roots(collector)).filter(r=>r.key.owner===execution.slice(10))});
+      // Creating the other execution moved the library revision before this deliberate race.
+      await firstBook.reload();await choose(firstBook);await collector.run({kind:"delete_roots",roots:(await roots(collector)).filter(r=>r.key.owner===execution.slice(10))});
       let afterDeletion:Awaited<ReturnType<PostgresStore["usage"]>>|undefined;
       hook=async()=>{await deleter.run({kind:"delete_roots",roots:await roots(deleter)});afterDeletion=await store.usage();};
       await expect(collector.run({kind:"collect",now:1000,grace_seconds:0,dry_run:false})).rejects.toBeInstanceOf(StoreSuperseded);
