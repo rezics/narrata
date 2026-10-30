@@ -143,6 +143,9 @@ export async function readReaderRelations(database: TransactionalSql, source: Re
 /** Complete author queries require separate host authorization. Their first/route facts
  * retain structural meaning and never imply a reader's first visit or feasible route. */
 export async function queryRelations(database: TransactionalSql, source: CompleteRelationSource, query: AuthorRelationQuery, offset = 0, limit = PAGE): Promise<AuthorRelationPage> {
+  // Own one deep snapshot across connection acquisition and every subsequent await.
+  // The caller remains free to reuse or edit its input while this query is pending.
+  query = structuredClone(query);
   const expected = source.queryRelations(query, offset, limit); // Rust checks bounds before SQL.
   return database.transaction("REPEATABLE READ READ ONLY", async sql => {
     if (!await projection(sql, source.artifactId, source.relationIndexId)) throw new RelationStoreError("projection is not installed");

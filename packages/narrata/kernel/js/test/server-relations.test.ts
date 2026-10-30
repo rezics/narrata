@@ -5,6 +5,7 @@ import { loadAuthoring, type Publication } from "../../../web/dist/server/index.
 import { loadRelations, queryRelations, readReaderRelations } from "../server/relations.js";
 import { deferred, pgliteDatabase, postgresDatabase, type TestDatabase } from "./server-fixture.js";
 import type { TransactionalSql, SqlParameter } from "../server/postgres.js";
+import type { AuthorRelationQuery } from "../../../web/dist/server/index.js";
 
 const ddl = readFileSync(new URL("../../../tooling/crates/narrata-authoring/sql/relations-v1.sql", import.meta.url), "utf8");
 const pack = new Uint8Array(readFileSync(new URL("../../../../../fixtures/compat/nodes-r2/story.narpack", import.meta.url)));
@@ -69,6 +70,69 @@ for (const real of [false, true]) {
     await db.query("DELETE FROM narrative_first");
     await expect(loadRelations(driver, source)).rejects.toThrow();
     // Reset the isolated fixture; the loader never repairs an incomplete immutable set.
+    await db.exec("TRUNCATE narrative_projection CASCADE");
+  });
+  suite(`${prefix}: query owns flat and nested input across transaction and projection waits`, async () => {
+    await loadRelations(driver, source);
+    const nodes = source.relationRows("node", 0, 2), units = source.relationRows("unit", 0, 2);
+    const a = nodes[0], b = nodes[1], u = units[0], v = units[1];
+    if (a?.row_type !== "node" || b?.row_type !== "node" || u?.row_type !== "unit" || v?.row_type !== "unit") throw new Error("missing snapshot fixtures");
+    const artifact = Uint8Array.from(Buffer.from(source.artifactId.slice(9), "hex"));
+    for (const nested of [false, true]) for (const corrupt of [false, true]) {
+      const query: AuthorRelationQuery = nested ? { kind: "content", reference: { provider: u.provider, key: u.content_key } } : { kind: "node", node: a.node_id };
+      const original = structuredClone(query), expected = source.queryRelations(original);
+      const entered = deferred(), release = deferred();
+      const observed: SqlParameter[][] = [];
+      const delayed: TransactionalSql = { async transaction(mode, run) {
+        if (!nested) { entered.resolve(); await release.promise; }
+        return driver.transaction(mode, sql => run({ query: async (text, values = []) => {
+          if (nested && text.includes("FROM narrative_projection")) { entered.resolve(); await release.promise; }
+          if (text.includes(`FROM narrative_${nested ? "unit" : "node"} `)) observed.push([...values]);
+          return sql.query(text, values);
+        } }));
+      } };
+      const id = nested ? Uint8Array.from(Buffer.from(u.unit_id, "hex")) : Uint8Array.from(Buffer.from(a.node_id.slice(5), "hex"));
+      if (corrupt) await db.query(nested ? "UPDATE narrative_unit SET content_key='corrupt-snapshot' WHERE artifact=$1::bytea AND unit=$2::bytea" : "UPDATE narrative_node SET graph='corrupt-snapshot' WHERE artifact=$1::bytea AND node=$2::bytea", [artifact, id]);
+      try {
+        const pending = queryRelations(delayed, source, query);
+        await entered.promise;
+        if (query.kind === "node") query.node = b.node_id;
+        else if (query.kind === "content") query.reference.key = v.content_key;
+        release.resolve();
+        if (corrupt) await expect(pending).rejects.toThrow();
+        else expect(await pending).toEqual(expected);
+        const params = observed[0]; if (!params) throw new Error("missing SQL read");
+        if (nested) expect(params.slice(2, 4)).toEqual([u.provider, u.content_key]);
+        else expect(params[2]).toEqual(id);
+        expect(Object.isFrozen(query)).toBe(false);
+      } finally {
+        release.resolve();
+        if (corrupt) await db.query(nested ? "UPDATE narrative_unit SET content_key=$3 WHERE artifact=$1::bytea AND unit=$2::bytea" : "UPDATE narrative_node SET graph=$3 WHERE artifact=$1::bytea AND node=$2::bytea", [artifact, id, nested ? u.content_key : a.graph]);
+      }
+    }
+  });
+  suite(`${prefix}: traversed sparse edges retain nonzero numbers and require reference closure`, async () => {
+    const api = await loadAuthoring();
+    const publication = api.publicationFromPack(new Uint8Array(readFileSync(new URL("../../../../../fixtures/compat/reader-map-v1/story.narpack", import.meta.url))));
+    const engine = api.createEvolution();
+    try {
+      await loadRelations(driver, publication); await engine.registerPublication(publication);
+      await engine.restoreSave(readFileSync(new URL("../../../../../fixtures/compat/reader-map-v1/ending.checkpoint", import.meta.url), "utf8"));
+      const visits = await engine.visits(), allowed = visits.readerRelations(publication);
+      try {
+        expect(allowed.rows(0, 256).some(row => row.row_type === "edge" && row.edge_no > 0)).toBe(true);
+        await readReaderRelations(driver, allowed);
+        for (const attack of ["missing_edge", "renumbered_edge", "missing_closure"] as const) {
+          const broken: TransactionalSql = { transaction: (mode, run) => driver.transaction(mode, sql => run({ query: async (text, values) => {
+            const result = await sql.query(text, values);
+            if ((attack === "missing_edge" && text.includes("FROM narrative_edge")) || (attack === "missing_closure" && text.includes("FROM narrative_cluster"))) return { rows: [] };
+            if (attack === "renumbered_edge" && text.includes("FROM narrative_edge")) return { rows: result.rows.map(row => ({ ...row, edge_no: Number(row.edge_no) + 1 })) };
+            return result;
+          } })) };
+          await expect(readReaderRelations(broken, allowed)).rejects.toThrow();
+        }
+      } finally { allowed.free(); visits.free(); }
+    } finally { await engine.close(); publication.free(); }
     await db.exec("TRUNCATE narrative_projection CASCADE");
   });
   suite(`${prefix}: middle failure rolls back all rows; sparse reader results return to Rust`, async () => {
@@ -140,6 +204,9 @@ for (const real of [false, true]) {
       expect(String((await db.query("SELECT count(*) AS count FROM narrative_projection")).rows[0]?.count)).toBe("2");
       const row = source.relationRows("unit", 0, 1)[0]; if (row?.row_type !== "unit") throw new Error("missing unit");
       expect(await queryRelations(driver, source, { kind: "content", reference: { provider: row.provider, key: row.content_key } })).toEqual(source.queryRelations({ kind: "content", reference: { provider: row.provider, key: row.content_key } }));
+      const otherRow = other.relationRows("unit", 0, 1)[0]; if (otherRow?.row_type !== "unit") throw new Error("missing B unit");
+      const otherQuery = { kind: "content", reference: { provider: otherRow.provider, key: otherRow.content_key } } as const;
+      expect(await queryRelations(driver, other, otherQuery)).toEqual(other.queryRelations(otherQuery));
     } finally { other.free(); }
   });
   (real && url ? test : test.skip)(`${prefix}: loader needs only SELECT and INSERT`, async () => {
