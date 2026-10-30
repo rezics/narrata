@@ -248,62 +248,6 @@ impl<B: StorageBackend> Session<B> {
         self.prefetched.clear();
         Ok(())
     }
-    /// Presents the stored migration state without applying its parent's input or effects.
-    fn migration_page(&self, program: &Program, state: &State) -> Result<Step> {
-        let mut presentation = Vec::new();
-        if let Some(frame) = state.frames.last() {
-            let graph = program.graph(&frame.graph)?;
-            let passage = frame
-                .overlay
-                .passage(&graph, &frame.node)
-                .ok_or_else(|| Error::new("state", "migration", "current node is not a passage"))?;
-            let values = crate::expr::Values {
-                parameters: &frame.parameters,
-                locals: &frame.locals,
-                shared: &state.shared,
-            };
-            let args = passage
-                .args
-                .iter()
-                .map(|(key, expr)| Ok((key.clone(), values.evaluate(expr)?.view())))
-                .collect::<Result<BTreeMap<_, _>>>()?;
-            if let Some(title) = &passage.title {
-                presentation.push(Item {
-                    role: crate::view::Role::Title,
-                    node: frame.node,
-                    content: crate::view::Presented::Ref(title.clone()),
-                    args: args.clone(),
-                });
-            }
-            if let Some(body) = &passage.body {
-                let mut body = body.clone();
-                // A migration establishes a new page boundary at the pending interaction;
-                // later body blocks must still wait for their choices.
-                if let Some(placement) = passage
-                    .choice_points
-                    .iter()
-                    .find(|point| Some(point.id) == frame.at)
-                    .and_then(|point| point.placement.clone())
-                {
-                    body.last = Some(placement);
-                }
-                presentation.push(Item {
-                    role: crate::view::Role::Body,
-                    node: frame.node,
-                    content: crate::view::Presented::Segment(body),
-                    args,
-                });
-            }
-        }
-        Ok(Step {
-            state: state.clone(),
-            pins: program.pin_state(state)?,
-            presentation,
-            entered: true,
-            #[cfg(feature = "trace")]
-            trace: Vec::new(),
-        })
-    }
     /// Reopens this execution's cursor without replay; creates its root only when absent.
     pub fn open(program: Arc<Program>, execution: ExecutionId, backend: B) -> Result<Self> {
         Self::open_mode(program, execution, backend, true)
@@ -628,7 +572,7 @@ impl<B: StorageBackend> Session<B> {
                             "migration artifact link differs",
                         ));
                     }
-                    return self.migration_page(program, &record.state);
+                    return crate::runtime::migration_page(program, &record.state);
                 }
                 let parent = self.load(parent)?;
                 if parent.commit.artifact != record.commit.artifact {

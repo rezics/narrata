@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 narrata-kernel = { path = "../../../kernel/crates/narrata-kernel", version = "=0.1.0-alpha.1", features = ["serde"] }
-narrata-nodes = { path = "../../../nodes/crates/narrata-nodes", version = "=0.1.0-alpha.1" }
+narrata-nodes = { path = "../../../nodes/crates/narrata-nodes", version = "=0.1.0-alpha.1", features = ["trace"] }
 narrata-graph = { path = "../narrata-graph", version = "=0.1.0-alpha.1" }
 hex.workspace = true
 serde.workspace = true
@@ -17,6 +17,7 @@ serde_json.workspace = true
 schemars.workspace = true
 
 [dev-dependencies]
+narrata-history = { path = "../../../kernel/crates/narrata-history", version = "=0.1.0-alpha.1" }
 narrata-node-tools = { path = "../narrata-node-tools", version = "=0.1.0-alpha.1" }
 narrata-node-bench = { path = "../narrata-node-bench", version = "=0.1.0-alpha.1" }
 narrata-content-local = { path = "../narrata-content-local", version = "=0.1.0-alpha.1" }

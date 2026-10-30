@@ -870,3 +870,97 @@ impl Machine<'_> {
         Ok((frame.graph.clone(), frame.node, frame.instance, title))
     }
 }
+
+/// Presents the stored migration state without applying its parent's input or effects.
+pub(crate) fn migration_page(program: &Program, state: &State) -> Result<Step> {
+    let mut presentation = Vec::new();
+    if let Some(frame) = state.frames.last() {
+        let graph = program.graph(&frame.graph)?;
+        let passage = frame
+            .overlay
+            .passage(&graph, &frame.node)
+            .ok_or_else(|| Error::new("state", "migration", "current node is not a passage"))?;
+        let values = crate::expr::Values {
+            parameters: &frame.parameters,
+            locals: &frame.locals,
+            shared: &state.shared,
+        };
+        let args = passage
+            .args
+            .iter()
+            .map(|(key, expr)| Ok((key.clone(), values.evaluate(expr)?.view())))
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        if let Some(title) = &passage.title {
+            presentation.push(Item {
+                role: crate::view::Role::Title,
+                node: frame.node,
+                content: crate::view::Presented::Ref(title.clone()),
+                args: args.clone(),
+            });
+        }
+        if let Some(body) = &passage.body {
+            let mut body = body.clone();
+            // A migration establishes a new page boundary at the pending interaction;
+            // later body blocks must still wait for their choices.
+            if let Some(placement) = passage
+                .choice_points
+                .iter()
+                .find(|point| Some(point.id) == frame.at)
+                .and_then(|point| point.placement.clone())
+            {
+                body.last = Some(placement);
+            }
+            presentation.push(Item {
+                role: crate::view::Role::Body,
+                node: frame.node,
+                content: crate::view::Presented::Segment(body),
+                args,
+            });
+        }
+    }
+    #[cfg(feature = "trace")]
+    let trace = {
+        let location = state.frames.last().map(TraceLocation::from).or_else(|| {
+            state.finished.as_ref().map(|finished| TraceLocation {
+                graph: program.manifest().product.entry.clone(),
+                node: finished.node,
+                instance: finished.instance,
+            })
+        });
+        let mut events = Vec::new();
+        if let Some(location) = location {
+            events.push(TraceEvent {
+                location: location.clone(),
+                action: TraceAction::Visit,
+            });
+            for item in &presentation {
+                if let Presented::Segment(segment) = &item.content {
+                    events.push(TraceEvent {
+                        location: location.clone(),
+                        action: TraceAction::Segment {
+                            role: item.role,
+                            segment: segment.clone(),
+                        },
+                    });
+                }
+            }
+            if let Interaction::Finished { outcome, body, .. } =
+                (Machine { program }).interaction(state, None)?
+            {
+                events.push(TraceEvent {
+                    location,
+                    action: TraceAction::Finished { outcome, body },
+                });
+            }
+        }
+        events
+    };
+    Ok(Step {
+        state: state.clone(),
+        pins: program.pin_state(state)?,
+        presentation,
+        entered: true,
+        #[cfg(feature = "trace")]
+        trace,
+    })
+}

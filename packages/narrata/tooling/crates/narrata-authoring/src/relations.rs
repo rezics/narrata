@@ -203,6 +203,39 @@ impl CheckedRelations {
     pub fn rows(&self) -> &[RelationRow] {
         &self.rows
     }
+
+    /// Bounded author access. Structural first/route rows make no claim about execution.
+    pub fn query(
+        &self,
+        query: &AuthorRelationQuery,
+        offset: usize,
+        limit: usize,
+    ) -> Result<AuthorRelationPage> {
+        if limit == 0 || limit > MAX_QUERY_ROWS {
+            return Err(error("relation query budget"));
+        }
+        let mut matches = self
+            .rows
+            .iter()
+            .filter(|row| query.matches(row))
+            .skip(offset);
+        let rows: Vec<_> = matches.by_ref().take(limit).cloned().collect();
+        let next_offset = if matches.next().is_some() {
+            Some(
+                offset
+                    .checked_add(rows.len())
+                    .ok_or_else(|| error("relation query offset"))?,
+            )
+        } else {
+            None
+        };
+        Ok(AuthorRelationPage {
+            artifact_id: self.index.artifact_id,
+            projection_version: Version1,
+            rows,
+            next_offset,
+        })
+    }
     pub fn verify_program(&self, program: &Program) -> Result<()> {
         let expected = project_relations(program)?;
         if expected.index_object != self.index_object || expected.parts != self.parts {
@@ -213,6 +246,200 @@ impl CheckedRelations {
         Ok(())
     }
 }
+
+pub const MAX_QUERY_ROWS: usize = 1024;
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AuthorRelationQuery {
+    Content { reference: ContentRef },
+    Node { node: NodeId },
+    Cluster { cluster: ClusterId },
+    Ending { node: NodeId },
+    Route { ending: NodeId },
+    First { unit: Digest },
+    Forward { unit: Digest },
+    Reverse { unit: Digest },
+}
+impl AuthorRelationQuery {
+    fn matches(&self, row: &RelationRow) -> bool {
+        match (self, row) {
+            (Self::Content { reference }, RelationRow::Unit(r)) => r.unit_id == unit_id(reference),
+            (Self::Node { node }, RelationRow::Node(r)) => r.node_id == *node,
+            (Self::Cluster { cluster }, RelationRow::Node(r)) => r.cluster_id == *cluster,
+            (Self::Cluster { cluster }, RelationRow::Cluster(r)) => r.cluster_id == *cluster,
+            (Self::Ending { node }, RelationRow::Ending(r)) => r.node_id == *node,
+            (Self::Route { ending }, RelationRow::Route(r)) => r.ending_node == *ending,
+            (Self::First { unit }, RelationRow::First(r)) => r.unit_id == *unit,
+            (Self::Forward { unit }, RelationRow::Edge(r)) => r.source_unit == *unit,
+            (Self::Reverse { unit }, RelationRow::Edge(r)) => r.target_unit == *unit,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, JsonSchema, Serialize)]
+pub struct AuthorRelationPage {
+    pub artifact_id: ArtifactId,
+    pub projection_version: Version1,
+    pub rows: Vec<RelationRow>,
+    pub next_offset: Option<usize>,
+}
+
+/// The exact permitted facts, derived from a checked projection and checked ancestor
+/// replay. This is an in-process proof; client JSON cannot construct it or grant access.
+#[derive(Debug)]
+pub struct ReaderRelationAllowlist {
+    artifact: ArtifactId,
+    index: Digest,
+    rows: Vec<RelationRow>,
+}
+
+/// A closed sparse result retains original edge numbers. It never satisfies the complete
+/// canonical-part-set contract of `CheckedRelations`.
+#[derive(Debug)]
+pub struct CheckedReaderRelations {
+    artifact: ArtifactId,
+    index: Digest,
+    rows: Vec<RelationRow>,
+}
+impl CheckedReaderRelations {
+    pub fn artifact_id(&self) -> ArtifactId {
+        self.artifact
+    }
+    pub fn index_id(&self) -> Digest {
+        self.index
+    }
+    pub fn rows(&self) -> &[RelationRow] {
+        &self.rows
+    }
+}
+
+impl ReaderRelationAllowlist {
+    pub fn artifact_id(&self) -> ArtifactId {
+        self.artifact
+    }
+    pub fn index_id(&self) -> Digest {
+        self.index
+    }
+    pub fn rows(&self) -> &[RelationRow] {
+        &self.rows
+    }
+
+    pub fn from_visits(
+        projection: &CheckedRelations,
+        visits: &narrata_nodes::history::visits::CheckedVisits,
+    ) -> Result<Self> {
+        use narrata_nodes::history::visits::VisitActionV1;
+        let artifact = projection.index.artifact_id;
+        let node_rows: BTreeMap<_, _> = projection
+            .rows
+            .iter()
+            .filter_map(|row| match row {
+                RelationRow::Node(r) => Some((r.node_id, r)),
+                _ => None,
+            })
+            .collect();
+        let mut units = BTreeSet::new();
+        let mut nodes = BTreeSet::new();
+        let mut walked = BTreeSet::new();
+        let mut endings = BTreeSet::new();
+        let mut matched = false;
+        for source in &visits.report().sources {
+            for segment in source.segments.iter().filter(|s| s.artifact_id == artifact) {
+                matched = true;
+                let mut previous = None;
+                let mut selection = None;
+                for event in &segment.events {
+                    match &event.action {
+                        VisitActionV1::Visit { static_node: true } => {
+                            let row = node_rows
+                                .get(&event.node)
+                                .ok_or_else(|| error("visited node absent from projection"))?;
+                            nodes.insert(event.node);
+                            if let Some(unit) = row.unit_id {
+                                if let Some((from, source_unit)) = previous
+                                    && source_unit != unit
+                                {
+                                    walked.insert((from, event.node, selection));
+                                }
+                                previous = Some((event.node, unit));
+                                selection = None;
+                            }
+                        }
+                        VisitActionV1::Visit { static_node: false } => {
+                            previous = None;
+                            selection = None;
+                        }
+                        VisitActionV1::Selected {
+                            choice_point,
+                            option,
+                            branch: true,
+                        } => selection = Some((*choice_point, *option)),
+                        VisitActionV1::Segment { segment, .. } => {
+                            units.insert(unit_id(&segment.unit));
+                        }
+                        VisitActionV1::Finished { .. } => {
+                            endings.insert(event.node);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        if !matched {
+            return Err(error("visit evidence does not contain this artifact"));
+        }
+        let clusters: BTreeSet<_> = nodes.iter().map(|id| node_rows[id].cluster_id).collect();
+        let rows: Vec<_> = projection
+            .rows
+            .iter()
+            .filter(|row| match row {
+                RelationRow::Unit(r) => units.contains(&r.unit_id),
+                RelationRow::Node(r) => nodes.contains(&r.node_id),
+                RelationRow::Cluster(r) => clusters.contains(&r.cluster_id),
+                RelationRow::Ending(r) => endings.contains(&r.node_id),
+                RelationRow::Edge(r) => {
+                    walked.contains(&(r.source_node, r.target_node, r.choice_point.zip(r.option)))
+                }
+                // Structural entry, first and route sets are author queries, not reader facts.
+                _ => false,
+            })
+            .cloned()
+            .collect();
+        if rows.len() > MAX_VISIT_RELATION_ROWS {
+            return Err(error("reader relation row budget"));
+        }
+        validate_rows_inner(artifact, &rows, false)?;
+        Ok(Self {
+            artifact,
+            index: projection.index_object.id,
+            rows,
+        })
+    }
+
+    /// SQL/transport values must return to Rust. Exact comparison checks every column,
+    /// ordering, duplicates, membership, closure and completeness of this permitted set.
+    pub fn check_rows(&self, rows: Vec<RelationRow>) -> Result<CheckedReaderRelations> {
+        if rows != self.rows {
+            return Err(error("reader relation result differs from allowlist"));
+        }
+        Ok(CheckedReaderRelations {
+            artifact: self.artifact,
+            index: self.index,
+            rows,
+        })
+    }
+
+    pub fn read_rows(&self, bytes: &[u8]) -> Result<CheckedReaderRelations> {
+        if bytes.len() > MAX_PART_BYTES {
+            return Err(error("reader relation byte budget"));
+        }
+        let text = std::str::from_utf8(bytes).map_err(error)?;
+        self.check_rows(narrata_nodes::parse_json_limited(text, MAX_PART_BYTES)?)
+    }
+}
+pub const MAX_VISIT_RELATION_ROWS: usize = 100_000;
 
 pub fn unit_id(reference: &ContentRef) -> Digest {
     Digest::json("narrata.nodes.relation-unit", &reference.to_bytes())
@@ -671,6 +898,10 @@ fn row_limit(kind: RelationKind) -> usize {
 }
 
 fn validate_rows(artifact: ArtifactId, rows: &[RelationRow]) -> Result<()> {
+    validate_rows_inner(artifact, rows, true)
+}
+
+fn validate_rows_inner(artifact: ArtifactId, rows: &[RelationRow], dense: bool) -> Result<()> {
     let mut previous = None;
     let mut counts = BTreeMap::new();
     let mut units = BTreeMap::new();
@@ -712,6 +943,7 @@ fn validate_rows(artifact: ArtifactId, rows: &[RelationRow]) -> Result<()> {
         }
     }
     let mut edge_no = 0;
+    let mut sparse_edge_no = None;
     let mut first_distances = BTreeMap::new();
     for row in rows {
         let valid = match row {
@@ -731,7 +963,12 @@ fn validate_rows(artifact: ArtifactId, rows: &[RelationRow]) -> Result<()> {
                 _ => false,
             },
             RelationRow::Edge(r) => {
-                let ordinal_ok = r.edge_no == edge_no;
+                let ordinal_ok = if dense {
+                    r.edge_no == edge_no
+                } else {
+                    sparse_edge_no.is_none_or(|n| n < r.edge_no)
+                };
+                sparse_edge_no = Some(r.edge_no);
                 edge_no += 1;
                 ordinal_ok
                     && r.edge_kind <= 4

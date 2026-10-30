@@ -8,6 +8,7 @@ pub mod compose;
 pub mod evolution;
 pub mod graph;
 pub mod ids;
+pub mod maps;
 pub mod objects;
 pub mod publication;
 pub mod records;

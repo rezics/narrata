@@ -2,6 +2,8 @@
 
 pub mod evolution;
 pub mod locator;
+#[cfg(feature = "trace")]
+pub mod visits;
 
 use std::sync::Arc;
 

@@ -493,6 +493,7 @@ dependencies = [
  "hex",
  "narrata-content-local",
  "narrata-graph",
+ "narrata-history",
  "narrata-kernel",
  "narrata-node-bench",
  "narrata-node-tools",

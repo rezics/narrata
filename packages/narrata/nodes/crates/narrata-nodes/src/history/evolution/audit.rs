@@ -72,6 +72,16 @@ fn unverified(
     }
 }
 
+/// Observations escape only after this commit's source replay has been checked. The
+/// visitor borrows one step at a time so an audit never retains every decoded State.
+pub(crate) struct AuditedStep<'a> {
+    pub id: CommitId,
+    pub header: &'a Commit,
+    pub state: &'a State,
+    pub events: &'a [TraceEvent],
+    pub migration: bool,
+}
+
 impl EvolutionRegistry {
     /// Audits every readable source segment, then compares only the latest segment on the
     /// requested target. A committed migration is a baseline, not an ordinary input.
@@ -82,19 +92,20 @@ impl EvolutionRegistry {
         target: ArtifactId,
         limits: PathLimits,
     ) -> Result<PathComparisonV1> {
-        match self.compare(history, source, target, limits) {
+        match self.audit_path(history, source, Some(target), limits, |_| Ok(())) {
             Err(error) if error.code == "path_limit" => {
                 Ok(unverified(UnverifiedReason::Limit, None, None))
             }
             result => result,
         }
     }
-    fn compare<B: StorageBackend>(
+    pub(crate) fn audit_path<B: StorageBackend>(
         &self,
         history: &History<B, DomainKinds<NodeDomain>>,
         source: CommitId,
-        target: ArtifactId,
+        target: Option<ArtifactId>,
         limits: PathLimits,
+        mut observe: impl FnMut(AuditedStep<'_>) -> Result<()>,
     ) -> Result<PathComparisonV1> {
         let limits = limits.bounded();
         let mut budget = Budget {
@@ -131,7 +142,7 @@ impl EvolutionRegistry {
             .map(|(i, _)| i + 1)
             .next_back()
             .unwrap_or(0);
-        let target_program = self.program(target)?;
+        let target_program = target.map(|id| self.program(id)).transpose()?;
         let mut previous: Option<(CommitId, &Commit, State)> = None;
         let mut interim_parent = None;
         let mut shadow: Option<State> = None;
@@ -153,6 +164,7 @@ impl EvolutionRegistry {
             let (recorded, _) = decode_state(source_program, object.bytes())?;
             let mut input = None;
             let mut input_parent = None;
+            let mut migration = false;
             let old_events;
             if let Some((parent_id, parent_header, parent_state)) = &previous {
                 if header.parent != Some(*parent_id)
@@ -169,6 +181,7 @@ impl EvolutionRegistry {
                     .ok_or_else(|| Error::new("invalid_save", id.to_string(), "missing input"))?;
                 let object = budget.read(history, oid(input_id), None)?;
                 if object.kind() == MIGRATION_INPUT_KIND {
+                    migration = true;
                     migration_steps += 1;
                     if migration_steps > 64 {
                         return Ok(unverified(
@@ -219,7 +232,8 @@ impl EvolutionRegistry {
                             "migration state differs from its descriptor",
                         ));
                     }
-                    old_events = Vec::new();
+                    old_events = crate::runtime::migration_page(source_program, &recorded)?.trace;
+                    budget.trace(&old_events)?;
                 } else {
                     transitions += 1;
                     if transitions > limits.transitions {
@@ -289,9 +303,19 @@ impl EvolutionRegistry {
                 }
                 old_events = initial.events;
             }
+            observe(AuditedStep {
+                id: *id,
+                header,
+                state: &recorded,
+                events: &old_events,
+                migration,
+            })?;
             // Keep auditing the source after a target divergence: a later corrupt source
             // record is InvalidSave, never evidence about changed rules.
-            if index >= latest && conclusion == PathComparisonV1::Equivalent {
+            if index >= latest
+                && conclusion == PathComparisonV1::Equivalent
+                && let Some(target_program) = target_program
+            {
                 if index == latest && latest > 0 {
                     match decode_state(target_program, &recorded.envelope()) {
                         Ok((baseline, _)) => {
