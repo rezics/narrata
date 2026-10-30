@@ -108,6 +108,9 @@ console.log("Installed package opened in " + process.argv[2]);
 cpSync(resolve(here, "scripts/install/journey.mjs"), join(directory, "journey.mjs"));
 cpSync(resolve(here, "scripts/install/maps.mjs"), join(directory, "maps.mjs"));
 cpSync(resolve(here, "../../../fixtures/compat/reader-map-v1"), join(publicDirectory, "reader-map-fixtures"), { recursive: true });
+mkdirSync(join(publicDirectory, "reader-map-fixtures/extra"), { recursive: true });
+cpSync(resolve(here, "../../../fixtures/compat/nodes-r2-proposals"), join(publicDirectory, "reader-map-fixtures/extra/proposals"), { recursive: true });
+cpSync(resolve(here, "../../../fixtures/compat/nodes-evolution-v1/deleted-lower-call"), join(publicDirectory, "reader-map-fixtures/extra/evolution"), { recursive: true });
 writeFileSync(join(directory, "authoring.mjs"), `
 import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
