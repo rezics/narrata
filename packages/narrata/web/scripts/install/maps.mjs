@@ -51,6 +51,9 @@ export async function verifyMaps(api, load) {
     const limited = await engine.visits({ transitions: 0, automatic_steps: 0, object_bytes: 0 });
     try { const map = limited.readerMap(publication); if (map.sources[0].complete || !map.sources[0].missing.length || map.nodes.length) throw new Error("Pre-replay budget provenance"); }
     finally { limited.free(); }
+    // The local-response page above needs its complete two-step ancestry. Use a later
+    // entered page so exact-page retention still leaves a genuine audit boundary.
+    await engine.restoreSave(decoder.decode(await load("called.checkpoint")));
     await engine.restoreSave(await engine.exportShallow(0));
     const shallow = await engine.visits();
     try {
