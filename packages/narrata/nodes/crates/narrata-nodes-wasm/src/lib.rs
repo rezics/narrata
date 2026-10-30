@@ -5,6 +5,53 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod maintenance_tests {
+    use super::*;
+
+    #[test]
+    fn reader_restores_and_continues_repeated_migrations_with_exact_historic_programs() {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../../fixtures/compat/nodes-evolution-v1/republished-after-migration");
+        let pack = std::fs::read(directory.join("target.narpack")).unwrap();
+        let mut book = NodeBook::new(&pack, "execution:0190f2a0000070008000000000000001").unwrap();
+        for file in ["source.narpack", "ancestor.narpack"] {
+            book.register_history_pack(&std::fs::read(directory.join(file)).unwrap())
+                .unwrap();
+        }
+        book.memory().unwrap();
+        let save = std::fs::read(directory.join("target.checkpoint")).unwrap();
+        let save = save
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        book.restore(&save).unwrap();
+        let view: BookView = serde_json::from_str(&book.inspect().unwrap()).unwrap();
+        if let narrata_nodes::view::Interaction::Choose {
+            choice_point,
+            options,
+            min,
+            ..
+        } = view.view.interaction
+        {
+            let selected = options
+                .into_iter()
+                .filter(|o| o.enabled)
+                .take(usize::from(min.max(1)))
+                .map(|o| o.id.to_string())
+                .collect();
+            book.choose(
+                &view.view.cursor.to_string(),
+                &choice_point.to_string(),
+                selected,
+            )
+            .unwrap();
+            book.inspect().unwrap();
+        }
+    }
+}
+
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
@@ -230,6 +277,8 @@ pub struct NodeBook {
     execution: narrata_nodes::ExecutionId,
     cache: CacheBackend,
     session: Option<Session<CacheBackend>>,
+    history_programs: BTreeMap<narrata_nodes::ArtifactId, Arc<Program>>,
+    history_bytes: usize,
 }
 
 #[wasm_bindgen]
@@ -251,6 +300,8 @@ impl NodeBook {
             execution,
             cache: CacheBackend::new(),
             session: None,
+            history_programs: BTreeMap::new(),
+            history_bytes: 0,
         })
     }
 
@@ -274,6 +325,8 @@ impl NodeBook {
             execution: parse(execution, "execution", "execution:<32 hex digits>")?,
             cache: CacheBackend::new(),
             session: None,
+            history_programs: BTreeMap::new(),
+            history_bytes: 0,
         })
     }
 
@@ -332,6 +385,41 @@ impl NodeBook {
         Ok(())
     }
 
+    /// Exact historical artifacts for rendering/continuing a restored migrated save.
+    /// This adds no migration evaluator, publication compiler or trace to the reader.
+    #[wasm_bindgen(js_name = registerHistoryPack)]
+    pub fn register_history_pack(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        let total = self
+            .history_bytes
+            .checked_add(bytes.len())
+            .filter(|n| *n <= 64 * 1024 * 1024)
+            .ok_or_else(|| {
+                js_error(Error::new(
+                    "limit",
+                    "history_packs",
+                    "historical packs exceed 64 MiB",
+                ))
+            })?;
+        if self.history_programs.len() >= 64 {
+            return Err(js_error(Error::new(
+                "limit",
+                "history_packs",
+                "at most 64 historical artifacts",
+            )));
+        }
+        let (program, _) = Program::from_pack(bytes).map_err(js_error)?;
+        program.verify_artifact().map_err(js_error)?;
+        let program = Arc::new(program);
+        if let Some(session) = &mut self.session {
+            session
+                .register_history_program(program.clone())
+                .map_err(js_error)?;
+        }
+        self.history_programs.insert(program.artifact_id(), program);
+        self.history_bytes = total;
+        Ok(())
+    }
+
     /// Requires all chunks and the tombstone set, including chunks already cached.
     #[wasm_bindgen(js_name = verifyArtifact)]
     pub fn verify_artifact(&self) -> Result<(), JsError> {
@@ -368,10 +456,14 @@ impl NodeBook {
     /// Opens the kernel cursor, creating it only if absent. Retried after host loads.
     pub fn open(&mut self) -> Result<(), JsError> {
         self.session = None;
-        self.session = Some(
-            Session::open(self.program.clone(), self.execution, self.cache.share())
-                .map_err(js_error)?,
-        );
+        let mut session = Session::open(self.program.clone(), self.execution, self.cache.share())
+            .map_err(js_error)?;
+        for program in self.history_programs.values() {
+            session
+                .register_history_program(program.clone())
+                .map_err(js_error)?;
+        }
+        self.session = Some(session);
         self.finish(Ok(()))
     }
 

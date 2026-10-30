@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { expect, test } from "vitest";
 import { loadAuthoring, AuthoringError, type Maintenance, type MaintenanceRequest, type ObservedRoot } from "@rezics/narrata/server";
 import { openBook, locateSave, type Book } from "@rezics/narrata";
-import { AuthenticatedLibrary, IndexedDbStore, decodeLoaded, encodeLoadRequest, StoreSuperseded, WriteRejected, type CacheStore } from "@rezics/narrata/storage";
+import { AuthenticatedLibrary, IndexedDbStore, decodeLoaded, encodeLoaded, encodeFlush, encodeLoadRequest, StoreSuperseded, WriteRejected, type CacheStore } from "@rezics/narrata/storage";
 import { demoPack, execution } from "./fixture.js";
 
 const empty = encodeLoadRequest({ keys: [], objects: [], keyRanges: [], objectRanges: [] });
@@ -177,4 +177,31 @@ test("account generation closes maintenance and rejects an already loaded late r
     await expect(m.inspectSave("invalid")).rejects.toThrow("closed");
     expect(await locateSave(f.store,execution)).not.toBeNull();
   } finally {release();await m.close();await book.close();f.store.close();f.publication.free();}
+});
+
+test("missing objects and unregistered kinds remain distinct and never authorize a sweep", async () => {
+  const f = await fixture();
+  const book = await openBook({pack:demoPack,execution,storage:f.store});
+  const m = await f.create();
+  const missing = await f.create({
+    load:async request => {
+      const loaded = decodeLoaded(await f.store.load(request));
+      loaded.objects = loaded.objects.map(([id])=>[id,null]);
+      return encodeLoaded(loaded);
+    }, persist:bytes=>f.store.persist(bytes),
+  });
+  try {
+    const cursor = (await book.inspect()).view.cursor;
+    await expect(missing.exportSave({execution,artifact:book.artifactId,cursor})).rejects.toMatchObject({code:"needs_object"});
+    const [reference,bytes] = [...f.publication.objects()][0]!;
+    const state = decodeLoaded(await f.store.load(empty)).store;
+    await f.store.persist(encodeFlush({store:state.id,batches:[{
+      base:state.revision,revision:state.revision+1,
+      putObjects:[[new Uint8Array(Buffer.from(reference.object_id.replace(/^object:/,""),"hex")),bytes]],deleteObjects:[],putKeys:[],deleteKeys:[],
+    }]}));
+    const revision = decodeLoaded(await f.store.load(empty)).store.revision;
+    await expect(m.run({kind:"collect",now:1000,grace_seconds:0,dry_run:false})).rejects.toMatchObject({code:"unregistered_kind"});
+    expect(decodeLoaded(await f.store.load(empty)).store.revision).toBe(revision);
+    expect((await locateSave(f.store,execution))?.cursor).toBe(cursor);
+  } finally {await Promise.all([m.close(),missing.close(),book.close()]);f.store.close();f.publication.free();}
 });

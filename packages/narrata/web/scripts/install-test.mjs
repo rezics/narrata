@@ -40,6 +40,10 @@ const publicDirectory = join(directory, "public");
 mkdirSync(join(publicDirectory, "objects"), { recursive: true });
 writeFileSync(join(publicDirectory, "manifest.cbor"), parts.manifest);
 writeFileSync(join(publicDirectory, "story.narpack"), demoPack);
+for (const name of ["unseen-rule","republished-after-migration","proposal-retained","shallow-history"]) {
+  cpSync(resolve(here,"../../../fixtures/compat/nodes-evolution-v1",name),join(publicDirectory,"maintenance-fixtures",name),{recursive:true});
+}
+cpSync(resolve(here,"../../../fixtures/compat/nodes-r2-proposals"),join(publicDirectory,"maintenance-fixtures/legacy"),{recursive:true});
 for (const [id, bytes] of parts.objects) writeFileSync(join(publicDirectory, "objects", `${id.slice(7)}.cbor`), bytes);
 writeFileSync(join(directory, "objects.json"), JSON.stringify(Object.fromEntries([...parts.objects].map(([id, bytes]) => [id, [...bytes]]))));
 writeFileSync(join(directory, "manifest.cbor"), parts.manifest);
@@ -150,8 +154,12 @@ writeFileSync(join(directory,"maintenance-node.mjs"), `
 import "fake-indexeddb/auto";
 import { readFile, writeFile } from "node:fs/promises";
 import { loadAuthoring } from "@rezics/narrata/server";
-import { verifyMaintenance } from "./maintenance.mjs";
-const evidence = await verifyMaintenance(await loadAuthoring(), new Uint8Array(await readFile(new URL("./public/story.narpack",import.meta.url))));
+import { verifyMaintenance, verifyHistoricalMaintenance } from "./maintenance.mjs";
+const api = await loadAuthoring();
+const evidence = {journey:await verifyMaintenance(api, new Uint8Array(await readFile(new URL("./public/story.narpack",import.meta.url)))),history:await verifyHistoricalMaintenance(api,async name=>{
+  try {return new Uint8Array(await readFile(new URL("./public/maintenance-fixtures/"+name,import.meta.url)));}
+  catch(error) {if(error.code === "ENOENT") return undefined;throw error;}
+})};
 await writeFile(new URL("./maintenance-" + (globalThis.Bun ? "bun" : "node") + ".json",import.meta.url),JSON.stringify(evidence,null,2));
 console.log("Installed maintenance",evidence);
 `);
@@ -218,8 +226,11 @@ window.ready = new URLSearchParams(location.search).has("reference") ? (async ()
   } });
   window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), firstScreen: () => firstScreenRequests, firstScreenUrls: () => firstScreenUrls,
     maintenance: async () => {
-      const [{loadAuthoring},{verifyMaintenance}] = await Promise.all([import("@rezics/narrata/authoring"),import("./maintenance.mjs")]);
-      return verifyMaintenance(await loadAuthoring(),await bytes("/story.narpack"));
+      const [{loadAuthoring},{verifyMaintenance,verifyHistoricalMaintenance}] = await Promise.all([import("@rezics/narrata/authoring"),import("./maintenance.mjs")]);
+      const api = await loadAuthoring();
+      return {journey:await verifyMaintenance(api,await bytes("/story.narpack")),history:await verifyHistoricalMaintenance(api,async name=>{
+        const reply = await fetch("/maintenance-fixtures/"+name);return reply.ok ? new Uint8Array(await reply.arrayBuffer()) : undefined;
+      })};
     },
     failContentOnce: async () => { failContent = true; const failed = await controller.refresh(); const phase = controller.getSnapshot().phase; const retried = await controller.retry(); return { failed, phase, retried, after: controller.getSnapshot().phase }; },
     author: () => new Promise((done, fail) => {

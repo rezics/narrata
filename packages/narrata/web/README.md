@@ -54,6 +54,8 @@ is rejected rather than overwritten. Without `storage`, the session stays in mem
 Load maintenance from the authoring entry on demand (`server` in Node/Bun). Supply a host-authorized
 library transport and its immutable StoreId, then register the exact trusted publications needed
 by the save, including historical artifacts after migrations.
+When reopening with `openBook`, pass those exact older packs in `historyPacks` (at most 64 packs
+and 64 MiB combined) so the reader can reconstruct historical arguments and migration boundaries.
 
 ```ts
 const { loadAuthoring } = await import("@rezics/narrata/authoring");

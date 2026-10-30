@@ -9,8 +9,62 @@ const empty = encodeLoadRequest({ keys: [], objects: [], keyRanges: [], objectRa
 async function choose(book) {
   const view = (await book.inspect()).view;
   if (view.interaction.kind !== "choose") return false;
-  await book.choose(view.cursor, view.interaction.choice_point, [view.interaction.options.find(o => o.enabled).id]);
+  const selected = view.interaction.options.filter(o => o.enabled).slice(0,Math.max(1,view.interaction.min)).map(o=>o.id);
+  if (!selected.length && view.interaction.min > 0) return false;
+  await book.choose(view.cursor, view.interaction.choice_point, selected);
   return true;
+}
+
+export async function verifyHistoricalMaintenance(api, load) {
+  const results = [];
+  for (const name of ["unseen-rule","republished-after-migration","proposal-retained","shallow-history","legacy"]) {
+    const packs = [];
+    for (const file of name === "legacy" ? ["story.narpack"] : ["source.narpack","target.narpack",...(name === "republished-after-migration" ? ["ancestor.narpack"] : [])]) {
+      const bytes = await load(`${name}/${file}`);
+      if (bytes) packs.push(bytes);
+    }
+    const publications = packs.map(bytes=>api.publicationFromPack(bytes));
+    const stored = await IndexedDbStore.open(`maintenance-history-${crypto.randomUUID()}`);
+    const state = decodeLoaded(await stored.load(empty)).store;
+    const m = api.createMaintenance({storage:stored,storeId:state.id});
+    let reference, continued;
+    let cold;
+    let receiving;
+    try {
+      for (const publication of publications) await m.registerPublication(publication);
+      const input = await load(`${name}/${name === "legacy" ? "session.export.json" : "target.checkpoint"}`);
+      check(input !== undefined, "Missing frozen historical save");
+      const save = name === "legacy" ? new TextDecoder().decode(input) : input;
+      const checked = await m.inspectSave(save);
+      const current = publications.find(p=>p.artifactId === checked.artifact);
+      check(current !== undefined, "Missing exact current artifact");
+      const historyPacks = publications.filter(p=>p !== current).map(p=>p.pack());
+      await m.importSave(save,{execution,...checked,expected_revision:null,now:100});
+      reference = await openBook({pack:current.pack(),historyPacks,execution,storage:stored});
+      const before = await reference.inspect();
+      let shallow;
+      try { shallow = await m.exportSave({execution,...checked,ancestors:0}); }
+      catch (error) {
+        check(error.code === "history_truncated", "Unexpected shallow context failure");
+        check((await locateSave(stored,execution))?.cursor === checked.cursor,"Shallow refusal moved a durable root");
+        results.push({name,contextRefused:true});
+        continue;
+      }
+      cold = await IndexedDbStore.open(`maintenance-history-cold-${crypto.randomUUID()}`);
+      receiving = api.createMaintenance({storage:cold,storeId:decodeLoaded(await cold.load(empty)).store.id});
+      for (const publication of publications) await receiving.registerPublication(publication);
+      await receiving.importSave(shallow,{execution,...checked,expected_revision:null,now:100});
+      continued = await openBook({pack:current.pack(),historyPacks,execution,storage:cold});
+      check(same(exactPage(await continued.inspect()),exactPage(before)), "Historical shallow page differs: " + name);
+      await choose(reference); await choose(continued);
+      check(same(exactPage(await continued.inspect()),exactPage(await reference.inspect())),"Historical continuation differs: " + name);
+      results.push({name,coldContinue:true,bytes:shallow.length});
+    } finally {
+      await Promise.all([reference?.close(),continued?.close(),m.close(),receiving?.close()]);
+      stored.close(); cold?.close(); for (const publication of publications) publication.free();
+    }
+  }
+  return results;
 }
 async function roots(handle) {
   const result = await handle.run({ kind: "roots", after: null, limit: 1024 });

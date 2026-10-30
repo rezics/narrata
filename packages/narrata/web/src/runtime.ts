@@ -38,7 +38,11 @@ function isContentRef(value: unknown): value is ContentRef {
     && typeof value.provider === "string" && typeof value.key === "string";
 }
 
-type SessionOptions = { execution: ExecutionId; storage?: CacheStore; wasm?: WasmSource };
+type SessionOptions = {
+  execution: ExecutionId; storage?: CacheStore; wasm?: WasmSource;
+  /** Exact trusted historical artifacts needed by migrated save pages; at most 64 / 64 MiB. */
+  historyPacks?: readonly Uint8Array[];
+};
 export type OpenBookOptions = SessionOptions & (
   | { manifest: Uint8Array; fetchChunk: (id: string) => Promise<Uint8Array>; names?: Uint8Array; pack?: never }
   // Complete packs are retained for reader imports and checked R1/R2 save migrations.
@@ -55,10 +59,13 @@ export async function openBook(options: OpenBookOptions): Promise<Book> {
 /** Internal two-phase opening lets online hosts retain an unacknowledged initial root. */
 export async function prepareBook(options: OpenBookOptions): Promise<RuntimeBook> {
   await initialize(options.wasm);
+  const history = options.historyPacks ?? [];
+  if (history.length > 64 || history.reduce((sum, bytes) => sum + bytes.byteLength, 0) > 64 * 1024 * 1024) throw new RangeError("Historical packs exceed 64 artifacts / 64 MiB");
   const raw = options.pack !== undefined
     ? new NodeBook(options.pack, options.execution)
     : NodeBook.fromManifest(options.manifest, options.execution);
   try {
+    for (const pack of history) raw.registerHistoryPack(pack);
     if (options.names) raw.loadNames(options.names);
     const book = new RuntimeBook(raw, options.storage, options.fetchChunk);
     return book;
