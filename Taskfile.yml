@@ -21,6 +21,7 @@ tasks:
     cmds: [pwsh -NoProfile -File scripts/check-r1.ps1]
   check:web-storage:
     desc: IndexedDB storage adapter (type check, vitest) and its Chromium regressions on port 4183
+    deps: [web:build]
     dir: packages/narrata/kernel/js
     cmds:
       - npm ci
@@ -30,6 +31,7 @@ tasks:
       - npm run test:browser
   check:server-storage:
     desc: PostgreSQL reference host types, PGlite conformance and optional real PostgreSQL tests
+    deps: [web:build]
     cmds: [pwsh -NoProfile -File scripts/check-server-storage.ps1]
   web:build:
     desc: Build the standalone @rezics/narrata ESM, declarations and Wasm package

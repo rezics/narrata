@@ -71,11 +71,17 @@ jobs:
       NARRATA_POSTGRES_URL: postgres://narrata:narrata-test-only@localhost:5432/narrata_storage_test
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+          targets: wasm32-unknown-unknown
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: packages/narrata/kernel/js/package-lock.json
+          cache-dependency-path: |
+            packages/narrata/kernel/js/package-lock.json
+            packages/narrata/web/package-lock.json
       - uses: arduino/setup-task@v2
         with:
           version: 3.52.0
