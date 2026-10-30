@@ -38,6 +38,8 @@ for (const real of [false, true]) {
     expect(transactions).toBe(0);
   });
   suite(`${prefix}: immutable full-row idempotence, native null/boolean and exact bounded queries`, async () => {
+    const scalars = await driver.transaction("REPEATABLE READ READ ONLY", sql => sql.query("SELECT $1::boolean AS disabled, $2::boolean AS enabled, $3::text AS absent", [false, true, null]));
+    expect(scalars.rows).toEqual([{ disabled: false, enabled: true, absent: null }]);
     await loadRelations(driver, source); await loadRelations(driver, source);
     expect(params).toContain(null); expect(params.some(value => typeof value === "boolean")).toBe(true);
     const node = source.relationRows("node", 0, 1)[0];
@@ -131,8 +133,9 @@ for (const real of [false, true]) {
     // A/B rows coexist, with all queries bound to the supplied exact artifact.
     await db.exec("TRUNCATE narrative_projection CASCADE");
     await loadRelations(driver, source);
-    const other = (await loadAuthoring()).publicationFromPack(new Uint8Array(readFileSync(new URL("../../../../../products/gamebook-demo/story.narpack", import.meta.url))));
+    const other = (await loadAuthoring()).publicationFromPack(new Uint8Array(readFileSync(new URL("../../../../../fixtures/compat/nodes-r2-proposals/story.narpack", import.meta.url))));
     try {
+      expect(other.artifactId).not.toBe(source.artifactId);
       await loadRelations(driver, other);
       expect(String((await db.query("SELECT count(*) AS count FROM narrative_projection")).rows[0]?.count)).toBe("2");
       const row = source.relationRows("unit", 0, 1)[0]; if (row?.row_type !== "unit") throw new Error("missing unit");
