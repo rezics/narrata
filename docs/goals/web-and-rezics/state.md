@@ -24,22 +24,19 @@
 ## 下一步
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
-2. [存档维护/浅恢复](tasks/G-038.md)在原 worktree 保留八个提交至 6b26b60，以 Codex/high fresh attempt 3 修复独立评审，wait 已挂起；历史 decoder、stock backend 与 JS host 已补认领，完整说明 `.temp/maintenance-core-review-resume.md`：复用 kernel，浅历史保留精确当前页上下文或在移动 durable roots 前拒绝；不以 migration_page 伪造原页，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
+2. [存档维护/浅恢复](tasks/G-038.md)在原 worktree 保留八个提交至 6b26b60，以 Codex/high attempt 4 继续公共回归，wait 已挂起；历史 decoder、stock backend 与 JS host 已补认领，完整说明 `.temp/maintenance-core-review-resume.md`：复用 kernel，浅历史保留精确当前页上下文或在移动 durable roots 前拒绝；不以 migration_page 伪造原页，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
 3. 随后完成[阅读器跨构件/确认组合](tasks/G-039.md)：历史 A/B 程序与各自 loader 按需注册、时间线/checkout/再选择、确认及落盘故障在同一实际参考旅程可用，地图与维护需组合验证。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
 ## 维护评审检查点
 
-候选 e81fed9、e95be31、ba43377 及后续提交尚未合入。评审在 `.temp/review-maintenance-gc.md`、`review-maintenance-gc-latest.md`、`review-shallow-restore.md`、`review-maintenance-cache.md`、`review-maintenance-public.md`。六项待修复：
+候选原有八提交完整保留；新原生修复 6159691 已在 `.temp/review-maintenance-gc-repair.md` 与 `review-shallow-import-repair.md` 源码复审接受：读取前限额、损坏 manifest 容量、实际目标 kind、导入目的副本校验均修复。63097f0 的合法编码引用 work 计量也已接受，不需要 visitor 框架。实际最终 gate/冷缓存缺陷回归仍需绑定。
 
-- 读取后才扣 byte 预算，底层可先分配整页大值；须有读取前的可证明边界。
-- 微小 kind7 损坏 manifest 的 array(1000000) 可先预留约 48MiB；须在容量分配前拒绝不可能长度。63097f0 已按编码字节扣 work，合法引用展开的广泛异议已撤回，不需要新 visitor 框架。
-- integrity 只验目标存在，mark 信任声明的 leaf kind；错误 kind 可导致保留对象的依赖被删，须在破坏性操作前拒绝。
-- incoming 临时数据遮住目的库同 ID 的坏对象，put-if-absent 留坏数据却先移动根；新旧导入都须先验证目的副本，失败保留原可读进度。
-- Cache 四值分批超过生产默认 StorageHost 64 次；维护包装已有 loads+1，但旧默认用户仍需真实冷缓存回归，不用 Rust-only helper 掩盖。
-- inspectSave 绕过配置预算，且输入 hex 扩展先于 byte/closed 检查；须先限额并覆盖无原始调用/无变更。
+当前继续两项公共修复与证据：默认 StorageHost 对四值冷加载的有界重试/成功余量（真实 1024-key/大点读/缺失读取，不能仅提高测试 helper）；inspectSave 的配置预算以及输入转换前的 closed/byte 检查。为此已补认领现有 `kernel/js/browser/**` 实际计数器/页面/浏览器夹具，15 个未提交文件均保留。说明 `.temp/maintenance-public-scope-resume.md`，原始评审 `.temp/review-maintenance-cache.md`、`review-maintenance-public.md`。
 
-当前 B 根配完整历史 pack 的注册/重开已在 `.temp/review-history-registration.md` 源码接受；名字表、旧 A 根 checkout/restore 后 NodeBook/Session 一致性、按 artifact 的懒加载仍归下一任务，不能把省略 timeline/identity/analysis 的断言或笼统 history_truncated 分支算完整继续阅读。现有原子删除、有效浅页保留、生命周期包装等已认可部分保留；所有新修复仍须复审和实际 gate，不能因早期检查通过而关闭维护任务。
+冷加载边界已在 `.temp/review-maintenance-load-budget.md` 澄清：load_bytes 是不透明可信 CacheStore 的编码回包累计接纳预算，可能先收到一个协议有界的超额回包，再收费/拒绝并清候选；不是外部 provider 的预分配上限。拒绝在 maintenance 自身 decode/raw.load/Wasm copy 前，AuthenticatedLibrary 可能先作协议解码。现有 16MiB/value、64MiB payload、128MiB message 与每请求四值约束给出固定单回包瞬时界；不是要求另造传输的新缺陷。字段注释和正预算超额首包/累计回包测试应真实，不宣称拦截了 provider 的全部分配。
+
+当前 B 根加完整历史 pack 的注册/重开已在 `.temp/review-history-registration.md` 源码接受；历史名字表、旧 A 根后 NodeBook/Session 一致性及各自懒 loader 仍归下一任务。不能把省略 timeline/identity/analysis 的断言、笼统 history_truncated 或终态相等算完整继续阅读。全任务在原子删除、冷热导入、真实配额/未知回包/删除重建、实际 Wasm flush 边界等最终证据齐备后才验收；尚未合入维护候选。
 ## 接续约束与主机
 
 子代理/worker 使用 high 或更低，默认 high；机械工作可 medium，不恢复 xhigh。地图 attempt 7 在原 worktree 用 fresh CLI 上下文清除了旧中断的 missing-tool-output 历史，所有成果保留；此前模型容量/认证故障不意味着重做任务或降低验收。等待以实际 PID/会话为准，不因观测超时重启。
