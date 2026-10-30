@@ -258,6 +258,33 @@ fn wide_valid_manifest_consumes_encoded_byte_work_before_expansion() {
     )
     .unwrap();
     assert!(bounded.integrity_scan().is_err());
+    // Let the complete valid payload reach the decoder, then exhaust the shared read
+    // account on its first expanded reference. This cannot pass at the initial byte debit.
+    let decoded = History::open_existing(
+        MaintenanceBackend::new(
+            store.share(),
+            MaintenanceBudget {
+                object_reads: 1,
+                bytes: 100_000,
+                pages: 1,
+                work: 100_000,
+                page_size: 1,
+            },
+        )
+        .unwrap(),
+        DomainKinds::<narrata_history::testing::Counter>::new(),
+    )
+    .unwrap();
+    assert!(matches!(
+        decoded.integrity_scan(),
+        Err(narrata_history::HistoryError::Storage(
+            narrata_storage::StorageError::Limit(narrata_storage::LimitExceeded {
+                limit: narrata_storage::Limit::ReadItems,
+                requested: 1,
+                max: 0
+            })
+        ))
+    ));
 }
 
 fn budget() -> MaintenanceBudget {
