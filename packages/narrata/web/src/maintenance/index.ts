@@ -115,8 +115,20 @@ export class Maintenance {
   }
   private input(save: Uint8Array | string): string {
     this.assertOpen();
-    const bytes = typeof save === "string" ? save.length : save.byteLength * 2;
-    if (bytes > 64 * 1024 * 1024 || bytes > this.budget.bytes || bytes + 1 > this.budget.work || this.budget.object_reads === 0) throw new MaintenanceLimit("Save input exceeds maintenance budget");
+    if (typeof save !== "string" && !(save instanceof Uint8Array)) throw new TypeError("Expected checkpoint bytes or save text");
+    const maximum = Math.min(64 * 1024 * 1024, this.budget.bytes, this.budget.work - 1);
+    let bytes = typeof save === "string" ? save.length : save.byteLength * 2;
+    if (bytes > maximum || this.budget.object_reads === 0) throw new MaintenanceLimit("Save input exceeds maintenance budget");
+    if (typeof save === "string") {
+      // Wasm receives UTF-8, not UTF-16 code units. Count without making an encoded copy.
+      bytes = 0;
+      for (let i = 0; i < save.length; i++) {
+        const code = save.charCodeAt(i), next = save.charCodeAt(i + 1);
+        if (code >= 0xd800 && code <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) { bytes += 4; i++; }
+        else bytes += code < 0x80 ? 1 : code < 0x800 ? 2 : 3;
+        if (bytes > maximum) throw new MaintenanceLimit("Save input exceeds maintenance budget");
+      }
+    }
     return typeof save === "string" ? save : hex(save);
   }
   /** Retransmits the original unknown flush. Then re-read roots; confirmation does not rerun

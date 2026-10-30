@@ -248,6 +248,11 @@ test("inspection and import reject input budgets and closed handles before binar
     await expect(tiny.inspectSave(large)).rejects.toThrow("closed");
     await expect(tiny.importSave(large,selection)).rejects.toThrow("closed");
     expect(inspection.count).toBe(0);expect(importing.count).toBe(0);
+    const unicode=api.createMaintenance({storage:f.store,storeId:f.state.id,limits:{...defaultMaintenanceLimits,bytes:save.length*2+150}});
+    const unicodeInspect=observeRaw(unicode,"inspectSave"),unicodeImport=observeRaw(unicode,"import");
+    const padded="\u2003".repeat(100)+Buffer.from(save).toString("hex");
+    try {await expect(unicode.inspectSave(padded)).rejects.toBeInstanceOf(MaintenanceLimit);await expect(unicode.importSave(padded,selection)).rejects.toBeInstanceOf(MaintenanceLimit);expect(unicodeInspect.count).toBe(0);expect(unicodeImport.count).toBe(0);}
+    finally {await unicode.close();}
     expect(await normal.inspectSave(save)).toEqual({artifact,cursor});
     expect((await locateSave(f.store,execution))?.cursor).toBe(cursor);
   } finally {await Promise.all([normal.close(),book.close()]);f.store.close();f.publication.free();}
