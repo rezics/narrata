@@ -107,7 +107,7 @@ REZICS 在解析正文和媒体时执行当前权限与撤回政策；公开作�
 - **作者图（旧 R9/R10）**：在作者权限下提供图索引、瓦片和标签对象的按需读取，把 Narrata 图组件接入作者界面。对象读取与标题解析沿用发布身份和当前权限，不把作者全图当作读者地图下发。验收懒加载、分层切换和受限访问。
 - **关系投影与读者地图（旧 R13/R1）**：接入已交付的 visits、揭示地图和稀疏关系 SDK，按 ADR 0022 提供经授权的投影装载与有界查询。服务端先验证账号和存档库权限，再用精确 artifact 对应的受信发布、历史祖先对象及迁移描述符核实访问记录；缺失历史保留不完整结果，不用预取集合补全。作者完整查询与读者稀疏查询分别授权，读者地图接口不下发作者全图。具体入口和安装步骤见[地图与关系接入](#地图与关系接入)。宿主原生分区与表布局适配先核对，涉及格式或现行契约改变时先修订 ADR。
 - **作品演化（旧 R9/R6/R1）**：保存发布对象集合中的可选演化描述符；受限服务作业可按授权枚举必要存档头并读取对象，调用 Narrata 影响评估后输出脱敏报告，不因此给作者开放读者存档。阅读器承接自动计划、确认、旧版继续与重新开始结果，确认及落盘前保留原进度；不自行推导迁移。
-- **维护与删除（旧 R6）**：由宿主提供作业调度、库枚举与授权，调用 Narrata 的 GC、配额与逻辑布局维护入口。故障重试不跨账号、不复活已删除的库；物理存储继续遵守决定 15，不能把元数据投影当恢复真相。
+- **维护与删除（旧 R6）**：接入已交付的受检存档导入导出、有界根/pin 枚举、所选根 CAS 删除、完整性检查和 GC；宿主提供库授权、账号绑定、配额、可信时钟、grace 与作业调度，按[存档维护接入](#存档维护接入)处理清理与失败重试。在线原地浅压缩、影子库路由切换及布局迁移仍推迟。故障重试不跨账号、不复活已删除的库；物理存储继续遵守决定 15，不能把元数据投影当恢复真相。
 - **多译本（旧 R3/R5）**：启用时提供同上下文的正文/标签选择、稳定块对应和缺译回退。大纲和截取绑定当次修订；这不要求为首发先建设完整翻译平台。
 
 ## Web VN 后续需要的宿主能力
@@ -136,7 +136,9 @@ Narrata 负责场景依赖、推进与恢复语义；播放器负责资源准备
 
 M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公开创作的同一复合短篇、真实正文/标签、冷读取、A/B 逻辑隔离与在线故障恢复均有证据。接受的参考入口为 `/?reference`，`/` 仅作旧兼容示例。固定输入为版本 `0.1.0-alpha.1`、[源码 fa0266b1063428e855efea1408768029818500d0](https://github.com/rezics/narrata/tree/fa0266b1063428e855efea1408768029818500d0)、tarball SHA-256 `524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19`；由维护者提供该文件，不把同版本其他构建或 `latest` 当同一输入。尚未发布 npm registry；同一产品源码树的 a6f8952 已通过[主线 CI](https://github.com/rezics/narrata/actions/runs/40923433584)。
 
-正文依宿主当前可用修订解析，同一画面/原生片段使用一次解析快照；固定旧逻辑构件不保证历史正文永久原样可得。visits、揭示读者地图、稀疏关系与有界 PostgreSQL 装载/查询的公开 SDK 已交付并通过固定包验收，涵盖独立安装的 Node/Bun/Worker、参考阅读器浏览器及真实 PostgreSQL 检查。地图增量固定输入为版本 `0.1.0-alpha.1`、[源码 5c02e6107c20858b67a0ce9d643b3b9de73bc218](https://github.com/rezics/narrata/tree/5c02e6107c20858b67a0ce9d643b3b9de73bc218)、tarball SHA-256 `e2751a827b71629cf139e5d371123787af80cc19635d6285f1c4756f1fa0aaf3`；由维护者提供该文件，不复用上述 M1 历史包或同版本的其他构建。npm registry 仍未发布。维护入口及完整阅读器迁移组合仍待交付；作者端演化规划、描述符、评估/应用控制器与只读影响作业已交付，但这些结果不等于完整 M2 旅程，M2 尚未完成；REZICS 真实联合验收尚未执行。
+正文依宿主当前可用修订解析，同一画面/原生片段使用一次解析快照；固定旧逻辑构件不保证历史正文永久原样可得。visits、揭示读者地图、稀疏关系与有界 PostgreSQL 装载/查询的公开 SDK 已交付并通过固定包验收，涵盖独立安装的 Node/Bun/Worker、参考阅读器浏览器及真实 PostgreSQL 检查。地图增量固定输入为版本 `0.1.0-alpha.1`、[源码 5c02e6107c20858b67a0ce9d643b3b9de73bc218](https://github.com/rezics/narrata/tree/5c02e6107c20858b67a0ce9d643b3b9de73bc218)、tarball SHA-256 `e2751a827b71629cf139e5d371123787af80cc19635d6285f1c4756f1fa0aaf3`；由维护者提供该文件，不复用上述 M1 历史包或同版本的其他构建。npm registry 仍未发布。存档维护能力的固定交付见下文；作者端演化规划、描述符、评估/应用控制器与只读影响作业已交付，完整阅读器迁移组合仍待交付，M2 尚未完成；REZICS 真实联合验收尚未执行。
+
+存档维护增量已通过固定包验收，涵盖独立安装的 Node/Bun/浏览器、IndexedDB 和真实 PostgreSQL。固定输入为版本 `0.1.0-alpha.1`、[源码 ffc0f966578c184ef45f36559001bc029fbdc3a2](https://github.com/rezics/narrata/tree/ffc0f966578c184ef45f36559001bc029fbdc3a2)、tarball SHA-256 `120771d9253c6185bf3e4a4ca3e5a639600fcd060dceaba791c6fbd0517c54b8`；由维护者提供该文件，不把上述历史包或同版本其他构建当作本次输入。npm registry 尚未发布。
 
 [Gamebook Goal](../goals/web-and-rezics/GOAL.md) 已按 M1 首发包、M2 完整能力、M3 收敛排序；[Web VN Goal](../goals/web-vn/GOAL.md) 另列为待启动计划。Narrata 的模拟宿主和参考适配在本仓库实现，REZICS 专用实现仍只列为本页能力请求。
 
@@ -147,6 +149,16 @@ M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公�
 关系库由宿主显式安装 DDL：从 `@rezics/narrata/server` 的 `referenceRelationsSql` URL 读取包内 `dist/server/relations-v1.sql`，再提供 `TransactionalSql` 给 `PostgresRelations`。驱动参数需保留原生 `null` 和 boolean，不转成字符串。SDK 原子装载不可变完整投影，并校验重试及查询回读；宿主分别授权 `load`、有界作者 `query` 和稀疏读者 `readReader`，提供受授权的事务及查询连接。SDK 不自动安装或迁移宿主数据库 schema，也不代替宿主认证。
 
 读者点击地图时再懒加载 `@rezics/narrata/reader-map`；需要 React 视图时另加载 `@rezics/narrata/reader-map/react`。用 `OnlineSession.exportConfirmedSave()` 的 artifact/cursor 调用 `readReaderMapResponse(response, identity)` 校验响应，账号、库绑定或已确认 cursor 变化后丢弃旧响应；正文及标签仍由宿主按权限解析。这两个独立入口不引入作者图、编译器或 Wasm。
+
+### 存档维护接入
+
+按[包说明](../../packages/narrata/web/README.md#save-maintenance)按需加载 authoring/server，调用 `createMaintenance`，绑定已授权传输和不可变 StoreId，注册存档需要的精确受信发布。先 `inspectSave` 核实完整/浅 checkpoint 或 legacy JSON 的 artifact/cursor，再按观察到的修订调用 `importSave`；`expected_revision: null` 只允许目标不存在时创建。`exportSave` 导出完整或浅 bundle；浅导出的祖先数是下限，额外保留重建精确当前页面、局部回应和调用参数的上下文，不足时在移动持久根前拒绝。完整导出和 replay 仍拒绝真正截断的历史。重新打开仅承诺存档当前精确构件，较旧程序通过 `historyPacks` 提供完整受信包；历史名称、切回旧构件后的程序/loader 组合、历史清单按需加载、时间线及演化确认界面仍待交付。
+
+用 `run` 分页读取 roots/pins，按返回游标继续；展示可删除的根，在读者选择后用已观察修订和 commit 调用 `delete_roots`，冲突时重读。`integrity` 只读；`collect` 必须显式提供可信 Unix 秒时钟、`grace_seconds` 和 `dry_run`，先展示候选再执行。有限或无效扫描不能授权 GC；全部对象仍被根保活时可能无法回收空间，不能因配额自动删除读者保留的路线。原生读取按预算在复制对象载荷前拒绝；Web 的 `load_bytes` 是完整编码回复的累计接收阈值，可能先收到一个符合传输上限的拒收回复，再阻止其进入维护缓存/Wasm，不能当作宿主网络 I/O 或分配内存的硬上限。
+
+Node/Bun 使用 `openLibraryMaintenance(authorizedPostgresStore)`，从同一 `PostgresStore.usage()` 读取一致的使用量和配额。确定的 quota 拒绝保留原库：重新读取、明确选择根、CAS 删除、检查 dry-run、执行 GC，再显式重试导入。写入结果未知时暂停其他维护操作；`retryPending()` 只重传原字节，随后重读持久根确认结果，不重跑原操作或恢复丢失的返回值。结束后 `close()`；使用 `AuthenticatedLibrary` 继承账号关闭处理，普通已授权传输须由宿主在账号切换或删库时关闭旧句柄。
+
+认证、账号与库绑定及作业调度仍由 REZICS 实施，能力请求保持“提出”。SDK 不自动安装或迁移宿主数据库 schema；在线原地浅压缩、影子库构建与 CAS 路由切换、布局迁移及后台调度仍按 ADR 0021 推迟，不能将浅导出重新导入原库当作原地压缩。存档保留策略见[存储与存档](../contracts/storage-and-saves.md#保留策略由宿主选择)。
 
 ## 首次联合验收
 

@@ -1,6 +1,6 @@
 # State
 
-2026-10-30 检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1 和地图增量已本地验收，M2 维护与阅读器演化组合、M3 收敛尚未完成。任务状态以 `task goal -- status` 为准。
+2026-10-30 检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1、地图与维护增量已本地验收，M2 阅读器演化组合及 M3 收敛尚未完成。任务状态以 `task goal -- status` 为准。
 
 ## 已验收
 
@@ -24,19 +24,21 @@
 ## 下一步
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
-2. [存档维护/浅恢复](tasks/G-038.md)在原 worktree 保留八个提交至 6b26b60，以 Codex/high attempt 4 继续公共回归，wait 已挂起；历史 decoder、stock backend 与 JS host 已补认领，完整说明 `.temp/maintenance-core-review-resume.md`：复用 kernel，浅历史保留精确当前页上下文或在移动 durable roots 前拒绝；不以 migration_page 伪造原页，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
+2. [存档维护/浅恢复](tasks/G-038.md)已合入并完成主线固定包验收，接续归档/推送新 CI；复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
 3. 随后完成[阅读器跨构件/确认组合](tasks/G-039.md)：历史 A/B 程序与各自 loader 按需注册、时间线/checkout/再选择、确认及落盘故障在同一实际参考旅程可用，地图与维护需组合验证。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
 ## 维护评审检查点
 
-候选原有八提交完整保留；新原生修复 6159691 已在 `.temp/review-maintenance-gc-repair.md` 与 `review-shallow-import-repair.md` 源码复审接受：读取前限额、损坏 manifest 容量、实际目标 kind、导入目的副本校验均修复。63097f0 的合法编码引用 work 计量也已接受，不需要 visitor 框架。实际最终 gate/冷缓存缺陷回归仍需绑定。
+维护已合入主线 ffc0f966578c184ef45f36559001bc029fbdc3a2；代码与受检 9c888ce 完全相同，仅三份 Goal 文档不同。固定包 SHA-256 120771d9253c6185bf3e4a4ca3e5a639600fcd060dceaba791c6fbd0517c54b8，1,701,898 bytes，元数据 `.temp/delivery/maintenance-release.json`。主线重新构建/安装后的 tarball 整包逐字节一致；121 包测试、25 安装故障测试、Node/Bun/浏览器冷旅程通过。复用同代码 G5、R1（26 浏览器）、存储浏览器 19 项、实库 75 通过/3 个预期 PGlite 跳过、脚本 53 及文档检查。原 race-fixture 的 stale reader 已正确 reload 并全量实库重跑，失败日志不是通过证据。
 
-当前继续两项公共修复与证据：默认 StorageHost 对四值冷加载的有界重试/成功余量（真实 1024-key/大点读/缺失读取，不能仅提高测试 helper）；inspectSave 的配置预算以及输入转换前的 closed/byte 检查。为此已补认领现有 `kernel/js/browser/**` 实际计数器/页面/浏览器夹具，15 个未提交文件均保留。说明 `.temp/maintenance-public-scope-resume.md`，原始评审 `.temp/review-maintenance-cache.md`、`review-maintenance-public.md`。
+全部评审项已关闭：6159691 的原生读前限额、损坏 manifest 容量、实际目标 kind、目的库副本校验；9b0006b 的生产默认冷主机；a0f8f5d 的输入/inspect 预算；ce86e8e 的 UTF-8 计量。最终复审在 `.temp/review-maintenance-gc-repair.md`、`review-shallow-import-repair.md`、`review-maintenance-host-repair.md`、`review-maintenance-public-repair.md`、`review-maintenance-utf8-repair.md`。真实 Wasm 9,996 操作成功、10,009 越界零写入/旧根可继续；64MiB 队列再加一字节拒绝；真实冷页/点读/缺失读取、已提交但失回包、实际删库重建和每个历史夹具的明确继续结果均已验证。现有 v1/布局/冻结语料无变化。
 
 冷加载边界已在 `.temp/review-maintenance-load-budget.md` 澄清：load_bytes 是不透明可信 CacheStore 的编码回包累计接纳预算，可能先收到一个协议有界的超额回包，再收费/拒绝并清候选；不是外部 provider 的预分配上限。拒绝在 maintenance 自身 decode/raw.load/Wasm copy 前，AuthenticatedLibrary 可能先作协议解码。现有 16MiB/value、64MiB payload、128MiB message 与每请求四值约束给出固定单回包瞬时界；不是要求另造传输的新缺陷。字段注释和正预算超额首包/累计回包测试应真实，不宣称拦截了 provider 的全部分配。
 
-当前 B 根加完整历史 pack 的注册/重开已在 `.temp/review-history-registration.md` 源码接受；历史名字表、旧 A 根后 NodeBook/Session 一致性及各自懒 loader 仍归下一任务。不能把省略 timeline/identity/analysis 的断言、笼统 history_truncated 或终态相等算完整继续阅读。全任务在原子删除、冷热导入、真实配额/未知回包/删除重建、实际 Wasm flush 边界等最终证据齐备后才验收；尚未合入维护候选。
+当前 B 根加完整历史 pack 的注册/重开已交付，复核记录在 `.temp/review-history-registration.md`；历史名字表、旧 A 根后 NodeBook/Session 一致性及各自懒 loader 仍归下一任务。不能把省略 timeline/identity/analysis 的断言、笼统 history_truncated 或终态相等算完整继续阅读。上述维护证据已齐备并完成本地验收，剩余历史组合在下一任务验证；不能据此声称完整 M2 或全 Goal 完成。
+维护最终 raw/gzip：reader Wasm 1,373,924/385,105，作者 Wasm 2,896,459/737,581，总 JS 631,853/135,714；reader/作者图原上限不变。SDK 三个 Wasm 采用 z 与按模块 ESM 压缩已写工具链。manager 证据在 `.temp/goal/runs/G-038/manager-preserved/` 与 `main-acceptance/`，原始失败实库日志由最终成功重跑覆盖，不作通过证据。
+
 ## 接续约束与主机
 
 子代理/worker 使用 high 或更低，默认 high；机械工作可 medium，不恢复 xhigh。地图 attempt 7 在原 worktree 用 fresh CLI 上下文清除了旧中断的 missing-tool-output 历史，所有成果保留；此前模型容量/认证故障不意味着重做任务或降低验收。等待以实际 PID/会话为准，不因观测超时重启。
