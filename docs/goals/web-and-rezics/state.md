@@ -18,13 +18,15 @@
 ## 下一步
 
 1. M1 固定包的公开接口、本地与 CI 证据已就绪；保持宿主能力状态为“提出”，不声称 REZICS 上线。
-2. [visits/读者地图/SQL 宿主](tasks/G-037.md)首次 worker 异常退出（code 4，无 final），保留十二个未提交文件，已在原 worktree 以 Codex/high 恢复 attempt 2；补认领与作者清单一致的 Cargo.lock 依赖更新。Rust 核心已有不可变检查点 1bd032f，high 子代理正独立评审；worker 继续公共绑定、SQL、真实地图与 gate，尚未验收。使用共用 trace、受检稀疏查询与真实 PostgreSQL，不从预取推断访问，不泄漏隐藏目标。
+2. [visits/读者地图/SQL 宿主](tasks/G-037.md)在原 worktree 以 Codex/high 运行 attempt 4。Rust 核心检查点 1bd032f 的两处缺陷已有快照修复复审；完整绑定、SQL、真实参考地图与 gate 尚未验收。manager 已补齐参考页面/宿主/旅程路径认领，不能把只可从旧作者图入口读取的结果当作冷参考体验接线。使用共用 trace、受检稀疏查询与真实 PostgreSQL，不从预取推断访问，不泄漏隐藏目标。
 3. 随后完成[存档维护/浅恢复](tasks/G-038.md)与[阅读器跨构件/确认组合](tasks/G-039.md)。浅历史必须保留精确当前页上下文或在移动根前拒绝；不能用迁移页伪造原页。跨版本时间线/checkout/确认 UI 必须实际可用，不能只凭脱离产品的控制器测试关闭。
 4. M2/M3 全项当前版本审计、固定交付证据和归位后才关闭本 Goal；Web VN 仍待启动，不占用其路径。
 
 medium 子代理的范围审计在 .temp/stage-coverage-audit.md：剩余能力都有上述任务或 manager 收敛归属；交接已明确 M1 快照导出/恢复与 M2 有界冷库导入导出、浅历史/GC 的边界，未缩小原 Goal。最终 M3 仍须用完成后的包、源码、CI 与桌面/移动端证据逐项证明；ADR 0022 的关系规模证据已有 100,000 选择点、44,083 行及 15,640,925-byte 分片生成读数，新 SQL loader 的真实 PostgreSQL 装载时间/体积需另行测量，不能沿用旧纯投影数据。
 
-地图核心独立评审确认两处 P2（.temp/review-map-core.md）：无正文选择节点覆盖跨单元起始转移，导致实际关系边丢失；重放前缺祖先/超预算导致空 segments，被地图误判为 artifact 不匹配而丢失 incomplete 信息。manager 已按程序停止 attempt 2，保留其全部绑定/SQL 未提交改动，再以原会话 high 启动 attempt 3；修复、两组回归及原完整交付/真实 PG 规模证据的说明在 .temp/map-review-resume.md。没有接受该核心为最终结果，也没有合入 main。
+地图核心两处 P2（.temp/review-map-core.md：无正文选择节点丢跨单元边、空 segments 丢 incomplete 信息）的修复已由 high 在带 SHA256 的稳定快照复审（.temp/review-map-core-fix.md），最终仍须绑定提交与实际回归结果。SQL 稳定快照复审另有两项（.temp/review-map-sql.md）：JS 数字经 Wasm usize 截断后，原 SQL LIMIT 可绕过预算；已有并发测试只竞争热重试，没有竞争首次装载。已停止 attempt 3，保留全部改动，在同一会话 high 恢复 attempt 4；完整修复/冷连接竞争/范围/规模/最终交付要求在 .temp/map-delivery-resume.md。
+
+attempt 3 的公共包构建及 PGlite 4 项关系初测通过，真实 PostgreSQL 关系证据仍待补；中途模型连接超时后自行恢复，没有重复派发。authoring-only opt-level=z 与分模块压缩的暂测预算已通过（reader 1,694,481/439,038，authoring Wasm 2,664,007/684,148 raw/gzip），新工具与构建设置须同改工具链并通过独立安装。出现一项尚未进入认领的 online/index.ts 薄 exportSave 方法；manager 已查看其 saved 状态/队列/checked 包装，待交接时确认最终代码并补认领或审阅 allow-scope，不忽略范围审计。尚未合入此任务。
 
 ## 接续约束与主机
 
