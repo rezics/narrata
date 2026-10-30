@@ -20,7 +20,9 @@ use super::{
 use crate::{HistoryError, Object, ObjectId, Reference, Registry, Root, layout, shallow};
 
 /// Per-call read/work bounds for maintenance. Repeated reads are charged again: this bounds
-/// graph traversal and retries as well as the size of the inventory. It is not a wire format.
+/// graph traversal and retries as well as the size of the inventory. Work charges entries
+/// and bytes supplied to checked decoders, before their references enter graph sets.
+/// It is not a wire format.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MaintenanceBudget {
     pub object_reads: u64,
@@ -60,8 +62,13 @@ impl<B> MaintenanceBackend<B> {
     /// Charge checked input preparation that happens outside storage reads. The caller
     /// bounds decoding first; retries can reuse that immutable checked input.
     pub fn account_input(&self, objects: u64, bytes: u64) -> Result<(), HistoryError> {
-        self.charge(objects, bytes, 0, objects.saturating_add(1))
-            .map_err(HistoryError::from)
+        self.charge(
+            objects,
+            bytes,
+            0,
+            objects.saturating_add(bytes).saturating_add(1),
+        )
+        .map_err(HistoryError::from)
     }
     fn charge(
         &self,
@@ -104,6 +111,14 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
             .limits
             .max_read_items
             .min(u64::from(self.remaining.get().page_size));
+        capabilities.limits.max_batch_ops = capabilities
+            .limits
+            .max_batch_ops
+            .min(self.remaining.get().work);
+        capabilities.limits.max_batch_bytes = capabilities
+            .limits
+            .max_batch_bytes
+            .min(self.remaining.get().bytes);
         capabilities
     }
     fn get_objects(
@@ -112,12 +127,8 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
     ) -> Result<Vec<Option<std::sync::Arc<[u8]>>>, narrata_storage::StorageError> {
         self.charge(ids.len() as u64, 0, 0, ids.len() as u64)?;
         let values = self.inner.get_objects(ids)?;
-        self.charge(
-            0,
-            values.iter().flatten().map(|b| b.len() as u64).sum(),
-            0,
-            0,
-        )?;
+        let bytes = values.iter().flatten().map(|b| b.len() as u64).sum();
+        self.charge(0, bytes, 0, bytes)?;
         Ok(values)
     }
     fn scan_objects(
@@ -126,8 +137,16 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
         limit: u32,
     ) -> Result<narrata_storage::ObjectPage, narrata_storage::StorageError> {
         self.charge(0, 0, 1, u64::from(limit))?;
-        self.inner
-            .scan_objects(after, limit.min(self.remaining.get().page_size))
+        let page = self
+            .inner
+            .scan_objects(after, limit.min(self.remaining.get().page_size))?;
+        self.charge(
+            0,
+            page.digests.len() as u64 * 32,
+            0,
+            page.digests.len() as u64 * 32,
+        )?;
+        Ok(page)
     }
     fn read_key(
         &self,
@@ -136,7 +155,8 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
     ) -> Result<Option<narrata_storage::KeyValue>, narrata_storage::StorageError> {
         self.charge(0, key.len() as u64, 0, 1)?;
         let value = self.inner.read_key(space, key)?;
-        self.charge(0, value.as_ref().map_or(0, |v| v.value.len() as u64), 0, 0)?;
+        let bytes = value.as_ref().map_or(0, |v| v.value.len() as u64);
+        self.charge(0, bytes, 0, bytes)?;
         Ok(value)
     }
     fn scan_keys(
@@ -153,15 +173,12 @@ impl<B: StorageBackend> StorageBackend for MaintenanceBackend<B> {
             after,
             limit.min(self.remaining.get().page_size),
         )?;
-        self.charge(
-            0,
-            page.entries
-                .iter()
-                .map(|e| (e.key.len() + e.value.len()) as u64)
-                .sum(),
-            0,
-            0,
-        )?;
+        let bytes = page
+            .entries
+            .iter()
+            .map(|e| (e.key.len() + e.value.len()) as u64)
+            .sum();
+        self.charge(0, bytes, 0, bytes)?;
         Ok(page)
     }
     fn apply(
@@ -367,6 +384,18 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             let deletion = self.deletion_ops(id, revision, object)?;
             let size = deletion.len() as u64 + u64::from(object.is_some());
             let weight = deletion.iter().map(Op::bytes).sum::<u64>();
+            if atomic {
+                // Planning may itself read index keys. Check the remaining operation
+                // budget again before extending the single atomic write plan.
+                let available = self.backend.capabilities().limits;
+                if ops + size > available.max_batch_ops
+                    || bytes + weight > available.max_batch_bytes
+                {
+                    return Err(Attempt::history(HistoryError::Limit(
+                        "atomic collection exceeds remaining write budget",
+                    )));
+                }
+            }
             if !counted.is_empty() && !fits(ops + size, bytes + weight) {
                 if atomic {
                     return Err(Attempt::history(HistoryError::Limit(
