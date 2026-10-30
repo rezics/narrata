@@ -128,7 +128,7 @@ fn insufficient_page_context_is_rejected_before_an_existing_durable_cursor_moves
 }
 
 #[test]
-fn interim_proposals_remain_readable_and_unsafe_shallow_context_is_refused() {
+fn interim_proposals_retain_exact_shallow_context() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../../../fixtures/compat/nodes-r2-proposals");
     let (program, _) =
@@ -138,13 +138,11 @@ fn interim_proposals_remain_readable_and_unsafe_shallow_context_is_refused() {
         &std::fs::read_to_string(root.join("session.export.json")).unwrap(),
     )
     .unwrap();
-    match session.export_shallow(0) {
-        Ok(bytes) => {
-            Session::restore(session.program().clone(), &hex::encode(bytes))
-                .unwrap()
-                .page()
-                .unwrap();
-        }
-        Err(error) => assert_eq!(error.code, "history_truncated"),
-    }
+    let bytes = session.export_shallow(0).unwrap();
+    let restored = Session::restore(session.program().clone(), &hex::encode(bytes)).unwrap();
+    assert_eq!(restored.page().unwrap(), session.page().unwrap());
+    assert_eq!(
+        restored.interaction(None).unwrap(),
+        session.interaction(None).unwrap()
+    );
 }

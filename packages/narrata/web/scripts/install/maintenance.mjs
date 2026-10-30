@@ -3,7 +3,11 @@ import { IndexedDbStore, decodeLoaded, encodeLoadRequest, WriteRejected } from "
 
 function check(condition, message) { if (!condition) throw new Error(message); }
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const exactPage = ({view,page}) => ({ page, cursor: view.cursor, presentation: view.presentation, shared: view.shared, frames: view.frames, interaction: view.interaction });
+const exactPage = ({view,page,graphs,diagnostics}) => ({ page, cursor: view.cursor, artifact: view.artifact_id, product: view.product, presentation: view.presentation, shared: view.shared, frames: view.frames, interaction: view.interaction, graphs, diagnostics });
+function retainedTimeline(actual, reference) {
+  check(actual.view.history.length > 0,"Missing retained timeline");
+  for (const row of actual.view.history) check(same(row,reference.view.history.find(item=>item.id===row.id)),"Retained timeline entry differs");
+}
 const execution = "execution:0190f2a0000070008000000000000001";
 const empty = encodeLoadRequest({ keys: [], objects: [], keyRanges: [], objectRanges: [] });
 async function choose(book) {
@@ -42,23 +46,23 @@ export async function verifyHistoricalMaintenance(api, load) {
       await m.importSave(save,{execution,...checked,expected_revision:null,now:100});
       reference = await openBook({pack:current.pack(),historyPacks,execution,storage:stored});
       const before = await reference.inspect();
-      let shallow;
-      try { shallow = await m.exportSave({execution,...checked,ancestors:0}); }
-      catch (error) {
-        check(error.code === "history_truncated", "Unexpected shallow context failure");
-        check((await locateSave(stored,execution))?.cursor === checked.cursor,"Shallow refusal moved a durable root");
-        results.push({name,contextRefused:true});
-        continue;
-      }
+      // Every enumerated fixture is an explicit current-artifact success case. Context
+      // rejection is tested separately with deliberately insufficient checkpoints.
+      const shallow = await m.exportSave({execution,...checked,ancestors:0});
       cold = await IndexedDbStore.open(`maintenance-history-cold-${crypto.randomUUID()}`);
       receiving = api.createMaintenance({storage:cold,storeId:decodeLoaded(await cold.load(empty)).store.id});
       for (const publication of publications) await receiving.registerPublication(publication);
       await receiving.importSave(shallow,{execution,...checked,expected_revision:null,now:100});
       continued = await openBook({pack:current.pack(),historyPacks,execution,storage:cold});
-      check(same(exactPage(await continued.inspect()),exactPage(before)), "Historical shallow page differs: " + name);
-      await choose(reference); await choose(continued);
+      const restored=await continued.inspect();
+      check(same(exactPage(restored),exactPage(before)), "Historical shallow page differs: " + name);
+      retainedTimeline(restored,before);
+      check(await choose(reference),"Expected nonterminal historical reference: "+name);
+      check(await choose(continued),"Expected nonterminal historical restore: "+name);
+      check((await continued.inspect()).view.cursor !== before.view.cursor,"Historical choice did not advance: "+name);
       check(same(exactPage(await continued.inspect()),exactPage(await reference.inspect())),"Historical continuation differs: " + name);
-      results.push({name,coldContinue:true,bytes:shallow.length});
+      retainedTimeline(await continued.inspect(),await reference.inspect());
+      results.push({name,outcome:"continued",currentArtifact:checked.artifact,retainedTimeline:true,bytes:shallow.length});
     } finally {
       await Promise.all([reference?.close(),continued?.close(),m.close(),receiving?.close()]);
       stored.close(); cold?.close(); for (const publication of publications) publication.free();
@@ -113,7 +117,8 @@ export async function verifyMaintenance(api, pack) {
       try {
         await reference.restore(await book.exportSave());
         check(same(exactPage(await reopened.inspect()),exactPage(snapshot)), "Shallow page/args/state/interaction differ");
-        await choose(reopened); await choose(reference);
+        check(await choose(reopened),"Expected nonterminal shallow restore"); check(await choose(reference),"Expected nonterminal reference");
+        check((await reopened.inspect()).view.cursor !== before.cursor,"Cold continuation did not advance");
         check(same(exactPage(await reopened.inspect()),exactPage(await reference.inspect())), "Next choice differs after cold import");
       } finally { await reopened.close(); await reference.close(); }
       sizes.push(bytes.length);

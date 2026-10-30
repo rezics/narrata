@@ -66,20 +66,35 @@ fn wrong_kind_cannot_prove_a_leaf<F: Fixture>() {
             bad.bytes().to_vec(),
         ))
         .unwrap();
+    let mut refs = history
+        .scan_refs(&narrata_history::RefScope::All, None, 100)
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|(key, value)| RefMutation {
+            key,
+            expected: Some(value.revision),
+            next: None,
+        })
+        .collect::<Vec<_>>();
+    refs.push(RefMutation {
+        key: RefKey::save(support::name("bad"), support::name("slot")),
+        expected: None,
+        next: Some(bad.id()),
+    });
     history
         .write_atomic(
             &Transaction {
-                refs: vec![RefMutation {
-                    key: RefKey::save(support::name("bad"), support::name("slot")),
-                    expected: None,
-                    next: Some(bad.id()),
-                }],
+                refs,
                 ..Default::default()
             },
             |_| Ok(Vec::new()),
         )
         .unwrap();
     let before = f.backend().scan_objects(None, 1024).unwrap();
+    let roots = history
+        .scan_refs(&narrata_history::RefScope::All, None, 100)
+        .unwrap();
     let issues = history.integrity_scan().unwrap();
     assert!(issues.iter().any(|i| i.object == bad.id()));
     assert!(
@@ -92,6 +107,12 @@ fn wrong_kind_cannot_prove_a_leaf<F: Fixture>() {
             .is_err()
     );
     assert_eq!(before, f.backend().scan_objects(None, 1024).unwrap());
+    assert_eq!(
+        roots,
+        history
+            .scan_refs(&narrata_history::RefScope::All, None, 100)
+            .unwrap()
+    );
     let _: Option<Object> = history.get_object(b).unwrap();
 }
 
