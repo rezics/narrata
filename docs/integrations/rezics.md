@@ -105,7 +105,7 @@ REZICS 在解析正文和媒体时执行当前权限与撤回政策；公开作�
 这些请求对应 Narrata Goal 的 M2，首发接入后继续按实际交付版本验证；仍由 REZICS 实施。
 
 - **作者图（旧 R9/R10）**：在作者权限下提供图索引、瓦片和标签对象的按需读取，把 Narrata 图组件接入作者界面。对象读取与标题解析沿用发布身份和当前权限，不把作者全图当作读者地图下发。验收懒加载、分层切换和受限访问。
-- **关系投影与读者地图（旧 R13/R1）**：按 ADR 0022 装载带构件/投影版本的受检事实行，提供按内容单元、节点和正反向边的有界查询。由 Narrata 的纯函数及已访问证据生成地图；读者访问记录从存档核实，不从预取集合推断。宿主原生分区与表布局适配先核对，涉及格式或现行契约改变时先修订 ADR。
+- **关系投影与读者地图（旧 R13/R1）**：接入已交付的 visits、揭示地图和稀疏关系 SDK，按 ADR 0022 提供经授权的投影装载与有界查询。服务端先验证账号和存档库权限，再用精确 artifact 对应的受信发布、历史祖先对象及迁移描述符核实访问记录；缺失历史保留不完整结果，不用预取集合补全。作者完整查询与读者稀疏查询分别授权，读者地图接口不下发作者全图。具体入口和安装步骤见[地图与关系接入](#地图与关系接入)。宿主原生分区与表布局适配先核对，涉及格式或现行契约改变时先修订 ADR。
 - **作品演化（旧 R9/R6/R1）**：保存发布对象集合中的可选演化描述符；受限服务作业可按授权枚举必要存档头并读取对象，调用 Narrata 影响评估后输出脱敏报告，不因此给作者开放读者存档。阅读器承接自动计划、确认、旧版继续与重新开始结果，确认及落盘前保留原进度；不自行推导迁移。
 - **维护与删除（旧 R6）**：由宿主提供作业调度、库枚举与授权，调用 Narrata 的 GC、配额与逻辑布局维护入口。故障重试不跨账号、不复活已删除的库；物理存储继续遵守决定 15，不能把元数据投影当恢复真相。
 - **多译本（旧 R3/R5）**：启用时提供同上下文的正文/标签选择、稳定块对应和缺译回退。大纲和截取绑定当次修订；这不要求为首发先建设完整翻译平台。
@@ -136,9 +136,17 @@ Narrata 负责场景依赖、推进与恢复语义；播放器负责资源准备
 
 M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公开创作的同一复合短篇、真实正文/标签、冷读取、A/B 逻辑隔离与在线故障恢复均有证据。接受的参考入口为 `/?reference`，`/` 仅作旧兼容示例。固定输入为版本 `0.1.0-alpha.1`、[源码 fa0266b1063428e855efea1408768029818500d0](https://github.com/rezics/narrata/tree/fa0266b1063428e855efea1408768029818500d0)、tarball SHA-256 `524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19`；由维护者提供该文件，不把同版本其他构建或 `latest` 当同一输入。尚未发布 npm registry；同一产品源码树的 a6f8952 已通过[主线 CI](https://github.com/rezics/narrata/actions/runs/40923433584)。
 
-正文依宿主当前可用修订解析，同一画面/原生片段使用一次解析快照；固定旧逻辑构件不保证历史正文永久原样可得。M2 的 visits/读者地图、关系投影数据库装载和维护入口仍在实施。作者端演化规划、描述符、评估/应用控制器与只读影响作业已交付，但真实阅读器中的跨构件历史与确认接线尚未完成，不把后端测试当作完整 M2 旅程；REZICS 真实联合验收仍另行记录。
+正文依宿主当前可用修订解析，同一画面/原生片段使用一次解析快照；固定旧逻辑构件不保证历史正文永久原样可得。visits、揭示读者地图、稀疏关系与有界 PostgreSQL 装载/查询的公开 SDK 已交付并通过固定包验收，涵盖独立安装的 Node/Bun/Worker、参考阅读器浏览器及真实 PostgreSQL 检查。地图增量固定输入为版本 `0.1.0-alpha.1`、[源码 5c02e6107c20858b67a0ce9d643b3b9de73bc218](https://github.com/rezics/narrata/tree/5c02e6107c20858b67a0ce9d643b3b9de73bc218)、tarball SHA-256 `e2751a827b71629cf139e5d371123787af80cc19635d6285f1c4756f1fa0aaf3`；由维护者提供该文件，不复用上述 M1 历史包或同版本的其他构建。npm registry 仍未发布。维护入口及完整阅读器迁移组合仍待交付；作者端演化规划、描述符、评估/应用控制器与只读影响作业已交付，但这些结果不等于完整 M2 旅程，M2 尚未完成；REZICS 真实联合验收尚未执行。
 
 [Gamebook Goal](../goals/web-and-rezics/GOAL.md) 已按 M1 首发包、M2 完整能力、M3 收敛排序；[Web VN Goal](../goals/web-vn/GOAL.md) 另列为待启动计划。Narrata 的模拟宿主和参考适配在本仓库实现，REZICS 专用实现仍只列为本页能力请求。
+
+### 地图与关系接入
+
+按[包说明](../../packages/narrata/web/README.md#reader-maps-and-relation-hosting)接入，不另建地图协议。宿主在服务端 `loadAuthoring()` 后创建隔离的 evolution 上下文，注册精确构件及历史所需的受信发布；迁移描述符只从受信发布的 evolution 角色登记。恢复已确认 checkpoint 或连接已授权存档库后调用 `visits()`，再生成 `readerMap(publication)` 或 `readerRelations(publication)`。保留祖先和迁移证据以恢复完整地图，结束后释放 visits/关系句柄并关闭上下文。客户端 checkpoint 和 visits 只服务个人剧透保护，不能证明奖励资格、权益或访问权限；结构 first/route 查询也不证明首次阅读或可执行路线。
+
+关系库由宿主显式安装 DDL：从 `@rezics/narrata/server` 的 `referenceRelationsSql` URL 读取包内 `dist/server/relations-v1.sql`，再提供 `TransactionalSql` 给 `PostgresRelations`。驱动参数需保留原生 `null` 和 boolean，不转成字符串。SDK 原子装载不可变完整投影，并校验重试及查询回读；宿主分别授权 `load`、有界作者 `query` 和稀疏读者 `readReader`，提供受授权的事务及查询连接。SDK 不自动安装或迁移宿主数据库 schema，也不代替宿主认证。
+
+读者点击地图时再懒加载 `@rezics/narrata/reader-map`；需要 React 视图时另加载 `@rezics/narrata/reader-map/react`。用 `OnlineSession.exportConfirmedSave()` 的 artifact/cursor 调用 `readReaderMapResponse(response, identity)` 校验响应，账号、库绑定或已确认 cursor 变化后丢弃旧响应；正文及标签仍由宿主按权限解析。这两个独立入口不引入作者图、编译器或 Wasm。
 
 ## 首次联合验收
 

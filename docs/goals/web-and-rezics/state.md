@@ -1,43 +1,35 @@
 # State
 
-2026-10-30 接续检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。运行事实以 task goal -- status 和实际进程/检查结果为准；[Goal](GOAL.md)的完整 M1/M2/M3 范围未缩小。
+2026-10-30 检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1 和地图增量已本地验收，M2 维护与阅读器演化组合、M3 收敛尚未完成。任务状态以 `task goal -- status` 为准。
 
 ## 已验收
 
-- M0 三个旧分支完整审查、合入、验证并归档；Rust 发布集合/关系投影、作者图和节点演化核心保留。旧任务及公共绑定/演化后端/在线任务均已 verified 关闭；goal/g-031 到 goal/g-036 的既有分支保留，相关 worktree 已清理，没有重复派发。维护者 fd4b309 的产品/集成方向保持有效。
-- M1 固定包本地与 CI 均已验收：源码 fa0266b1063428e855efea1408768029818500d0，版本 0.1.0-alpha.1，SHA-256 524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19。固定包和完整元数据位于 .temp/delivery/m1-release.json，含产品树、资产读数、全部证据与未完成范围；a6f8952 的[M1 CI](https://github.com/rezics/narrata/actions/runs/40923433584)八项全部成功，产品源码树与固定包来源相同；不是整个 Goal 完成。前一 4fa9792 CI 唯一失败为作者测试依赖 wildcard，已以精确版本修复并通过本地四项 cargo-deny 检查。
-- 公共 authoring/server、独立 reader/兼容 Wasm、原生内容适配、在线会话/精确构件恢复均在主线。受检同 execution 保留证明跨缓存 miss 线性推进，65,536 提交只验证 65,536 header；跨 StoreId/revision 失效、累计预算和无写入 native reopen 有回归。未知保存重试使用原字节，不重放选择。
-- 接受的真实参考入口为 /?reference；旧 / 明确保留为兼容示例。公开创作→预览/修改→发布→真实正文/标签→局部合流、延迟后果、参数 7 子图、两个结局→A/B/在线故障均在同篇作品中验证。冷首屏只有 505-byte 清单、1,155-byte 入口块和 reader Wasm；桌面/390px/未知保存/结局截图已由 manager 查看。
-- 最终组合分支与合入后的 main 指向同一提交；R1（25 浏览器）、Web（101 单测、13 在线安装用例及实际冷读旅程）、G5、脚本（53）与文档检查通过。Node/Bun/Chromium 均从独立 tarball 使用公共接口。缺对象、冲突、配额、账号迟到回包及删除重建有用例；无持久格式/冻结语料变更。旧协议测试栈已固定 Vitest 5.0.3/Vite 8.2.4，零审计漏洞且生成无漂移。
-- 演化作者端已交付并 verified：规划/描述符发布挂接、受检读取、Wasm/控制器、只读影响评估和浅导出。未知写入再评估状态与读取预算评审缺陷已修复；实际接收字节诚实计量，载入额度仅为宿主提示。M2 阅读器组合仍待下方任务。
+- M0 保留并审查旧作者图、发布/关系和节点演化分支，M1 公共 authoring/server、独立 reader/兼容 Wasm、原生内容、在线生命周期及精确构件恢复均已合入。旧任务归档与分支保留，不重新派发。维护者 fd4b309 的产品/集成方向继续有效。
+- M1 历史固定包：版本 0.1.0-alpha.1，源码 fa0266b1063428e855efea1408768029818500d0，SHA-256 524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19；完整元数据 `.temp/delivery/m1-release.json`。a6f8952 及 1ac944b 同产品树 CI 八项全绿，不代替地图增量及最终阶段 CI。
+- [地图与 SQL 交付](tasks/G-037.md)已合入主线源码 5c02e6107c20858b67a0ce9d643b3b9de73bc218，并完成主线独立安装复验。固定增量包 SHA-256 e2751a827b71629cf139e5d371123787af80cc19635d6285f1c4756f1fa0aaf3，版本仍为 0.1.0-alpha.1；文件及元数据 `.temp/delivery/reader-map-release.json`。同版本不同包不能互换，M1 历史包不含此增量。
+- visits 共用受检祖先审计和执行 trace，保留迁移/游标来源；稀疏关系保留原 edge_no，地图只显示实际揭示事实。服务器装载/查询走 Rust 事实校验与真实 PostgreSQL；独立 `/reader-map`、`/reader-map/react` 仅含解码与可选渲染，作者图与 reader 原上限不变，全部地图字节计入总量。
+- 全部已报告问题已复审解决：无正文转移、空历史 incomplete、JS/Wasm 数值截断、冷装载竞争、异步可变查询、迟到地图、HTTP JSON、长图可读性及 i32 坐标边界。主线和受检候选只差五份管理/交接文档；111 个包文件仅 README/预算说明的换行不同，可执行资产完全相同。候选最终 R1（26 浏览器）和真实 PG（61 通过、1 个仅 PGlite 权限对应项跳过）证据复用；主线 Web 再次通过 109 包测试、13 安装测试及 Node/Bun/Worker/浏览器旅程。未变的脚本套件 53 项通过。
+- 已查看主线安装包桌面/390px 长图截图：800 个合成渲染点的末点可达，圆直径 36px、文字框 17px、视口 400px、无页面横溢；实际短篇的迟到/账号/新旅程、24 个无效响应用例及未知/配额/冲突入口保护通过。冷首屏只有 manifest/入口块和 reader Wasm，无地图/作者工具请求。
 
-旧独立评审与正式 handoff 在 archive/goals/web-and-rezics-2026-10-05/。临时证据保存在 .temp/goal/runs/<任务>/worktree-temp/，manager 验收在对应 manager-acceptance.json。在线最终完整 gate 日志在其 worktree-temp/rebase-integration/manager-r1.log、manager-web.log、manager-g5-final.log；早期失败日志不是通过证据。忽略的 >64 MiB 绑定测试已单独重型运行通过（88 对象、68,985,624 字节）。
+## 证据与保留政策
 
-逻辑恢复固定 artifact；正文按宿主当前可用修订解析，同一画面/原生片段绑定一次解析修订。原样长期回看并未承诺，仍需宿主保留政策。登录只在线、匿名 IndexedDB；真实 REZICS 联合验收和 npm registry 发布均未进行。
+地图 manager 证据在 `.temp/goal/runs/G-037/manager-preserved/` 和 `main-acceptance/`，含复审、完整交接、候选/主线包差异、日志、网络与截图；候选原始源码 44a0641 在交接中保留。关闭时保留合入分支，worktree 临时证据由 goalctl 归入对应 run，固定包已独立保存在 `.temp/delivery/`。
+
+实际 100,000 选择点投影 44,083 行；真实 PG 18.6 装载 34.13 秒、精确重试 0.82 秒，源/SQL 页均最多 256 行、10 参数；表 6,692,864 bytes、索引 10,846,208 bytes。19,103 个发布对象载入/验证另计 156.62 秒。测量在 worker `.temp/postgresql/map-validation/scale-loading.json`，与范围修复无关的装载代码未变，未重复昂贵测量。
+
+地图最终计量 raw/gzip：reader Wasm 1,694,481/439,038，作者 Wasm 2,665,048/684,683，作者图 221,680/50,240，readerMap 56,925/7,904，总 JS 649,023/137,919。仅新增 readerMap 59,000/8,400 上限；原 reader/作者图/总量上限均未提高。
+
+逻辑恢复固定 artifact；正文依宿主当前可用修订解析，同画面/原生片段绑定一次解析快照。不承诺历史正文永久原样。匿名 IndexedDB、登录只在线；真实 REZICS 联合验收及 npm registry 发布未进行，宿主请求仍为“提出”。
 
 ## 下一步
 
-1. M1 固定包的公开接口、本地与 CI 证据已就绪；保持宿主能力状态为“提出”，不声称 REZICS 上线。
-2. [visits/读者地图/SQL 宿主](tasks/G-037.md)在原 worktree 以 Codex/high 运行 attempt 7（fresh CLI 上下文，同任务/分支，成果完整保留）。d0e487f 及此前七个候选提交尚未合入；核心、游标、SQL、HTTP 形状、长图、独立入口与预算均已源码复审接受，仅余下述坐标范围 P2。d0e487f 的完整 R1（26 浏览器）、Web（含独立 Node/Bun/Worker 安装）与真实 PG（61 通过/1 个 PGlite 权限对应项跳过）均通过；最终范围修复后仍须绑定受影响检查。
-3. 随后完成[存档维护/浅恢复](tasks/G-038.md)与[阅读器跨构件/确认组合](tasks/G-039.md)。浅历史必须保留精确当前页上下文或在移动根前拒绝；不能用迁移页伪造原页。跨版本时间线/checkout/确认 UI 必须实际可用，不能只凭脱离产品的控制器测试关闭。
-4. M2/M3 全项当前版本审计、固定交付证据和归位后才关闭本 Goal；Web VN 仍待启动，不占用其路径。
-
-medium 子代理的范围审计在 .temp/stage-coverage-audit.md：剩余能力都有上述任务或 manager 收敛归属；交接已明确 M1 快照导出/恢复与 M2 有界冷库导入导出、浅历史/GC 的边界，未缩小原 Goal。最终 M3 仍须用完成后的包、源码、CI 与桌面/移动端证据逐项证明；ADR 0022 的关系规模证据已有 100,000 选择点、44,083 行及 15,640,925-byte 分片生成读数，新 SQL loader 的真实 PostgreSQL 装载时间/体积需另行测量，不能沿用旧纯投影数据。
-
-high 的提交评审见 .temp/review-map-core-commit.md、review-map-sql-commit.md、review-map-package.md。原核心、SQL 数值截断与冷竞争缺口已修复；1f8f906 游标修复见 review-map-race-fix.md，ca88d58 私有查询快照及实际稀疏边回归见 review-map-sql-repair.md，均接受源码、仍需最终 PG/包检查绑定。177439b 新增公开迁移/浅历史/循环/提议探针已在 review-map-public-probes.md 复核。HTTP JSON 与长图修复仍未提交；其浏览器证据已覆盖 8 类无效响应、unknown/quota/conflict、账号/新旅程迟到和 800 节点视图，errors=[]；manager 已查看新桌面/390px 长图，圆直径 36px、文字框 21px，末节点可达且无页面横溢。证据在 worker 的 .temp/reader-map-evidence/，须绑定最终提交并复审。
-
-attempt 5 加入解码器后，作者图 bundle 为 271,057 raw，超原 260,000；schema 解引用/双重否定实验未解决边界问题。manager 在预算/解码测试结束且无重型检查时停止并完整保留工作，以 .temp/map-entry-boundary-resume.md 恢复 attempt 6：新增同包 /reader-map 与 /reader-map/react 直接可选入口，复用既有 DTO/校验/组件，移出作者图 barrel；旧作者图与 reader 上限不变，新 readerMap bundle 按实际依赖单独设预算并完整计入 aggregate，不漏计或藏入作者模块。移除仅为压旧 cap 引入的 RefParser/编译语义实验，沿用直接的 Ajv standalone 生成；README/工具链/独立安装和冷首屏边界同步验证。简报已记录该决定，不新增运行时或包。
-
-d0e487f 的 .temp/review-map-package-repair.md 接受上述边界和两项原 UI 修复；readermap 53,937/7,662 raw/gzip，作者图回到原 221,680/50,240，aggregate 646,035/137,677，所有旧上限保持原值且通过。剩余新 P2：schema 只有 format:int32、Ajv validateFormats:false，未显式限制坐标，1e308 可过校验并使 SVG 乘法溢出。manager 等待 R1/Web/PG 全部结束后停止 attempt 6，用 .temp/map-coordinate-range-resume.md high/fresh 恢复 attempt 7，清除旧中断继承的 missing-tool-output 上下文；补真实 i32 坐标边界、极端有限整数与 HTTP 恢复回归，不重设计已接受模块。最新已通过安装证据在 C:/Users/edge/AppData/Local/Temp/.temp/narrata-web-install-DVIiyR，最终归档前保留其产物/截图与最终对应版本。
-
-真实 PG 18.6、fsync/synchronous_commit on 的 100,000 选择点测量：44,083 行，装载 34.13 秒，精确重试 0.82 秒；source/SQL 页均不超过 256 行，10 个参数。19,103 个发布对象的独立载入/验证为 156.62 秒，不混作 SQL 装载耗时。原始计数、表/索引大小在 worker 的 .temp/postgresql/map-validation/scale-loading.json，临时库已停。authoring-only opt-level=z 与分模块压缩已在独立安装 gate 下通过预算（reader 1,694,481/439,038，authoring Wasm 2,664,007/684,148 raw/gzip）；新工具/构建设置已写工具链，仍须结合最终修复重测受影响包。online/index.ts 薄 exportSave 接缝已补精确认领，scope 检查通过。
-
-推送检查点 1ac944b 的[CI](https://github.com/rezics/narrata/actions/runs/41036659729)八项全部成功；产品树与固定 M1 包一致，证据在 .temp/delivery/m1-checkpoint-ci.json 及 m1-release.json。这不代替尚未合入的地图提交 CI。
+1. 保留固定增量包和本地验收记录，推送地图主线并跟踪其实际 CI；M3 最终仍需当前全部能力与固定交付物对应的证据。
+2. 启动[存档维护/浅恢复](tasks/G-038.md)：复用 kernel，浅历史保留精确当前页上下文或在移动 durable roots 前拒绝；不以 migration_page 伪造原页，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
+3. 随后完成[阅读器跨构件/确认组合](tasks/G-039.md)：历史 A/B 程序与各自 loader 按需注册、时间线/checkout/再选择、确认及落盘故障在同一实际参考旅程可用，地图与维护需组合验证。
+4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
 ## 接续约束与主机
 
-维护者 2026-10-29 要求子代理/worker 使用 high 或更低；默认 high，机械性工作可更低，不恢复 xhigh。Claude 先有空刷新锁、后 API403；Codex 也曾因模型容量退出。manager 保留全部工作接手最后预算与验证，没有因此重做或降低验收。后续先验证可用引擎，不把一次观测超时当作任务退出。
+子代理/worker 使用 high 或更低，默认 high；机械工作可 medium，不恢复 xhigh。地图 attempt 7 在原 worktree 用 fresh CLI 上下文清除了旧中断的 missing-tool-output 历史，所有成果保留；此前模型容量/认证故障不意味着重做任务或降低验收。等待以实际 PID/会话为准，不因观测超时重启。
 
-PostgreSQL 官方 EDB portable 18.6 在 .temp/postgresql/18.6-5/pgsql/bin；来源/校验和在 .temp/postgresql/download.json。.temp/manager-postgresql.ps1 可用临时 loopback cluster、fsync/synchronous_commit on 运行 check:server-storage，已有 46 项真实/PGlite 存档测试通过并停库。新关系/维护测试必须单独证明其结果，不沿用该存档证据。
-
-本仓库未修改 REZICS，具体宿主请求只在[集成文档](../../integrations/rezics.md)。此前 d060874 与 2d45844 的 CI 全绿，但不替代最新 M1/M2 提交的 CI。
+PostgreSQL 官方 EDB portable 18.6 在 `.temp/postgresql/18.6-5/pgsql/bin`，来源/校验和在 `.temp/postgresql/download.json`；`.temp/manager-postgresql.ps1` 使用隔离 loopback cluster、fsync/synchronous_commit on 并最终停库。维护的新实库结果必须单独证明，不能沿用地图/旧存档测试。临时文件都在 `.temp/`。不修改 REZICS，能力请求只记入[集成文档](../../integrations/rezics.md)。
