@@ -6,7 +6,7 @@ use narrata_nodes::{Session, history::evolution::EvolutionRegistry};
 use support::*;
 
 #[test]
-fn checkpoint_import_preserves_the_single_program_error_and_accepts_registered_history() {
+fn checkpoint_import_requests_the_exact_missing_artifact_and_accepts_registered_history() {
     let source = compiled();
     let (source_session, _) = session(&source);
     let save = source_session.export().unwrap();
@@ -18,7 +18,8 @@ fn checkpoint_import_preserves_the_single_program_error_and_accepts_registered_h
     let before = target_session.export().unwrap();
 
     let error = target_session.import(&save).unwrap_err();
-    assert_eq!(error.code, "incompatible_save");
+    assert_eq!(error.code, "needs_artifact");
+    assert_eq!(error.path, source.program.artifact_id().to_string());
     assert_eq!(target_session.export().unwrap(), before);
 
     target_session
