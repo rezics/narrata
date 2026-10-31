@@ -15,8 +15,8 @@ areas: []
 
 ## 启动条件与范围
 
-1. Gamebook 的 M1 固定包及其按需加载、内容解析、在线存档接口有验收基线。
-2. 现有 [web-and-rezics](../web-and-rezics/GOAL.md) 已关闭；或双方已逐路径移交，且相应路径没有未关闭任务认领。空 areas 不表示可以越过当前 Goal 的 packages/narrata/** 归属。
+1. [Gamebook SDK](../../../packages/narrata/web/README.md) 的 M1 固定包及其按需加载、内容解析、在线存档接口有验收基线；实际源码与包身份见[固定输入](../../integrations/rezics.md#narrata-自己的交付依赖)。
+2. 现有 web-and-rezics Goal 已关闭；或双方已逐路径移交，且相应路径没有未关闭任务认领。按[根索引](../../../GOAL.md)与实时账本核对，不以交付包存在代替关闭或移交。空 areas 不表示可以越过当前 Goal 的 packages/narrata/** 归属。
 3. 未来 manager 先读本页与 state.md，核对范围，填写实际 areas 后登记当前 manager。此时才生成实施简报。
 
 ## VN0：确定第一方 VN 语义
