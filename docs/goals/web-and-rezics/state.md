@@ -47,6 +47,8 @@ G039 attempt 2 已提交 f987c57 历史按需恢复、04aa10a 在线升级协调
 
 已保存 Web 候选包 SHA256 257f0c8e2ce0f6438a434afc969c86c189809636d5359d70dc32f3bfcd91aa04，元数据 `.temp/delivery/reader-composition-candidate.json`；它是临时候选，不是完整验收。其所有图资源 SHA256 与依赖版本已对应作者图浏览器基线，绑定 `.temp/final-author-graph/candidate-graph-binding.json`。脚本默认 5s 在四个真实 Git 提交测试中超时，main 227a2ff 仅将该测试改为 20s、断言未变；默认 task test:scripts 全 53 通过，worker 另以 --timeout15000 通过 53，后者不掩盖原失败。长期入链收敛及待启动 VN 接续检查在 4528fa3，VN 仍无认领或实现。
 
+attempt 3 的旧导入浏览器回归已单项通过。固定 11 文件快照 `.temp/review-reader-reference-v3/manifest.json` 的 Luna/max 异步边界复审在 `.temp/review-reader-async-v3.md`：Reader loading 阻止 Review/Apply，宿主 apply 期间 Reader 操作禁用，refresh(false) 不再宣称页面成功；可见并发 P2 源码已修复。真实延迟正文用例已接入桌面/390px 与安装包旅程，但桌面后续 river/刷新失败场景仍在调试，完整 gate 尚未复验通过。最终须直接核对 Reader screen 的 cursor/artifact 与已确认 session progress 一致，并执行可用 B 选择；若 worker 交接仍缺此断言，manager 在干净交接/合入后补强同一旅程并纳入最终 main 检查，不能把页面文案或源码复审当作精确身份运行证据。后续源码与这份快照的差异仍需复核。
+
 ## 接续约束与主机
 
 2026-10-31 维护者最新偏好：后续常规实现、审计和回归优先 Luna max，替代之前的 Sol/high 默认；仅确有必要再选更重模型。会话子代理显式指定 gpt-6-luna/max；goalctl 接续先设置 GOAL_CODEX_MODEL=gpt-6-luna 再 resume --effort max（只写 effort 会重新取仓库默认 Sol）。本地 CLI 目录与 goalctl 均支持 max，attempt 3 已验证实际启动。地图 attempt 7 的 fresh 历史修复仍是历史事实；所有成果保留。等待以实际 PID/会话为准，不因观测超时重启。
