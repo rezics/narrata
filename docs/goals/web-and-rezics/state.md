@@ -49,6 +49,8 @@ G039 attempt 2 已提交 f987c57 历史按需恢复、04aa10a 在线升级协调
 
 attempt 3 的旧导入浏览器回归已单项通过。固定 11 文件快照 `.temp/review-reader-reference-v3/manifest.json` 的 Luna/max 异步边界复审在 `.temp/review-reader-async-v3.md`：Reader loading 阻止 Review/Apply，宿主 apply 期间 Reader 操作禁用，refresh(false) 不再宣称页面成功；可见并发 P2 源码已修复。真实延迟正文用例已接入桌面/390px 与安装包旅程，但桌面后续 river/刷新失败场景仍在调试，完整 gate 尚未复验通过。最终须直接核对 Reader screen 的 cursor/artifact 与已确认 session progress 一致，并执行可用 B 选择；若 worker 交接仍缺此断言，manager 在干净交接/合入后补强同一旅程并纳入最终 main 检查，不能把页面文案或源码复审当作精确身份运行证据。后续源码与这份快照的差异仍需复核。
 
+attempt 3 后续 Web 检查在刷新失败测试等待 error 阶段超时。manager 与 Luna 复审对固定 v4 确认测试等待环：成功正文被挂住，测试先等 Reader error，释放却在断言之后；不能靠延长超时解决。直接调用冻结 v4 宿主和独立安装 SDK 已证明 river-update 发布/目录为 200/C，证据及根因 `.temp/manager-variant-ui-diagnostic/`。已在空闲重型检查边界停止并保留原分支/四提交/11 文件成果，恢复 gpt-6-luna/max attempt 4：分别保留延迟成功测试与真正中断正文后的失败重试测试，并补精确 screen/confirmed 身份断言，随后完成原全部旅程和 gate。不是重做运行时或放宽验收。
+
 ## 接续约束与主机
 
 2026-10-31 维护者最新偏好：后续常规实现、审计和回归优先 Luna max，替代之前的 Sol/high 默认；仅确有必要再选更重模型。会话子代理显式指定 gpt-6-luna/max；goalctl 接续先设置 GOAL_CODEX_MODEL=gpt-6-luna 再 resume --effort max（只写 effort 会重新取仓库默认 Sol）。本地 CLI 目录与 goalctl 均支持 max，attempt 3 已验证实际启动。地图 attempt 7 的 fresh 历史修复仍是历史事实；所有成果保留。等待以实际 PID/会话为准，不因观测超时重启。
