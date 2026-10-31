@@ -41,7 +41,9 @@
 
 M3 契约文档已在 f903f5d 按源码与 Accepted ADR0022 收敛：更新已揭示地图状态/坐标，不删章节锁/社区比例等后续意图；choices/content 的机械规则回指类型和测试。031100e 已将三条长期文档入链改为永久 SDK/固定输入说明，179 文件链接检查通过，未提前宣称完整交付或关闭 Goal。
 
-完整逐项证据清单在 `.temp/final-goal-evidence-audit.md`；历史三份固定 tarball 已重新计算 SHA-256，均匹配元数据，记录 `.temp/delivery/historical-package-recheck.json`。G031 作者图真实浏览器桌面/390px 证据属于源码示例，当前安装包检查只覆盖图解码和类型；最终交付还需窄范围的公共 tarball 渲染补证。独立脚本已准备于 `.temp/final-author-graph/`，仅语法检查通过；待最终外部安装包及重型空槽运行并查看六张截图，不重复未变的全套图回归或 SQL 规模测量。G039 attempt 2 当前修复后的构建/聚焦测试尚未通过，不能复用修复前通过日志宣称已验收。
+完整逐项证据清单在 `.temp/final-goal-evidence-audit.md`；历史三份固定 tarball 已重新计算 SHA-256，均匹配元数据，记录 `.temp/delivery/historical-package-recheck.json`。作者图公共 tarball 渲染补证已在维护固定包上通过：桌面/390px 三级导航、提供的精确节点标题、选择、读失败重试与清理；六张截图已查看。证据及 package-lock SHA512/图文件 SHA256 绑定在 `.temp/final-author-graph/baseline-evidence/`，基线的样例未提供 cluster 标题，不能要求它凭空出现。最终包仍须核对图资源字节/依赖对应，不重复未变的全套图回归或 SQL 规模测量。
+
+G039 attempt 2 已提交 f987c57 历史按需恢复及 04aa10a 在线升级协调；按顺序重跑构建、包类型和 17 项聚焦测试通过。固定提交的两个源码复审在 `.temp/review-reader-history-04aa10a.md` / `review-reader-upgrade-04aa10a.md`：原 native/legacy 未载入 A 恢复问题已修复、协调器未见新缺陷；旧 `evolution_import` 的错误码断言仍需跟随有意的 needs_artifact 更新并通过完整 Rust gate。参考 UI 及组合旅程仍在原 worker 完成，未提交 UI 不属于这次固定复审。缓存专项核查未见无界历史解码增长（有 65 构件及各自 LRU 上限），不宣称统一低堆内存字节预算。原陈旧提示还需最终 UI 提交/真实浏览器验收，修复前 gate 不替代修复后完整验收。
 
 ## 接续约束与主机
 
