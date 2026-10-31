@@ -8,6 +8,8 @@ Gamebook 完整固定包保持不变：源码 `a36d4966d7bf40df9e03f38e5d080885d
 
 VN 阅读 API 切片的固定包版本同为 `0.1.0-alpha.1`，SHA-256 为 `11db5e10fbe1a6319ae921fb90e1d30bcc00678c5d679bf9886dc078f5a13299`，1,780,389 字节；主线与工作分支验收包逐字节相同。公共 View v1 的四种状态样例在 `fixtures/compat/vn-view-v1/`，由独立安装包分别经 Node/Bun 生成并比对；既有 365 个兼容文件与 Gamebook schema 未改。日志、包与消费证据在 `.temp/goal/runs/G-042/main-acceptance/e81a492/`、`.temp/delivery/vn-reader-release.json`。
 
+等价阅读 API 源码的[主线 CI](https://github.com/rezics/narrata/actions/runs/41213302899)已在 `c701806` 八项成功；该提交与 `e81a492` 的包源码和兼容语料一致。
+
 ## 下一步与未交付结果
 
 当前 [G-043](tasks/G-043.md) 已从 `c701806` 派发给 gpt-6-luna/max，正在实现桌面/手机参考播放器、受检媒体 callback、图层与音轨协调、资源失败恢复和真实浏览器旅程，尚未验收。已审阅概念与独立素材位于 `.temp/vn-player-design/`；立绘以实际 alpha/浏览器合成核对，不能把工具预览中的透明 RGB 当成已渲染背景。VN2 的有界候选预取/按需媒体交付与 VN3 的作者 API、即预览、多场景短篇及完整固定包仍必需；完整范围见 [GOAL.md](GOAL.md)。
