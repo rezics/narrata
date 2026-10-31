@@ -11,6 +11,21 @@ use rusqlite::Connection;
 
 const SPACE: KeySpace = KeySpace::new(0);
 
+// Contention may exhaust a call's wait and legitimately return Busy. These stress
+// tests check schema and batch preservation, not a busy-free scheduling guarantee.
+fn under_contention<T>(mut operation: impl FnMut() -> Result<T, StorageError>) -> T {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match operation() {
+            Ok(value) => return value,
+            Err(StorageError::Busy) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            Err(error) => panic!("concurrent store operation did not complete: {error:?}"),
+        }
+    }
+}
+
 fn format_error(result: Result<SqliteBackend, StorageError>) -> String {
     match result {
         Err(StorageError::Format(message)) => message,
@@ -103,7 +118,7 @@ fn concurrent_openers_of_a_new_file_share_one_schema() {
                 .map(|_| {
                     scope.spawn(|| {
                         start.wait();
-                        SqliteBackend::open(&path).unwrap()
+                        under_contention(|| SqliteBackend::open(&path))
                     })
                 })
                 .collect::<Vec<_>>();
@@ -140,12 +155,12 @@ fn concurrent_openers_and_writers_preserve_every_batch() {
                     let start = &start;
                     scope.spawn(move || {
                         start.wait();
-                        let mut backend = SqliteBackend::open(path).unwrap();
+                        let mut backend = under_contention(|| SqliteBackend::open(path));
                         for write in 0..4_u8 {
                             let key = [writer, write];
-                            backend
-                                .apply(&Batch::new().put(SPACE, key, key, Expect::Absent))
-                                .unwrap();
+                            under_contention(|| {
+                                backend.apply(&Batch::new().put(SPACE, key, key, Expect::Absent))
+                            });
                         }
                         backend
                     })

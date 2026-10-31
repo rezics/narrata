@@ -24,8 +24,10 @@ test("production reader and lazy author graph share the host React instance", as
   page.on("pageerror", error => errors.push(error.message));
   page.on("request", request => requests.push(request.url()));
   try {
+    console.info("production graph: load reader");
     await page.goto(`http://127.0.0.1:${address.port}/`);
     await expect(page.getByRole("heading", { name: "旧驿站", exact: true })).toBeVisible();
+    console.info("production graph: reader ready, open graph");
     expect(requests.some(url => /graph-map|renderer|\.cbor/.test(url))).toBe(false);
     await page.getByRole("button", { name: "结构图", exact: true }).click();
     await expect(page.getByTestId("graph-level")).toHaveText("作品");
@@ -35,6 +37,7 @@ test("production reader and lazy author graph share the host React instance", as
     await expect(page.getByTestId("graph-level")).toHaveText("节点");
     await expect(page.getByTestId("graph-status")).not.toHaveText("正在载入图……");
     await expect(page.locator(".author-graph canvas")).not.toHaveCount(0);
+    console.info("production graph: read painted labels");
     await expect.poll(() => page.locator(".author-graph canvas.sigma-labels").evaluate(element => {
       const canvas = element as HTMLCanvasElement, context = canvas.getContext("2d");
       if (!context) return 0;
@@ -43,8 +46,21 @@ test("production reader and lazy author graph share the host React instance", as
       for (let index = 3; index < pixels.length; index += 4) if (pixels[index]! > 0) painted++;
       return painted;
     })).toBeGreaterThan(20);
+    console.info("production graph: labels painted");
     expect(errors).toEqual([]);
-  } finally { await page.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  } finally {
+    console.info("production graph: stop HTTP server and close page");
+    const closed = new Promise<void>(resolve => server.close(() => resolve()));
+    // This server belongs only to the test; teardown need not wait for browser requests.
+    server.closeAllConnections();
+    try {
+      await page.close();
+      console.info("production graph: page closed");
+    } finally {
+      await closed;
+      console.info("production graph: HTTP server closed");
+    }
+  }
 });
 
 test("author view loads after reading, switches three levels, resolves titles and leaves progress untouched", async ({ page }) => {
