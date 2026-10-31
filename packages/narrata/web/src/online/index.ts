@@ -1,6 +1,9 @@
 import { AuthenticatedLibrary, LibraryClosed, StoreSuperseded, WriteRejected } from "../storage.js";
 import { locateSave, prepareBook, retainedSave, type RuntimeBook, type WasmSource } from "../runtime.js";
 import type { BookView, ChoicePointId, CommitId, ContentRef, ExecutionId, OptionId } from "../generated/book-view.js";
+import { ArtifactUnavailable, type ArtifactSource } from "../artifacts.js";
+import type { AssessmentV1, Evolution, EvolutionOptions, StoredEvolutionApply } from "../authoring/evolution.js";
+export type { ArtifactSource, ArtifactLoader } from "../artifacts.js";
 
 export { AuthenticatedLibrary, LibraryClosed, WriteRejected } from "../storage.js";
 export type { AuthenticatedLibraryOptions } from "../storage.js";
@@ -10,11 +13,6 @@ export interface OnlineSnapshot {
   /** Last inspected, confirmed progress; failed writes never replace it. */
   readonly progress: BookView | null;
   readonly candidate: CommitId | null;
-}
-export interface ArtifactSource {
-  readonly manifest: Uint8Array;
-  readonly names?: Uint8Array;
-  readonly fetchChunk: (id: string) => Promise<Uint8Array>;
 }
 export interface OnlineSessionOptions {
   readonly library: AuthenticatedLibrary;
@@ -49,6 +47,8 @@ export class OnlineSession {
   private generation = 0;
   private verificationRequired = false;
   private closing: Promise<void> | undefined;
+  private review: { evolution: Evolution; options: EvolutionOptions; assessment: AssessmentV1 } | undefined;
+  private pendingUpdate: { evolution: Evolution; candidate: CommitId } | undefined;
 
   constructor(options: OnlineSessionOptions) {
     this.library = options.library; this.execution = options.execution;
@@ -97,10 +97,11 @@ export class OnlineSession {
     if (existingOnly && !location) throw new Error("The saved execution no longer has an active cursor.");
     const artifact = location?.artifact ?? await this.checked(this.currentArtifact());
     if (typeof artifact !== "string" || !/^artifact:[0-9a-f]{64}$/.test(artifact)) throw new Error("Invalid published artifact ID");
-    const source = await this.checked(this.loadArtifact(artifact));
+    const source = await this.checked(this.loadArtifact(artifact)).catch(cause => { throw new ArtifactUnavailable(artifact, undefined, { cause }); });
     const fetchChunk = source.fetchChunk.bind(source);
     const book = await prepareBook({ manifest: Uint8Array.from(source.manifest), execution: this.execution, storage: this.library,
       ...(source.names ? { names: Uint8Array.from(source.names) } : {}),
+      loadArtifact: id => { this.assertOpen(); return this.checked(this.loadArtifact(id)); },
       fetchChunk: id => { this.assertOpen(); return this.checked(fetchChunk(id)); }, ...(this.wasm === undefined ? {} : { wasm: this.wasm }) });
     try { this.assertOpen(); } catch (error) { await book.close(); throw error; }
     if (book.artifactId !== artifact) { await book.close(); throw new Error("Loaded manifest differs from the saved artifact."); }
@@ -119,6 +120,12 @@ export class OnlineSession {
     return this.enqueue(async () => {
       if (this.snapshot.status !== "saved") throw new Error("Resolve the online save before reading or advancing.");
       return this.checked(this.opened().inspect());
+    });
+  }
+  historyArtifacts(expected: CommitId): Promise<Readonly<Record<CommitId, string>>> {
+    return this.enqueue(async () => {
+      if (this.snapshot.status !== "saved") throw new Error("Resolve the online save before reading.");
+      return this.checked(this.opened().historyArtifacts(expected));
     });
   }
   /** Exports only confirmed progress for host tools such as a server-generated reader map. */
@@ -143,6 +150,7 @@ export class OnlineSession {
   private mutate<T>(action: (book: RuntimeBook) => Promise<T>): Promise<T> {
     return this.enqueue(async () => {
       if (this.snapshot.status !== "saved") throw new Error("Resolve the online save before advancing.");
+      this.review = undefined;
       this.publish("saving");
       try { const value = await this.checked(action(this.opened())); await this.confirmed(); return value; }
       catch (error) { this.fail(error); }
@@ -153,12 +161,74 @@ export class OnlineSession {
   }
   checkout(commit: CommitId): Promise<void> { return this.mutate(book => book.checkout(commit)); }
 
+  /** The host supplies an authoring/server evaluator connected to this library/execution.
+   * Reader code never imports its implementation. Assessment leaves durable progress alone. */
+  assessUpdate(evolution: Evolution, options: EvolutionOptions): Promise<AssessmentV1> {
+    return this.enqueue(async () => {
+      this.review = undefined;
+      if (this.snapshot.status !== "saved" || !evolution.connected) throw new Error("Assess an update against the confirmed connected journey.");
+      const fixed = structuredClone(options);
+      const assessment = await this.checked(evolution.assess(fixed));
+      const source = assessment.kind === "automatic" || assessment.kind === "needs_confirmation" ? assessment.plan.source_commit
+        : assessment.kind === "exact" || assessment.kind === "old_version_only" ? assessment.source.source_commit : undefined;
+      if (source && source !== this.snapshot.progress?.view.cursor) throw new Error("Reload the changed journey before reviewing its update.");
+      this.review = { evolution, options: fixed, assessment };
+      return structuredClone(assessment);
+    });
+  }
+  continueOld(): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.snapshot.status !== "saved") throw new Error("Resolve the online save first.");
+      this.review = undefined;
+    });
+  }
+  /** Only the reviewed plan can be applied. Core reassessment and cursor CAS stay authoritative. */
+  applyUpdate(confirmed = false): Promise<StoredEvolutionApply> {
+    return this.enqueue(async () => {
+      const review = this.review;
+      this.review = undefined;
+      if (this.snapshot.status !== "saved" || !review || (review.assessment.kind !== "automatic" && !(confirmed && review.assessment.kind === "needs_confirmation"))) {
+        throw new Error("Review and explicitly confirm this update before applying.");
+      }
+      const candidate = review.assessment.plan.migration_commit;
+      this.publish("saving");
+      try {
+        const result = await this.checked(review.evolution.apply(review.assessment.plan, review.options.budget));
+        if (result.kind === "migrated") {
+          await this.reopenUpdated();
+        } else this.publish(result.kind === "conflict" || result.kind === "storage_conflict" ? "conflict" : "saved", undefined, null);
+        return result;
+      } catch (error) {
+        this.assertOpen();
+        if (review.evolution.pendingSave) {
+          this.pendingUpdate = { evolution: review.evolution, candidate };
+          this.publish(error instanceof WriteRejected ? error.reason : "unknown", undefined, candidate);
+        } else this.publish("unavailable", undefined, null);
+        throw error;
+      }
+    });
+  }
+  private async reopenUpdated(): Promise<void> {
+    if (this.book) { await this.checked(this.book.close()); this.book = undefined; }
+    await this.open(true);
+  }
+
   /** Unknown writes retry their bytes, never their choice. CAS conflict needs a native proof. */
   retrySave(): Promise<void> {
     return this.enqueue(async () => {
       if (this.snapshot.status !== "unknown") throw new Error("There is no unknown save to retry.");
       const candidate = this.snapshot.candidate;
       try {
+        if (this.pendingUpdate) {
+          const update = this.pendingUpdate;
+          const result = await this.checked(update.evolution.retrySave());
+          if (result?.kind !== "migrated" && !await this.checked(retainedSave(this.library, this.execution, update.candidate, this.limits))) {
+            throw new Error("The update could not be verified in this execution's durable history.");
+          }
+          await this.reopenUpdated();
+          this.pendingUpdate = undefined;
+          return;
+        }
         if (!this.verificationRequired) {
           try { await this.checked(this.opened().retrySave()); }
           catch (error) { if (!(error instanceof StoreSuperseded)) throw error; this.verificationRequired = true; }
@@ -187,6 +257,8 @@ export class OnlineSession {
       if (this.snapshot.status === "unknown") throw new Error("Retry and verify the unknown save before reloading.");
       this.publish("saving", undefined, null);
       try {
+        this.review = undefined;
+        if (this.pendingUpdate) { await this.checked(this.pendingUpdate.evolution.reload()); this.pendingUpdate = undefined; }
         if (this.book) { await this.checked(this.book.close()); this.book = undefined; }
         await this.open();
       } catch (error) { this.fail(error); }
@@ -198,6 +270,7 @@ export class OnlineSession {
   private finish(remove: boolean): Promise<void> {
     if (this.closing) return this.closing;
     this.generation++;
+    this.review = undefined;
     this.publish("closed", null, null);
     const released = remove ? this.library.remove() : this.library.close();
     const drained = this.queue.then(() => this.book?.close());
