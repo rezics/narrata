@@ -8,7 +8,7 @@ areas:
 
 # Web VN 与按需分发
 
-状态：2026-10-31 启动 VN0 语义与兼容设计；完整 VN0–VN3 范围保持不变，尚未交付 VN 能力。manager 与任务接续见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 已交付，本 Goal 面向逐句对白、背景/立绘与音轨的传统视觉小说。
+状态：2026-10-31，VN0 语义与兼容设计已接受，原生执行实现正在工作分支验收；完整 VN0–VN3 范围保持不变，尚未交付 VN 能力。manager 与任务接续见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 已交付，本 Goal 面向逐句对白、背景/立绘与音轨的传统视觉小说。
 
 ## 结果
 

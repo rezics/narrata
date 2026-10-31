@@ -12,12 +12,12 @@
 
 | Goal | 当前阶段 | 范围 |
 | --- | --- | --- |
-| [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | VN0：语义与兼容设计 | VN0 → VN1 → VN2 → VN3 |
+| [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | VN0：原生执行与兼容验收 | VN0 → VN1 → VN2 → VN3 |
 
-Web VN 已进入 VN0 语义与兼容设计阶段；此阶段标记不代表已有 VN 实现或能力交付。首个工作是明确逐句对白、选择、场景、安全点、呈现游标与资源准备之间的语义和兼容路径，再按 VN1、VN2、VN3 完成播放器、按需分发与可复现短篇交付。实际管理器登记、任务与路径认领以 goalctl 账本为准。
+Web VN 的语义与兼容设计已接受，原生执行实现正在工作分支验收，尚未合并或交付。通过后继续按 VN1、VN2、VN3 完成公开接口、播放器、按需分发与可复现短篇交付。实际管理器登记、任务与路径认领以 goalctl 账本为准。
 
 ## 接续
 
 [Goal 程序](docs/goals/README.md)说明登记、派发、合并与关闭；manager 遵循[章程](docs/goals/manager.md)，worker 遵循[协议](docs/goals/worker.md)。
 
-2026-10-31：Gamebook 完整固定包继续作为已交付基线。Web VN 当前处于 VN0 语义与兼容设计阶段；尚无 VN 能力交付。实际开始派发前，manager 须核对最近的归档后验证已终结并通过、实时 Goal 账本及路径认领；实时状态以 `task goal -- status` 为准。
+2026-10-31：Gamebook 完整固定包继续作为已交付基线。Web VN 当前处于 VN0 原生执行与兼容验收；尚无 VN 能力交付。实时状态以 `task goal -- status` 为准。
