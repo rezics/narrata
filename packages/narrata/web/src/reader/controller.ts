@@ -6,10 +6,11 @@ import { StoreSuperseded } from "../storage.js";
 import type { OnlineSession, OnlineStatus } from "../online/index.js";
 
 /** Also permits a host's worker proxy. The host retains ownership of the book and storage. */
-export type ReaderBook = Pick<Book, "inspect" | "choose" | "checkout" | "reload" | "nextContentUnits">;
+export type ReaderBook = Pick<Book, "inspect" | "choose" | "checkout" | "reload" | "nextContentUnits"> & Partial<Pick<Book, "historyArtifacts">>;
 /** Provider diagnostics never reach a rendering slot. */
 export type ReaderResolution = Exclude<Resolution, { status: "incompatible" }> | { readonly status: "incompatible" };
 export interface ReaderContent {
+  readonly artifact?: string;
   readonly item: ResolveItem;
   readonly resolution: ReaderResolution;
 }
@@ -17,6 +18,8 @@ export interface ReaderScreen {
   readonly book: BookView;
   readonly context: ResolveContext;
   readonly content: readonly ReaderContent[];
+  readonly artifacts?: Readonly<Record<CommitId, string>>;
+  readonly contexts?: Readonly<Record<string, ResolveContext>>;
 }
 export type ReaderSave =
   | { readonly status: "memory" }
@@ -37,6 +40,8 @@ export interface ReaderOptions {
   /** Match recovery controls to an online session's checked persistence outcome. */
   readonly online?: OnlineSession;
   readonly context?: ResolveContext;
+  /** Host-owned content realization/authorization context for each exact artifact. */
+  readonly contextForArtifact?: (artifact: string, context: ResolveContext) => ResolveContext;
   readonly maxItems?: number;
   /** Book does not expose its storage connection; the host declares whether writes are durable. */
   readonly persistence?: "memory" | "durable";
@@ -62,6 +67,7 @@ export class ReaderController {
   private snapshot: ReaderSnapshot;
   private readonly listeners = new Set<() => void>();
   private context: ResolveContext;
+  private readonly contextForArtifact: ReaderOptions["contextForArtifact"];
   private readonly maxItems: number;
   private readonly durable: boolean;
   private pending: Promise<boolean> | undefined;
@@ -76,6 +82,7 @@ export class ReaderController {
     this.maxItems = options.maxItems ?? 4096;
     if (!Number.isSafeInteger(this.maxItems) || this.maxItems < 1) throw new RangeError("maxItems must be a positive safe integer");
     this.context = structuredClone(options.context ?? {});
+    this.contextForArtifact = options.contextForArtifact;
     this.durable = options.persistence === "durable" || options.online !== undefined;
     this.online = options.online;
     this.snapshot = freeze({ phase: "idle", screen: null, selected: [], error: null,
@@ -212,17 +219,42 @@ export class ReaderController {
         const book = structuredClone(await this.book.inspect());
         if (this.disposed || generation !== this.generation) return false;
         stage = "content";
-        const context = structuredClone(this.context);
-        const items = collectScreenContent(book);
+        const artifacts = this.contextForArtifact ? await this.book.historyArtifacts?.(book.view.cursor) : undefined;
+        if (this.disposed || generation !== this.generation) return false;
+        if (this.contextForArtifact && !artifacts) throw new Error("Artifact contexts require checked history provenance.");
+        const contexts: Record<string, ResolveContext> = {};
+        const at = (artifact: string) => contexts[artifact] ??= structuredClone(this.contextForArtifact?.(artifact, structuredClone(this.context)) ?? this.context);
+        const context = at(book.view.artifact_id);
+        const items = collectScreenContent(artifacts ? { ...book, page: book.page.filter(item => artifacts[item.commit] === book.view.artifact_id),
+          view: { ...book.view, history: book.view.history.filter(row => artifacts[row.id] === book.view.artifact_id) } } : book);
         const results = await resolveContent(this.resolver, items, context, this.maxItems);
         const content = items.map((item, index): ReaderContent => {
           const result = results[index];
           if (!result) throw new Error("Content resolver omitted a result");
           return { item, resolution: result.status === "incompatible" ? { status: "incompatible" } : structuredClone(result) };
         });
+        if (artifacts) {
+          const groups = new Map<string, ResolveItem[]>();
+          const add = (commit: CommitId, item: ResolveItem) => {
+            const artifact = artifacts[commit];
+            if (!artifact) throw new Error("Missing content artifact provenance");
+            if (artifact === book.view.artifact_id) return;
+            const group = groups.get(artifact) ?? []; group.push(item); groups.set(artifact, group);
+          };
+          for (const row of book.view.history) if (row.title) add(row.id, { content: row.title });
+          for (const item of book.page) add(item.commit, { content: item.content, args: item.args });
+          for (const [artifact, items] of groups) {
+            if (this.disposed || generation !== this.generation) return false;
+            const results = await resolveContent(this.resolver, items, at(artifact), this.maxItems);
+            for (const [index, item] of items.entries()) {
+              const result = results[index]; if (!result) throw new Error("Content resolver omitted a result");
+              content.push({ artifact, item, resolution: result.status === "incompatible" ? { status: "incompatible" } : structuredClone(result) });
+            }
+          }
+        }
         if (this.disposed || generation !== this.generation) return false;
         if (this.pending === pending) this.pending = undefined;
-        this.publish({ phase: "ready", screen: { book, context, content }, selected: [], error: null });
+        this.publish({ phase: "ready", screen: { book, context, content, ...(artifacts ? { artifacts, contexts } : {}) }, selected: [], error: null });
         // Speculation starts after publishing the first screen; it is never on its critical path.
         this.prefetchTimer = setTimeout(() => { void this.prefetch(generation, context); }, 0);
         return true;
@@ -259,11 +291,11 @@ export function createReader(book: ReaderBook, resolver: ContentResolver, option
 }
 
 const contentIndexes = new WeakMap<ReaderScreen, ReadonlyMap<string, ReaderResolution>>();
-export function readerContent(screen: ReaderScreen, item: ResolveItem): ReaderResolution | undefined {
+export function readerContent(screen: ReaderScreen, item: ResolveItem, artifact?: string): ReaderResolution | undefined {
   let index = contentIndexes.get(screen);
   if (!index) {
-    index = new Map(screen.content.map(entry => [contentItemKey(entry.item), entry.resolution]));
+    index = new Map(screen.content.map(entry => [`${entry.artifact ?? ""}:${contentItemKey(entry.item)}`, entry.resolution]));
     contentIndexes.set(screen, index);
   }
-  return index.get(contentItemKey(item));
+  return index.get(`${artifact && artifact !== screen.book.view.artifact_id ? artifact : ""}:${contentItemKey(item)}`);
 }

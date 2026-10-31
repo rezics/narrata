@@ -88,9 +88,11 @@ export function useReader(controller: ReaderController): ReaderSnapshot {
   return snapshot;
 }
 
-function renderReference(screen: ReaderScreen, slots: ReaderSlots, item: ResolveItem, role: ContentRole, presentation?: PresentationItem): ReactNode {
-  const resolution = readerContent(screen, item) ?? { status: "unavailable" };
+function renderReference(screen: ReaderScreen, slots: ReaderSlots, item: ResolveItem, role: ContentRole, presentation?: PresentationItem, commit?: string): ReactNode {
+  const artifact = screen.artifacts?.[presentation?.commit ?? commit ?? screen.book.view.cursor];
+  const resolution = readerContent(screen, item, artifact) ?? { status: "unavailable" };
   const props: ContentSlotProps = { content: item.content, item, resolution, context: screen.context, role,
+    ...(artifact && screen.contexts?.[artifact] ? { context: screen.contexts[artifact] } : {}),
     ...(presentation ? { presentation: { execution: screen.book.view.execution, commit: presentation.commit, node: presentation.node, occurrence: presentation.occurrence } } : {}) };
   return role === "option" ? slots.option(props) : ["body", "reply", "ending-body"].includes(role) ? slots.body(props) : slots.reference(props);
 }
@@ -121,7 +123,7 @@ export function ReaderPath({ controller, slots, messages = readerMessages, class
   return <nav aria-label={messages.path}><ol className={css ?? "narrata-reader__path"}>
     {screen.book.view.history.map(entry => <li key={entry.id} className={[entry.current ? "current" : "", (branches.get(entry.parent ?? "") ?? 0) > 1 ? "branch" : ""].join(" ")}>
       <button disabled={disabled || snapshot.phase !== "ready"} aria-current={entry.current ? "step" : undefined} onClick={() => { void controller.checkout(entry.id); }}>
-        {entry.title ? renderReference(screen, slots, { content: entry.title }, "history-title") : entry.key ?? `${messages.path} ${entry.depth}`}
+        {entry.title ? renderReference(screen, slots, { content: entry.title }, "history-title", undefined, entry.id) : entry.key ?? `${messages.path} ${entry.depth}`}
       </button>
     </li>)}
   </ol></nav>;

@@ -3,6 +3,7 @@ import { StorageHost, type CacheStore } from "./storage.js";
 import validate from "./generated/validate-book.js";
 import type { BookView, ChoicePointId, CommitId, ExecutionId, OptionId } from "./generated/book-view.js";
 import type { ContentRef } from "./generated/book-view.js";
+import { ArtifactUnavailable, type ArtifactLoader } from "./artifacts.js";
 
 export { LocalContent };
 export type WasmSource = URL | string | Uint8Array | ArrayBuffer | WebAssembly.Module;
@@ -42,6 +43,8 @@ type SessionOptions = {
   execution: ExecutionId; storage?: CacheStore; wasm?: WasmSource;
   /** Exact trusted historical artifacts needed by migrated save pages; at most 64 / 64 MiB. */
   historyPacks?: readonly Uint8Array[];
+  /** Resolves the exact artifact requested by history, without downloading a full pack. */
+  loadArtifact?: ArtifactLoader;
 };
 export type OpenBookOptions = SessionOptions & (
   | { manifest: Uint8Array; fetchChunk: (id: string) => Promise<Uint8Array>; names?: Uint8Array; pack?: never }
@@ -67,7 +70,7 @@ export async function prepareBook(options: OpenBookOptions): Promise<RuntimeBook
   try {
     for (const pack of history) raw.registerHistoryPack(pack);
     if (options.names) raw.loadNames(options.names);
-    const book = new RuntimeBook(raw, options.storage, options.fetchChunk);
+    const book = new RuntimeBook(raw, options.storage, options.fetchChunk, options.loadArtifact);
     return book;
   } catch (error) { raw.free(); throw error; }
 }
@@ -76,6 +79,8 @@ export async function prepareBook(options: OpenBookOptions): Promise<RuntimeBook
 export interface Book {
   readonly artifactId: string;
   inspect(): Promise<BookView>;
+  /** Optional for older host proxies; artifact-specific content contexts require it. */
+  historyArtifacts?(expected: CommitId): Promise<Readonly<Record<CommitId, string>>>;
   /** Possible body units after one choice, through automatic transitions to the next interaction. */
   nextContentUnits(): Promise<ContentRef[]>;
   choose(expected: CommitId, choicePoint: ChoicePointId, options: readonly OptionId[]): Promise<CommitId>;
@@ -99,13 +104,18 @@ export class RuntimeBook implements Book {
   private closed = false;
   private closing: Promise<void> | undefined;
   private candidate: CommitId | undefined;
+  private readonly loaders = new Map<string, (id: string) => Promise<Uint8Array>>();
   get pendingCommit(): CommitId | undefined { return this.candidate; }
 
   constructor(
     private readonly raw: NodeBook,
     storage?: CacheStore,
-    private readonly fetchChunk?: (id: string) => Promise<Uint8Array>,
-  ) { this.host = storage ? new StorageHost(storage, raw, 100_000) : undefined; }
+    fetchChunk?: (id: string) => Promise<Uint8Array>,
+    private readonly loadArtifact?: ArtifactLoader,
+  ) {
+    this.host = storage ? new StorageHost(storage, raw, 100_000) : undefined;
+    if (fetchChunk) this.loaders.set(raw.artifact_id, fetchChunk);
+  }
 
   get artifactId(): string { this.assertOpen(); return this.raw.artifact_id; }
   start(existingOnly = false): Promise<void> { return this.run(() => {
@@ -113,6 +123,18 @@ export class RuntimeBook implements Book {
     this.candidate = this.raw.cursor();
   }); }
   inspect(): Promise<BookView> { return this.run(() => decodeBook(this.raw.inspect())); }
+  historyArtifacts(expected: CommitId): Promise<Readonly<Record<CommitId, string>>> {
+    return this.run(() => {
+      const value: unknown = JSON.parse(this.raw.historyArtifacts(expected));
+      if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Invalid history artifact provenance");
+      const artifacts: Record<CommitId, string> = {};
+      for (const [id, artifact] of Object.entries(value)) {
+        if (!/^commit:[0-9a-f]{64}$/.test(id) || typeof artifact !== "string" || !/^artifact:[0-9a-f]{64}$/.test(artifact)) throw new Error("Invalid history artifact provenance");
+        artifacts[id] = artifact;
+      }
+      return artifacts;
+    });
+  }
   nextContentUnits(): Promise<ContentRef[]> {
     return this.run(() => {
       const references: unknown = JSON.parse(this.raw.nextContentUnits());
@@ -172,11 +194,26 @@ export class RuntimeBook implements Book {
           const value = operation(); this.raw.confirm_memory(); return value;
         } catch (error) {
           this.assertOpen();
-          const id = this.raw.takeChunkRequest();
-          if (id === undefined || !this.fetchChunk) throw error;
-          const bytes = await this.fetchChunk(id);
+          const missing = error instanceof Error ? /^needs_artifact at (artifact:[0-9a-f]{64}):/.exec(error.message)?.[1] : undefined;
+          if (missing && this.loadArtifact) {
+            if (this.loaders.size >= 65) throw new RangeError("At most 64 historical artifacts");
+            const source = await this.loadArtifact(missing).catch(cause => { throw new ArtifactUnavailable(missing, undefined, { cause }); });
+            this.assertOpen();
+            this.raw.registerHistoryManifest(missing, source.manifest, source.names);
+            this.loaders.set(missing, source.fetchChunk.bind(source));
+            continue;
+          }
+          const request = this.raw.takeProgramRequest();
+          if (request === undefined) throw error;
+          const value: unknown = JSON.parse(request);
+          if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== "string" || !/^artifact:[0-9a-f]{64}$/.test(value[0])
+            || typeof value[1] !== "string" || !/^object:[0-9a-f]{64}$/.test(value[1])) throw new Error("Invalid program request");
+          const [artifact, id] = value;
+          const loader = this.loaders.get(artifact);
+          if (!loader) throw error;
+          const bytes = await loader(id).catch(cause => { throw new ArtifactUnavailable(artifact, id, { cause }); });
           this.assertOpen();
-          this.raw.loadChunk(id, bytes);
+          this.raw.loadArtifactChunk(artifact, id, bytes);
         }
       }
       throw new Error("The operation did not settle after 100000 program loads.");

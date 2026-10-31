@@ -264,8 +264,9 @@ impl<B: StorageBackend> Session<B> {
         Ok(session)
     }
     /// Adds an exact historic program for page rendering and checkout, without upgrading.
+    /// Manifest construction is checked; referenced chunks remain checked on demand. Do not
+    /// verify the whole artifact here: registration must not download an unread old work.
     pub fn register_history_program(&mut self, program: Arc<Program>) -> Result<()> {
-        program.verify_artifact()?;
         self.programs.insert(program.artifact_id(), program);
         Ok(())
     }
@@ -539,14 +540,33 @@ impl<B: StorageBackend> Session<B> {
             if cursor.commit != kernel(self.current.id) {
                 return Err(Error::new("stale_input", "cursor", "active cursor moved"));
             }
+            // A migration/import may have only an active root, without a branch head.
+            // Retain it before moving across artifacts so the timeline and GC do not
+            // lose the newer journey when the reader continues on an old program.
+            let retained = RefKey::bookmark(
+                name(self.execution),
+                RefName::hex(self.current.id.as_bytes()),
+            );
+            let retained_revision = self
+                .history
+                .read_ref(&retained)
+                .map_err(history_error)?
+                .map(|v| v.revision);
             self.history
                 .write_atomic(
                     &Transaction {
-                        refs: vec![RefMutation {
-                            key,
-                            expected: Some(cursor.revision),
-                            next: Some(kernel(*commit)),
-                        }],
+                        refs: vec![
+                            RefMutation {
+                                key,
+                                expected: Some(cursor.revision),
+                                next: Some(kernel(*commit)),
+                            },
+                            RefMutation {
+                                key: retained,
+                                expected: retained_revision,
+                                next: Some(kernel(self.current.id)),
+                            },
+                        ],
                         ..Transaction::default()
                     },
                     |_| Ok(Vec::new()),
@@ -896,11 +916,20 @@ impl<B: StorageBackend> Session<B> {
     /// Imports into this backend and moves this execution's cursor only after checked import.
     pub fn import(&mut self, text: &str) -> Result<()> {
         if text.trim_start().starts_with('{') {
-            let checked = Session::restore(self.program.clone(), text)?;
+            let export: SessionExport = parse_json_limited(text, MAX_INTERIM_EXPORT_BYTES)?;
+            if export.format_version != EXPORT_FORMAT_VERSION {
+                return Err(Error::new(
+                    "version",
+                    "format_version",
+                    "unsupported interim export",
+                ));
+            }
+            let program = self.program_at(export.artifact_id)?.clone();
+            let checked = Session::restore(program.clone(), text)?;
             checked.page()?;
             checked.interaction(None)?;
-            let (_, cursor, objects, commits) = legacy(&self.program, text)?;
-            return self.import_objects(objects, commits, cursor);
+            let (_, cursor, objects, commits) = legacy(&program, text)?;
+            return self.import_objects(program, objects, commits, cursor);
         }
         if text.len() > MAX_EXPORT_BYTES {
             return Err(Error::new(
@@ -925,17 +954,7 @@ impl<B: StorageBackend> Session<B> {
                 })?
                 .bytes(),
         )?;
-        let program = self
-            .programs
-            .get(&header.artifact)
-            .ok_or_else(|| {
-                Error::new(
-                    "incompatible_save",
-                    "artifact_id",
-                    "the export belongs to another artifact",
-                )
-            })?
-            .clone();
+        let program = self.program_at(header.artifact)?.clone();
         Self::checked_checkpoint(&self.programs, program.clone(), &bytes)?;
         let key = RefKey::active(name(self.execution))
             .map_err(|e| Error::new("name", "session", e.to_string()))?;
@@ -989,12 +1008,18 @@ impl<B: StorageBackend> Session<B> {
                 objects.insert(object_id, object);
             }
         }
-        self.import_objects(objects.into_values().collect(), commits, source.current.id)?;
+        self.import_objects(
+            self.program.clone(),
+            objects.into_values().collect(),
+            commits,
+            source.current.id,
+        )?;
         self.programs.extend(source.programs.clone());
         Ok(())
     }
     fn import_objects(
         &mut self,
+        program: Arc<Program>,
         objects: Vec<Object>,
         commits: Vec<CommitId>,
         cursor: CommitId,
@@ -1034,20 +1059,17 @@ impl<B: StorageBackend> Session<B> {
                 |_| Ok(Vec::new()),
             )
             .map_err(history_error)?;
-        let (session, loaded) = narrata_history::Session::open(
-            &self.history,
-            NodeDomain(self.program.clone()),
-            name(self.execution),
-        )
-        .map_err(history_error)?;
-        let pins = self.program.pin_state(&loaded.state)?;
-        self.session = session;
-        self.current = record(loaded);
-        self.prefetched.clear();
-        self._pins = pins;
-        Ok(())
+        self.reopen(program)
     }
     pub fn view(&self, names: Option<&NameTable>) -> Result<SessionView> {
+        self.view_with_names(|artifact| names.filter(|names| names.artifact == artifact))
+    }
+    /// Aliases belong to the artifact of each commit, including historical timeline rows.
+    pub fn view_with_names<'a>(
+        &self,
+        names_at: impl Fn(ArtifactId) -> Option<&'a NameTable>,
+    ) -> Result<SessionView> {
+        let names = names_at(self.program.artifact_id());
         let record = &self.current;
         let machine = Machine {
             program: &self.program,
@@ -1077,8 +1099,7 @@ impl<B: StorageBackend> Session<B> {
                     id: record.id,
                     parent: record.commit.parent,
                     depth: record.commit.depth,
-                    key: names
-                        .filter(|names| names.artifact == record.commit.artifact)
+                    key: names_at(record.commit.artifact)
                         .and_then(|names| names.node(&graph, &node).map(str::to_owned)),
                     graph,
                     node,

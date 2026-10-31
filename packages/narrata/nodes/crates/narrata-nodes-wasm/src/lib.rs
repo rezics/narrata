@@ -266,19 +266,74 @@ impl SaveLocator {
     }
 }
 
-/// A checked program and one session on it.
-#[wasm_bindgen]
-pub struct NodeBook {
+struct ReaderArtifact {
     pack: Option<Vec<u8>>,
     names: Option<NameTable>,
     analysis: Option<Analysis>,
     chunks: Option<HostChunks>,
     program: Arc<Program>,
+}
+
+/// A checked artifact registry and one session. The cursor selects its active context.
+#[wasm_bindgen]
+pub struct NodeBook {
+    artifacts: BTreeMap<narrata_nodes::ArtifactId, ReaderArtifact>,
+    initial: narrata_nodes::ArtifactId,
     execution: narrata_nodes::ExecutionId,
     cache: CacheBackend,
     session: Option<Session<CacheBackend>>,
-    history_programs: BTreeMap<narrata_nodes::ArtifactId, Arc<Program>>,
     history_bytes: usize,
+}
+
+impl NodeBook {
+    fn active(&self) -> &ReaderArtifact {
+        let id = self
+            .session
+            .as_ref()
+            .map_or(self.initial, |s| s.program().artifact_id());
+        &self.artifacts[&id]
+    }
+    fn artifact(&self, id: narrata_nodes::ArtifactId) -> Result<&ReaderArtifact, JsError> {
+        self.artifacts.get(&id).ok_or_else(|| {
+            js_error(Error::new(
+                "needs_artifact",
+                id.to_string(),
+                "exact historic program is unavailable",
+            ))
+        })
+    }
+    fn register(&mut self, artifact: ReaderArtifact, bytes: usize) -> Result<(), JsError> {
+        let id = artifact.program.artifact_id();
+        if self.artifacts.contains_key(&id) {
+            return Ok(());
+        }
+        let total = self
+            .history_bytes
+            .checked_add(bytes)
+            .filter(|n| *n <= 64 * 1024 * 1024)
+            .ok_or_else(|| {
+                js_error(Error::new(
+                    "limit",
+                    "history",
+                    "historical metadata/packs exceed 64 MiB",
+                ))
+            })?;
+        if self.artifacts.len() >= 65 {
+            return Err(js_error(Error::new(
+                "limit",
+                "history",
+                "at most 64 historical artifacts",
+            )));
+        }
+        if let Some(session) = &mut self.session {
+            session
+                .register_history_program(artifact.program.clone())
+                .map_err(js_error)?;
+        }
+        self.artifacts.insert(id, artifact);
+        self.history_bytes = total;
+        Ok(())
+    }
 }
 
 #[wasm_bindgen]
@@ -291,48 +346,115 @@ impl NodeBook {
         let analysis = analyze(&program, names.as_ref()).map_err(js_error)?;
         let execution = parse(execution, "execution", "execution:<32 hex digits>")?;
 
+        let initial = program.artifact_id();
         Ok(Self {
-            pack: Some(pack.to_vec()),
-            names,
-            analysis: Some(analysis),
-            chunks: None,
-            program: Arc::new(program),
+            artifacts: [(
+                initial,
+                ReaderArtifact {
+                    pack: Some(pack.to_vec()),
+                    names,
+                    analysis: Some(analysis),
+                    chunks: None,
+                    program: Arc::new(program),
+                },
+            )]
+            .into(),
+            initial,
             execution,
             cache: CacheBackend::new(),
             session: None,
-            history_programs: BTreeMap::new(),
             history_bytes: 0,
         })
     }
 
-    /// Opens only a checked manifest. On a missing program object an operation throws
-    /// `not_loaded`; takeChunkRequest identifies it, loadChunk supplies it, then retry.
-    /// Retry the pending call to completion before another runtime/tool call. Supplied
-    /// bytes survive its retries and are released when it succeeds.
-    /// The manifest and entry chunk suffice for an ordinary first screen. Full-pack
-    /// construction remains available for hosts such as the reference reader.
+    /// Opens a checked manifest; missing chunks are requested and checked on demand.
+    /// Finish retrying the pending operation before starting another runtime/tool call.
     #[wasm_bindgen(js_name = fromManifest)]
     pub fn from_manifest(manifest: &[u8], execution: &str) -> Result<NodeBook, JsError> {
         let chunks = HostChunks::default();
         let program =
             Program::from_manifest(manifest, Box::new(chunks.clone())).map_err(js_error)?;
+        let initial = program.artifact_id();
         Ok(Self {
-            pack: None,
-            names: None,
-            analysis: None,
-            chunks: Some(chunks),
-            program: Arc::new(program),
+            artifacts: [(
+                initial,
+                ReaderArtifact {
+                    pack: None,
+                    names: None,
+                    analysis: None,
+                    chunks: Some(chunks),
+                    program: Arc::new(program),
+                },
+            )]
+            .into(),
+            initial,
             execution: parse(execution, "execution", "execution:<32 hex digits>")?,
             cache: CacheBackend::new(),
             session: None,
-            history_programs: BTreeMap::new(),
             history_bytes: 0,
         })
     }
 
+    /// Registers only metadata. No graph bodies are fetched to register an old program.
+    #[wasm_bindgen(js_name = registerHistoryManifest)]
+    pub fn register_history_manifest(
+        &mut self,
+        expected: &str,
+        manifest: &[u8],
+        names: Option<Vec<u8>>,
+    ) -> Result<(), JsError> {
+        let expected = parse(expected, "artifact", "artifact:<64 hex digits>")?;
+        let chunks = HostChunks::default();
+        let program =
+            Program::from_manifest(manifest, Box::new(chunks.clone())).map_err(js_error)?;
+        if program.artifact_id() != expected {
+            return Err(js_error(Error::new(
+                "artifact",
+                expected.to_string(),
+                "manifest differs from requested artifact",
+            )));
+        }
+        let bytes = manifest.len() + names.as_ref().map_or(0, Vec::len);
+        let names = names
+            .as_deref()
+            .map(|b| program.decode_names(b))
+            .transpose()
+            .map_err(js_error)?;
+        self.register(
+            ReaderArtifact {
+                pack: None,
+                names,
+                analysis: None,
+                chunks: Some(chunks),
+                program: Arc::new(program),
+            },
+            bytes,
+        )
+    }
+
+    /// Includes artifact identity so a historical miss never uses the current chunk loader.
+    #[wasm_bindgen(js_name = takeProgramRequest)]
+    pub fn take_program_request(&self) -> Result<Option<String>, JsError> {
+        for (artifact, context) in &self.artifacts {
+            if let Some(chunks) = &context.chunks {
+                let request = chunks
+                    .0
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .request
+                    .take();
+                if let Some(id) = request {
+                    return json(&(*artifact, id)).map(Some);
+                }
+            }
+        }
+        Ok(None)
+    }
+
     #[wasm_bindgen(js_name = takeChunkRequest)]
     pub fn take_chunk_request(&self) -> Option<String> {
-        self.chunks
+        self.active()
+            .chunks
             .as_ref()?
             .0
             .lock()
@@ -346,8 +468,21 @@ impl NodeBook {
     /// object ID. Program checks its canonical payload and semantics when used.
     #[wasm_bindgen(js_name = loadChunk)]
     pub fn load_chunk(&self, id: &str, bytes: &[u8]) -> Result<(), JsError> {
+        self.load_artifact_chunk(&self.artifact_id(), id, bytes)
+    }
+
+    #[wasm_bindgen(js_name = loadArtifactChunk)]
+    pub fn load_artifact_chunk(
+        &self,
+        artifact: &str,
+        id: &str,
+        bytes: &[u8],
+    ) -> Result<(), JsError> {
+        let artifact = parse(artifact, "artifact", "artifact:<64 hex digits>")?;
+        let context = self.artifact(artifact)?;
         let id: ObjectId = parse(id, "object", "object:<64 hex digits>")?;
-        if id != self.program.manifest().tombstones && !self.program.manifest().chunks.contains(&id)
+        if id != context.program.manifest().tombstones
+            && !context.program.manifest().chunks.contains(&id)
         {
             return Err(js_error(Error::new(
                 "reference",
@@ -355,7 +490,7 @@ impl NodeBook {
                 "object is not in this manifest",
             )));
         }
-        let chunks = self
+        let chunks = context
             .chunks
             .as_ref()
             .ok_or_else(|| JsError::new("loadChunk requires fromManifest"))?;
@@ -367,6 +502,28 @@ impl NodeBook {
                 "artifact",
                 id.to_string(),
                 "object content differs from its object ID",
+            )));
+        }
+        let pending_bytes: usize = self
+            .artifacts
+            .values()
+            .filter_map(|a| a.chunks.as_ref())
+            .map(|chunks| {
+                chunks
+                    .0
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .objects
+                    .values()
+                    .map(Vec::len)
+                    .sum::<usize>()
+            })
+            .sum();
+        if pending_bytes.saturating_add(bytes.len()) > 64 * 1024 * 1024 {
+            return Err(js_error(Error::new(
+                "limit",
+                "program_objects",
+                "pending program objects exceed 64 MiB",
             )));
         }
         chunks
@@ -381,7 +538,15 @@ impl NodeBook {
     /// Optional aliases are checked against this artifact without loading graph bodies.
     #[wasm_bindgen(js_name = loadNames)]
     pub fn load_names(&mut self, bytes: &[u8]) -> Result<(), JsError> {
-        self.names = Some(self.program.decode_names(bytes).map_err(js_error)?);
+        let names = self
+            .active()
+            .program
+            .decode_names(bytes)
+            .map_err(js_error)?;
+        let id = self.active().program.artifact_id();
+        if let Some(context) = self.artifacts.get_mut(&id) {
+            context.names = Some(names);
+        }
         Ok(())
     }
 
@@ -389,47 +554,31 @@ impl NodeBook {
     /// This adds no migration evaluator, publication compiler or trace to the reader.
     #[wasm_bindgen(js_name = registerHistoryPack)]
     pub fn register_history_pack(&mut self, bytes: &[u8]) -> Result<(), JsError> {
-        let total = self
-            .history_bytes
-            .checked_add(bytes.len())
-            .filter(|n| *n <= 64 * 1024 * 1024)
-            .ok_or_else(|| {
-                js_error(Error::new(
-                    "limit",
-                    "history_packs",
-                    "historical packs exceed 64 MiB",
-                ))
-            })?;
-        if self.history_programs.len() >= 64 {
-            return Err(js_error(Error::new(
-                "limit",
-                "history_packs",
-                "at most 64 historical artifacts",
-            )));
-        }
-        let (program, _) = Program::from_pack(bytes).map_err(js_error)?;
+        let (program, names) = Program::from_pack(bytes).map_err(js_error)?;
         program.verify_artifact().map_err(js_error)?;
-        let program = Arc::new(program);
-        if let Some(session) = &mut self.session {
-            session
-                .register_history_program(program.clone())
-                .map_err(js_error)?;
-        }
-        self.history_programs.insert(program.artifact_id(), program);
-        self.history_bytes = total;
-        Ok(())
+        let analysis = analyze(&program, names.as_ref()).map_err(js_error)?;
+        self.register(
+            ReaderArtifact {
+                pack: Some(bytes.to_vec()),
+                names,
+                analysis: Some(analysis),
+                chunks: None,
+                program: Arc::new(program),
+            },
+            bytes.len(),
+        )
     }
 
     /// Requires all chunks and the tombstone set, including chunks already cached.
     #[wasm_bindgen(js_name = verifyArtifact)]
     pub fn verify_artifact(&self) -> Result<(), JsError> {
-        self.finish(self.program.verify_artifact().map_err(js_error))
+        self.finish(self.active().program.verify_artifact().map_err(js_error))
     }
 
     /// Tool lookup, loading tombstones first. Live results include their structural owner.
     pub fn lookup(&self, id: &str) -> Result<String, JsError> {
         let id: AuthoredId = parse(id, "id", "an authored ID")?;
-        let found = match self.program.lookup(id).map_err(js_error)? {
+        let found = match self.active().program.lookup(id).map_err(js_error)? {
             Lookup::Deleted => serde_json::json!({"kind": "deleted"}),
             Lookup::Unknown => serde_json::json!({"kind": "unknown"}),
             Lookup::Live {
@@ -445,7 +594,7 @@ impl NodeBook {
 
     #[wasm_bindgen(getter)]
     pub fn artifact_id(&self) -> String {
-        self.program.artifact_id().to_string()
+        self.active().program.artifact_id().to_string()
     }
 
     /// Candidate identity is available to the host before persistence is acknowledged.
@@ -455,12 +604,18 @@ impl NodeBook {
 
     /// Opens the kernel cursor, creating it only if absent. Retried after host loads.
     pub fn open(&mut self) -> Result<(), JsError> {
+        // Discover before dropping the old session. Reload and checkout may have moved
+        // the durable cursor to another registered artifact.
+        let location = narrata_nodes::history::locator::locate(&self.cache, self.execution)
+            .map_err(|error| JsError::new(&error.to_string()))?;
+        let id = location.map_or(self.initial, |location| location.artifact);
+        let program = self.artifact(id)?.program.clone();
         self.session = None;
-        let mut session = Session::open(self.program.clone(), self.execution, self.cache.share())
-            .map_err(js_error)?;
-        for program in self.history_programs.values() {
+        let mut session =
+            Session::open(program, self.execution, self.cache.share()).map_err(js_error)?;
+        for context in self.artifacts.values() {
             session
-                .register_history_program(program.clone())
+                .register_history_program(context.program.clone())
                 .map_err(js_error)?;
         }
         self.session = Some(session);
@@ -480,17 +635,17 @@ impl NodeBook {
     }
 
     fn finish<T>(&self, result: Result<T, JsError>) -> Result<T, JsError> {
-        if result.is_ok()
-            && let Some(chunks) = &self.chunks
-        {
-            let mut pending = chunks
-                .0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            // Only the checked decoded cache/pins survive a completed operation.
-            // Hosts must finish a pending retry before starting another book operation.
-            pending.objects.clear();
-            pending.request = None;
+        if result.is_ok() {
+            for context in self.artifacts.values() {
+                if let Some(chunks) = &context.chunks {
+                    let mut pending = chunks
+                        .0
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    pending.objects.clear();
+                    pending.request = None;
+                }
+            }
         }
         result
     }
@@ -564,7 +719,7 @@ impl NodeBook {
 
     /// The original full pack. Manifest-only books leave pack assembly to the host.
     pub fn pack(&self) -> Result<Vec<u8>, JsError> {
-        match &self.pack {
+        match &self.active().pack {
             Some(pack) => Ok(pack.clone()),
             None => Err(JsError::new(
                 "pack bytes are unavailable on a manifest-only book",
@@ -582,7 +737,7 @@ impl NodeBook {
     #[wasm_bindgen(js_name = nextContentUnits)]
     pub fn next_content_units(&self) -> Result<String, JsError> {
         let units = narrata_nodes::view::next_content_units(
-            &self.program,
+            &self.active().program,
             self.opened()?.state().map_err(js_error)?,
         )
         .map_err(js_error)?;
@@ -592,19 +747,44 @@ impl NodeBook {
     /// The text-free book view as JSON.
     pub fn inspect(&self) -> Result<String, JsError> {
         self.finish(json(&BookView {
-            view: self.opened()?.view(self.names.as_ref()).map_err(js_error)?,
+            view: self
+                .opened()?
+                .view_with_names(|id| self.artifacts.get(&id).and_then(|a| a.names.as_ref()))
+                .map_err(js_error)?,
             page: self.opened()?.page().map_err(js_error)?,
             // Runtime inspection must not eagerly scan the whole work. Publication
             // analysis is a separate operation for hosts that need the full graph.
             graphs: self
+                .active()
                 .analysis
                 .as_ref()
                 .map_or_else(Vec::new, |a| a.graphs.clone()),
             diagnostics: self
+                .active()
                 .analysis
                 .as_ref()
                 .map_or_else(Vec::new, |a| a.diagnostics.clone()),
         }))
+    }
+
+    /// Derived provenance for host content contexts; this changes no stored/read-model format.
+    #[wasm_bindgen(js_name = historyArtifacts)]
+    pub fn history_artifacts(&self, expected: &str) -> Result<String, JsError> {
+        let session = self.opened()?;
+        let expected = parse(expected, "expected", "commit:<64 hex digits>")?;
+        if session.cursor().map_err(js_error)? != expected {
+            return Err(js_error(Error::new(
+                "stale_input",
+                "cursor",
+                "cursor changed before content provenance read",
+            )));
+        }
+        let artifacts: BTreeMap<_, _> = session
+            .commits()
+            .map_err(js_error)?
+            .map(|(id, commit)| (id, commit.artifact))
+            .collect();
+        self.finish(json(&artifacts))
     }
 
     /// Chooses a set of option IDs at the cursor, which must still be `expected`, and returns
@@ -669,7 +849,7 @@ impl NodeBook {
         content: &LocalContent,
         execution: &str,
     ) -> Result<(), JsError> {
-        let names = self.names.as_ref().ok_or_else(|| {
+        let names = self.active().names.as_ref().ok_or_else(|| {
             js_error(Error::new(
                 "names",
                 "pack",
@@ -678,8 +858,14 @@ impl NodeBook {
         })?;
         let execution = parse(execution, "execution", "execution:<32 hex digits>")?;
         let ref_text = |reference: &_| content.inner.text(reference, &[]);
-        let migrated = r1::migrate_save(self.program.clone(), names, save, execution, &ref_text)
-            .map_err(js_error)?;
+        let migrated = r1::migrate_save(
+            self.active().program.clone(),
+            names,
+            save,
+            execution,
+            &ref_text,
+        )
+        .map_err(js_error)?;
         self.opened_mut()?
             .import_session(&migrated)
             .map_err(js_error)?;

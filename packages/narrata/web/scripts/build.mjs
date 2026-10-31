@@ -92,9 +92,9 @@ if (!check) {
   cpSync(resolve(stage, "src/graph/validate-reader-map.js"), resolve(dist, "graph/validate-reader-map.js"));
   cpSync(resolve(stage, "src/graph/validate-reader-map.d.ts"), resolve(dist, "graph/validate-reader-map.d.ts"));
   cpSync(resolve(root, "packages/narrata/tooling/crates/narrata-authoring/sql/relations-v1.sql"), resolve(dist, "server/relations-v1.sql"));
-  // Keep the expanded authoring/server capabilities inside their existing JS budget.
+  // Keep optional authoring/server and raw compatibility capabilities inside their JS budgets.
   // Per-module minification preserves ESM boundaries and package-relative Wasm URLs.
-  for (const directory of ["authoring", "maintenance", "storage", "server", "authoring-wasm"]) {
+  for (const directory of ["authoring", "maintenance", "storage", "server", "authoring-wasm", "wasm"]) {
     for (const name of readdirSync(resolve(dist, directory)).filter(name => name.endsWith(".js"))) {
       const path = resolve(dist, directory, name);
       const result = await minify(path, readFileSync(path, "utf8"), { module: true });
