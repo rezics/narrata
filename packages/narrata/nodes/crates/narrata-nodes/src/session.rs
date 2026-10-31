@@ -1,8 +1,8 @@
 //! Node sessions driven by the kernel history layer. JSON R2 exports are import-only.
 
 use crate::{
-    ArtifactId, ChoicePointId, ChunkPins, CommitId, Error, ExecutionId, NodeId, ObjectId, OptionId,
-    Program, ProposalRequest, Result,
+    ArtifactId, ChoicePointId, ChunkPins, CommitId, DependencyLimits, DependencyProjection, Error,
+    ExecutionId, NodeId, ObjectId, OptionId, Program, ProposalRequest, Result,
     history::{NodeDomain, history_error},
     json::parse_json_limited,
     plan::NameTable,
@@ -369,6 +369,16 @@ impl<B: StorageBackend> Session<B> {
         }
         .prefetch(&self.current.state)?;
         Ok(())
+    }
+    /// Potential dependencies of the next safe point, computed from the checked current state of
+    /// this session and tied to its artifact and cursor. This is a conservative union within
+    /// `limits`, not a prediction; see [`DependencyProjection`] for what it promises. It never
+    /// changes the session, its history or the backend. It may load program chunks into the
+    /// shared cache, which the program trims again once the query is done. It fails only when the
+    /// current interaction itself cannot be established; trouble further along is reported in
+    /// the result's `truncations`.
+    pub fn dependency_projection(&self, limits: DependencyLimits) -> Result<DependencyProjection> {
+        crate::dependency::project(&self.program, self.current.id, &self.current.state, limits)
     }
     pub fn history(&self) -> &History<B, DomainKinds<NodeDomain>> {
         &self.history

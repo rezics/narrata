@@ -494,6 +494,13 @@ impl Program {
         Ok(pins)
     }
 
+    /// Evicts unreferenced chunks beyond the budget. Read-only queries call it after dropping the
+    /// graphs they borrowed, so a wide query does not leave the cache over budget until the next
+    /// access.
+    pub(crate) fn trim_chunks(&self) {
+        self.cache().trim();
+    }
+
     /// Resident decoded chunks, including those kept by live pins or graph borrowers.
     /// Released borrowers are reclaimed on the next access, budget change or pin drop.
     pub fn loaded_chunks(&self) -> usize {

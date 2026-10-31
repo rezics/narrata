@@ -140,7 +140,7 @@ pub struct GraphHeader {
 
 /// A content-owned media identity. Narrata stores the provider's immutable key and revision,
 /// never a URL, credential, decoded byte buffer or player handle.
-#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MediaRef {
     pub kind: MediaKind,
@@ -149,7 +149,9 @@ pub struct MediaRef {
     pub revision: String,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, JsonSchema, Ord, PartialEq, PartialOrd, Serialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaKind {
     Image,

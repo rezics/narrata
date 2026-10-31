@@ -11,6 +11,7 @@
 pub mod analysis;
 mod check;
 mod compile;
+mod dependency;
 mod error;
 mod expr;
 pub mod history;
@@ -36,6 +37,10 @@ pub use compile::{
     Compilation, ObjectCompilation, SourceValidation, canonical_json, check_node_data, compile,
     compile_objects, package_digest, validate_manifest_source, validate_package_metadata,
     validate_source,
+};
+pub use dependency::{
+    ContentDependency, ContentRole, DependencyLimits, DependencyProjection, DependencyWork,
+    GraphDependency, MediaDependency, MediaRole, Truncation, Unknown,
 };
 pub use error::{Diagnostic, Error, Result};
 pub use expr::{Assignment, BinaryOp, Expr, Scope, Variable, check_scalar};
