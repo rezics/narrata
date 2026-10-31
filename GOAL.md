@@ -12,9 +12,9 @@
 
 | Goal | 当前阶段 | 范围 |
 | --- | --- | --- |
-| [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | VN1：可安装阅读 API | VN0 → VN1 → VN2 → VN3 |
+| [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | VN1：可恢复参考播放器 | VN0 → VN1 → VN2 → VN3 |
 
-VN0 原生执行与双格式兼容已通过主线验收。当前由 G-042 推进 VN1 可安装阅读 API；播放器 UI、媒体解析/播放、作者入口、短篇样例与 VN2–VN3 仍待交付。固定源码与检查记录见[接续状态](docs/goals/web-vn/state.md)，实际管理器登记、任务与路径认领以 goalctl 账本为准。
+VN0 原生执行与双格式兼容、VN1 可安装阅读 API 已通过主线验收。下一项是可恢复参考播放器与类型化媒体呈现；作者入口、短篇样例与完整 VN2–VN3 仍待交付。固定源码与检查记录见[接续状态](docs/goals/web-vn/state.md)，实际管理器登记、任务与路径认领以 goalctl 账本为准。
 
 ## 接续
 

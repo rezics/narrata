@@ -8,7 +8,7 @@
 
 Gamebook 仍以既有节点栈、格式 2/schema 1/revision 2、`BookView` 与冻结语料为兼容基线。VN0 原生语义在同一节点执行、Session、历史、存档和按需逻辑块加载框架上实现；逐句对白、类型化推进和可恢复场景的精确类型与编码由 Rust、生成 schema、测试和 `fixtures/compat/nodes-vn-v1/` corpus 表达。旧 Flow/Scene 仅作行为证据，[决定 11](../product/decisions.md#11-节点组合模型是长期内核的语义基础)仍排除对 `RuntimeStateV0` 的产品扩展。
 
-可安装的 VN reader/authoring/server API、Web 媒体 resolver 和播放器尚未实现；本 ADR 下文保留其选定合同与验收。它们不因 VN0 原生实现通过而视为交付。完整产品范围见 [Web VN Goal](../goals/web-vn/GOAL.md)。
+可安装的 VN reader 已通过固定包验收；VN authoring/server API、Web 媒体 resolver 和播放器仍待交付，本 ADR 保留其选定约定与验收。完整产品范围见 [Web VN Goal](../goals/web-vn/GOAL.md)。
 
 ## 决定
 
@@ -74,7 +74,7 @@ Gamebook 的 R1 存档继续通过现有受检读取/迁移路径回到 Gamebook
 
 兼容语料 `fixtures/compat/nodes-vn-v1/` 冻结原生执行与对象格式；`fixtures/compat/vn-view-v1/` 从独立安装包的公共 API 生成，冻结版本化 Web View 的对白、选择、场景变化与结局样例。两者分别证明原生格式与公开交换边界，既有语料保持不变。未来任何格式变化仍需新的 ADR、旧格式读取/迁移路径和新增冻结证据。
 
-Web 交换 View 是独立版本边界：`@rezics/narrata/vn` 提供 version 1 的判别联合，按权威 Rust/schema 生成 TypeScript 声明和运行时校验。Gamebook `BookView` 与既有入口保持不变；VN View 不伪装成旧 Gamebook 交互，也不含渲染句柄。此 reader 子路径与合同尚未从 npm 包公开。
+Web 交换 View 是独立版本边界：`@rezics/narrata/vn` 提供 version 1 的判别联合，按权威 Rust/schema 生成 TypeScript 声明和运行时校验。Gamebook `BookView` 与既有入口保持不变；VN View 不伪装成旧 Gamebook 交互，也不含渲染句柄。该子路径已从固定 tarball 验证，npm registry 尚未发布。
 
 VN 源稿检查及预览使用独立的已安装入口：browser `@rezics/narrata/vn/authoring` 与 Node/Bun `@rezics/narrata/vn/server`。两者均校验 VN source format 3；预览打开同一次检查通过的候选对象，不发布作品、不切换正式发布指针、不写读者存档。现有 `@rezics/narrata/authoring` 和 `@rezics/narrata/server` 继续保留 Gamebook 类型和语义。
 
@@ -93,6 +93,6 @@ Gamebook 作者、发布、存档、历史、地图及维护能力继续沿用�
 
 ## 后果与未验证项
 
-VN0 原生执行与双格式兼容已在主线提交 `f1adb040de40fc2b7b1f973afb64d562475343e5` 通过五项 gate 并验收，代码、生成 schema 与新 corpus 是其实现证据。尚未交付的公开边界包括 version 1 VN reader、browser/Node/Bun VN authoring/server 与可安装消费者验证、typed media resolver、桌面/手机播放器以及完整样例产品；各自的验收要求保留在上表和 [Web VN Goal](../goals/web-vn/GOAL.md)。
+VN0 原生执行、双格式兼容及 version 1 VN reader 已通过验收，固定输入见[接续状态](../goals/web-vn/state.md)。尚未交付的边界包括 browser/Node/Bun VN authoring/server、typed media resolver、桌面/手机播放器以及完整样例产品；各自的验收要求保留在上表和 [Web VN Goal](../goals/web-vn/GOAL.md)。
 
 未完成的验证仍包括：宿主如何提供不可变媒体版本及受检变体、如何按当前账号/授权与正文解析上下文取消和隔离资源请求，以及目标浏览器中用户手势、解码失败、关闭/重开与存档恢复的交互。若真实实现推翻本文的恢复、Gamebook 兼容、媒体或作者边界，应先修订 ADR，再冻结新语料。REZICS 的实际能力与真实联合旅程仍以[集成文档](../integrations/rezics.md)为准。

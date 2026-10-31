@@ -1,14 +1,16 @@
 # State
 
-2026-10-31：G-041 原生 VN0 执行与双格式兼容实现已合入主线提交 `f1adb040de40fc2b7b1f973afb64d562475343e5`（实现提交 `be83242`），G5、R1、Web、scripts、docs 五项主线 gate 均已通过，VN0 已验收。G-041 已验证归档并保留任务分支；VN1 的 [G-042](tasks/G-042.md) 已从 `6bd5c76` 派发给 gpt-6-luna/max。
+2026-10-31：VN0 已验收；原生源码 `f1adb040de40fc2b7b1f973afb64d562475343e5` 通过五项本地 gate，等价代码的[主线 CI](https://github.com/rezics/narrata/actions/runs/41204472183)八项成功。VN1 的 [G-042](tasks/G-042.md) 阅读 API 已在主线 `e81a492d5462e97cf29bbcede232c73697e81b4c` 通过 R1、Web、scripts、docs；R1 浏览器 28 项、Web 单元 147 项及独立 Node/Bun/Chromium 消费者通过。播放器、媒体呈现和完整 VN2–VN3 尚未交付。
 
 ## 已验收基线
 
 Gamebook 完整固定包保持不变：源码 `a36d4966d7bf40df9e03f38e5d080885d73595ff`，版本 `0.1.0-alpha.1`，tarball SHA-256 `0a1ed393ab8b60ad1400609fcd26b0a060911917fce88169efc459d25819da30`；见[固定输入](../../integrations/rezics.md#narrata-自己的交付依赖)。G-041 保留 Gamebook format 2、schema 1、revision 2、`BookView` 与现有兼容语料；VN0 双格式读取证据新增于 `fixtures/compat/nodes-vn-v1/`。实现字段、编码与 schema 细节由代码和 corpus 承载。
 
+VN 阅读 API 切片的固定包版本同为 `0.1.0-alpha.1`，SHA-256 为 `11db5e10fbe1a6319ae921fb90e1d30bcc00678c5d679bf9886dc078f5a13299`，1,780,389 字节；主线与工作分支验收包逐字节相同。公共 View v1 的四种状态样例在 `fixtures/compat/vn-view-v1/`，由独立安装包分别经 Node/Bun 生成并比对；既有 365 个兼容文件与 Gamebook schema 未改。日志、包与消费证据在 `.temp/goal/runs/G-042/main-acceptance/e81a492/`、`.temp/delivery/vn-reader-release.json`。
+
 ## 下一步与未交付结果
 
-G-042 正在实现 Wasm/npm `@rezics/narrata/vn` 有类型 API、逻辑块按需加载、存档确认与安装包消费者验证。播放器 UI、媒体 resolver/cache、VN 作者 API 和短篇产品由后续任务交付。VN1 的播放器和浏览器旅程仍必需；VN2 的按需剧情/媒体交付与 VN3 的作者、模拟宿主、多场景短篇、固定包和安装验收也都未交付。完整验收范围见 [GOAL.md](GOAL.md)。
+下一项交付桌面/手机参考播放器、受检媒体 callback、图层与音轨协调、资源失败恢复和真实浏览器旅程。已审阅概念与独立素材位于 `.temp/vn-player-design/`，简报草稿在 `.temp/vn1-player-task-body.md`。VN2 的有界候选预取/按需媒体交付与 VN3 的作者 API、即预览、多场景短篇及完整固定包仍必需；完整范围见 [GOAL.md](GOAL.md)。
 
 manager 为 `codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn`。worker 使用 `engine: codex`、`effort: max`，环境设置 `GOAL_ID=web-vn`、`GOAL_ENGINE=codex`、`GOAL_CODEX_MODEL=gpt-6-luna`；实时派发、认领与进程以 `task goal -- status` 为准。
 
