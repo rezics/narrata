@@ -32,6 +32,17 @@
     "interaction": {
       "$ref": "#/$defs/Interaction"
     },
+    "music_action": {
+      "description": "The current commit's effective scene music directive, recomputed during replay. The full\ntarget remains in `scene`; ordinary dialogue transitions omit this field.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MusicAction"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "presentation": {
       "description": "What to show since the previous interaction, recomputed from the parent state and the\ninput rather than stored.",
       "type": "array",
@@ -458,6 +469,54 @@
         "provider",
         "key",
         "revision"
+      ]
+    },
+    "MusicAction": {
+      "description": "Music intent performed by a scene transition. `Keep` carries the existing logical track.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "keep"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "play"
+            },
+            "track": {
+              "$ref": "#/$defs/MediaRef"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "track"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "stop"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
       ]
     },
     "NodeId": {
