@@ -25,7 +25,7 @@
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
 2. [存档维护/浅恢复](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-038.md)已 verified 归档、保留分支并推送 2a92cc5；[维护增量 CI](https://github.com/rezics/narrata/actions/runs/41083435285)八项全绿，复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
-3. [阅读器跨构件/确认组合](tasks/G-039.md)已从 2a92cc5 启动 Codex/high attempt 1，wait 已挂起：历史 A/B 程序与各自 loader 按需注册、时间线/checkout/再选择、确认及落盘故障在同一实际参考旅程可用，地图与维护需组合验证。
+3. [阅读器跨构件/确认组合](tasks/G-039.md)从 2a92cc5 开始，attempt 1 因网络/TLS 故障退出（code 4），无正式交接或提交；20 份工作文件及全部证据保留。日志证明退出前 R1（26 浏览器）、Web 与 WebStorage（19 浏览器）已通过，仍不是任务验收。2026-10-31 已在同一工作区恢复 Codex/high attempt 2；补入独立评审确认的 native/legacy 旧构件恢复分派和迁移核实后陈旧错误提示两项修复，之后完成实际 A/B/C、地图/维护组合及全部可见结果矩阵。实时 PID/检查以 goalctl 为准。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
 ## 维护评审检查点
