@@ -534,6 +534,7 @@ describe('git helpers', () => {
     expect(treeMentions(dir, [])).toEqual([]);
   });
 
+  // Four real Git commits can exceed Bun's default 5s while a Rust gate shares the host.
   test('lists Markdown commits without a Goal trailer as maintainer edits', () => {
     const dir = repo({ 'AGENTS.md': 'a\n' });
     const start = gitIn(dir, 'rev-parse', 'HEAD');
@@ -548,7 +549,7 @@ describe('git helpers', () => {
     gitIn(dir, 'commit', '-q', '-m', 'Code only');
     const edits = maintainerDocCommits(dir, start);
     expect(edits.map(edit => [edit.subject, edit.files])).toEqual([['Clarify the handoff', ['docs/goals/worker.md']]]);
-  });
+  }, 20_000);
 
   test('rewrites relative links for a moved Markdown file and follows moved targets', () => {
     const brief = 'docs/goals/g/tasks/G-001.md';
