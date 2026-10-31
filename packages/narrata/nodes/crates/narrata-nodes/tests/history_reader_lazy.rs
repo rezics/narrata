@@ -38,3 +38,40 @@ fn history_registration_checks_metadata_without_fetching_unread_chunks() {
     assert_eq!(historic.verify_artifact().unwrap_err().code, "not_loaded");
     assert_eq!(loads.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn incoming_native_and_legacy_roots_request_their_exact_program_before_publication() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../../fixtures/compat/nodes-evolution-v1");
+    let (a, _) =
+        Program::from_pack(&std::fs::read(root.join("old-save-continue/source.narpack")).unwrap())
+            .unwrap();
+    let (b, _) = Program::from_pack(
+        &std::fs::read(root.join("republished-after-migration/target.narpack")).unwrap(),
+    )
+    .unwrap();
+    let a = Arc::new(a);
+    let b = Arc::new(b);
+    let native =
+        hex::encode(std::fs::read(root.join("old-save-continue/source.checkpoint")).unwrap());
+    let legacy = std::fs::read_to_string(root.join("old-save-continue/legacy.json")).unwrap();
+    for incoming in [&native, &legacy] {
+        let mut session = Session::new(
+            b.clone(),
+            "execution:0190f2a0000070008000000000000001"
+                .parse()
+                .unwrap(),
+        )
+        .unwrap();
+        let original = session.export().unwrap();
+        let error = session.import(incoming).unwrap_err();
+        assert_eq!(error.code, "needs_artifact");
+        assert_eq!(error.path, a.artifact_id().to_string());
+        assert_eq!(session.export().unwrap(), original);
+        session.register_history_program(a.clone()).unwrap();
+        session.import(incoming).unwrap();
+        assert_eq!(session.program().artifact_id(), a.artifact_id());
+        session.page().unwrap();
+        session.interaction(None).unwrap();
+    }
+}
