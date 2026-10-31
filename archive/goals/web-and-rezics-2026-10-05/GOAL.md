@@ -9,7 +9,7 @@ areas:
 
 # Gamebook 第一阶段
 
-更新：2026-10-29。保留 web-and-rezics 的 Goal 身份、既有任务与 manager 归属。首发 Gamingbook 是正文阅读加分支选择；本 Goal 交付 Narrata 的通用 SDK、参考体验和宿主契约。REZICS 的产品界面、数据库、权限与路由只作为[能力请求](../../integrations/rezics.md#能力请求)，不在本仓库实施。[state.md](state.md)记录接续现场。
+更新：2026-10-29。保留 web-and-rezics 的 Goal 身份、既有任务与 manager 归属。首发 Gamingbook 是正文阅读加分支选择；本 Goal 交付 Narrata 的通用 SDK、参考体验和宿主契约。REZICS 的产品界面、数据库、权限与路由只作为[能力请求](../../../docs/integrations/rezics.md#能力请求)，不在本仓库实施。[state.md](state.md)记录接续现场。
 
 ## 结果与完成边界
 
@@ -34,7 +34,7 @@ areas:
 
 | 工作包 | 结果 | 依赖与验收 |
 | --- | --- | --- |
-| 创作与发布核心 | 复用已合入的 Rust 记录、ID、校验和组合核心，审查并接续发布对象集合与关系投影 | [ADR 0022](../../adr/0022-authoring-publication-and-reader-map.md)；草稿与 ContentOutline 生成受检对象集合、集合身份与诊断；CLI 作为文件适配，不另写临时发布器 |
+| 创作与发布核心 | 复用已合入的 Rust 记录、ID、校验和组合核心，审查并接续发布对象集合与关系投影 | [ADR 0022](../../../docs/adr/0022-authoring-publication-and-reader-map.md)；草稿与 ContentOutline 生成受检对象集合、集合身份与诊断；CLI 作为文件适配，不另写临时发布器 |
 | 公共 authoring/server 入口 | 浏览器与 Node/Bun 可以从正式 npm 包使用记录组装、ID、诊断、预览编译与发布 | 发布核心及 M0 共享入口认领收敛后实现 authoring Wasm 和包入口；错误可定位到节点/选择点；独立安装验证，不能依赖 workspace、文件系统源码路径或仓库 CLI |
 | reader 与 authoring 构建分离 | 阅读首屏不携带发布、布局和调试 trace 工具；公开旧入口的兼容方式明确 | 复用抽出的发布核心；reader/authoring 资源分别定位、加载与计量；真实产物更新预算；新增工具与 gate 同步记入工具链 |
 | 内容与富文档接缝 | 通用 provider、内容大纲、原生渲染适配和同上下文的标签/正文可以被宿主实现 | 沿用 ContentRef/Segment；标准载荷当前只含文字/文字块，先明确富文档适配契约与模拟样例；正文不进入逻辑摘要；修订是宿主调用上下文，不擅加 ContentOutline 字段 |
@@ -59,7 +59,7 @@ areas:
 | --- | --- | --- |
 | 作者图与读者地图 | 接续作者图分支，受检读取、分层瓦片、标签解析、WebGL 懒加载和绘制上限；实现 visits、关系查询适配及只显示已揭示路径的读者地图 | 图格式与发布集合；按正式包验证新子路径，不能把预取当作已访问 |
 | 关系投影装载 | 纯投影与分片受检读取经公共接口交付，参考 DDL 的装载/查询在真实 PostgreSQL 语义下验证 | 发布集合与关系投影；REZICS 自己的表和查询只写成能力请求 |
-| 作品演化完整链路 | 接续节点演化核心，补 planEvolution、描述符发布挂接、影响评估、Wasm/npm 包装和阅读器确认/应用 | [ADR 0023](../../adr/0023-node-artifact-evolution.md)、发布核心及 authoring/server；区分 Exact/Automatic/NeedsConfirmation/旧版继续等结果；确认失效、分歧、有损恢复和落盘冲突均可执行 |
+| 作品演化完整链路 | 接续节点演化核心，补 planEvolution、描述符发布挂接、影响评估、Wasm/npm 包装和阅读器确认/应用 | [ADR 0023](../../../docs/adr/0023-node-artifact-evolution.md)、发布核心及 authoring/server；区分 Exact/Automatic/NeedsConfirmation/旧版继续等结果；确认失效、分歧、有损恢复和落盘冲突均可执行 |
 | 存档维护公共接口 | 导出导入、浅历史、GC/配额及服务端维护入口可从正式包调用 | 现有 kernel/history、节点与服务器存储；保证受检输入、资源预算、保留根和删除边界 |
 
 演化检查不把稳定 ID 当作语义兼容证明；内容或别名修订、规则改变、删当前位置、提议重放、浅历史与多次迁移按 ADR 分别处理。实际需要格式变化时先写新 ADR、新语料与读取/迁移路径，冻结目录只读。
@@ -69,7 +69,7 @@ areas:
 - 受影响的检查通过：节点/Web 用 task check:r1，发行包用 task check:web，服务器适配用 task check:server-storage；kernel 路径有变动时跑 task check:g5，文档用 task docs:check。新增 authoring 测试和 wasm-target 检查纳入相应 gate；已有检查的覆盖缺口不能留给宿主。
 - 阅读器和作者图在真实浏览器走完整旅程及移动端检查；从 tarball 安装，记录体积、首屏请求和失败恢复。
 - 当前 main 的 CI 与固定交付物对应，公共 npm 发布按维护者决定；交付可先使用 tarball。
-- [能力文档](../../integrations/rezics.md)与[宿主交接](../../integrations/rezics-goal.md)按实际公开接口更新；REZICS 就绪后用同一版本做真实联合验收，Narrata 缺陷由本仓库修复并交付新包。
-- 完整阶段结果有证据后，归位长期决定、归档已关闭任务并按程序关闭 Goal；或记录明确路径移交后再开始 [Web VN](../web-vn/GOAL.md)。保留未关闭认领时不启动重叠实施。
+- [能力文档](../../../docs/integrations/rezics.md)与[宿主交接](../../../docs/integrations/rezics-goal.md)按实际公开接口更新；REZICS 就绪后用同一版本做真实联合验收，Narrata 缺陷由本仓库修复并交付新包。
+- 完整阶段结果有证据后，归位长期决定、归档已关闭任务并按程序关闭 Goal；或记录明确路径移交后再开始 [Web VN](../../../docs/goals/web-vn/GOAL.md)。保留未关闭认领时不启动重叠实施。
 
-一个平台运行时及阶段内兼容仍按[决定 17](../../product/decisions.md#17-第一阶段一个平台运行时阶段内版本保持兼容)。运行时插件、能力锁、自带运行时和宿主专用 REZICS 实现不属于本 Goal。
+一个平台运行时及阶段内兼容仍按[决定 17](../../../docs/product/decisions.md#17-第一阶段一个平台运行时阶段内版本保持兼容)。运行时插件、能力锁、自带运行时和宿主专用 REZICS 实现不属于本 Goal。

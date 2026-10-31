@@ -10,7 +10,7 @@
 
 - M0 保留并审查旧作者图、发布/关系和节点演化分支，M1 公共 authoring/server、独立 reader/兼容 Wasm、原生内容、在线生命周期及精确构件恢复均已合入。旧任务归档与分支保留，不重新派发。维护者 fd4b309 的产品/集成方向继续有效。
 - M1 历史固定包：版本 0.1.0-alpha.1，源码 fa0266b1063428e855efea1408768029818500d0，SHA-256 524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19；完整元数据 `.temp/delivery/m1-release.json`。a6f8952 及 1ac944b 同产品树 CI 八项全绿，不代替地图增量及最终阶段 CI。
-- [地图与 SQL 交付](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-037.md)已合入主线源码 5c02e6107c20858b67a0ce9d643b3b9de73bc218，并完成主线独立安装复验。固定增量包 SHA-256 e2751a827b71629cf139e5d371123787af80cc19635d6285f1c4756f1fa0aaf3，版本仍为 0.1.0-alpha.1；文件及元数据 `.temp/delivery/reader-map-release.json`。同版本不同包不能互换，M1 历史包不含此增量。
+- [地图与 SQL 交付](tasks/G-037.md)已合入主线源码 5c02e6107c20858b67a0ce9d643b3b9de73bc218，并完成主线独立安装复验。固定增量包 SHA-256 e2751a827b71629cf139e5d371123787af80cc19635d6285f1c4756f1fa0aaf3，版本仍为 0.1.0-alpha.1；文件及元数据 `.temp/delivery/reader-map-release.json`。同版本不同包不能互换，M1 历史包不含此增量。
 - visits 共用受检祖先审计和执行 trace，保留迁移/游标来源；稀疏关系保留原 edge_no，地图只显示实际揭示事实。服务器装载/查询走 Rust 事实校验与真实 PostgreSQL；独立 `/reader-map`、`/reader-map/react` 仅含解码与可选渲染，作者图与 reader 原上限不变，全部地图字节计入总量。
 - 全部已报告问题已复审解决：无正文转移、空历史 incomplete、JS/Wasm 数值截断、冷装载竞争、异步可变查询、迟到地图、HTTP JSON、长图可读性及 i32 坐标边界。主线和受检候选只差五份管理/交接文档；111 个包文件仅 README/预算说明的换行不同，可执行资产完全相同。候选最终 R1（26 浏览器）和真实 PG（61 通过、1 个仅 PGlite 权限对应项跳过）证据复用；主线 Web 再次通过 109 包测试、13 安装测试及 Node/Bun/Worker/浏览器旅程。未变的脚本套件 53 项通过。
 - 已查看主线安装包桌面/390px 长图截图：800 个合成渲染点的末点可达，圆直径 36px、文字框 17px、视口 400px、无页面横溢；实际短篇的迟到/账号/新旅程、24 个无效响应用例及未知/配额/冲突入口保护通过。冷首屏只有 manifest/入口块和 reader Wasm，无地图/作者工具请求。
@@ -28,8 +28,8 @@
 ## 下一步
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
-2. [存档维护/浅恢复](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-038.md)已 verified 归档、保留分支并推送 2a92cc5；[维护增量 CI](https://github.com/rezics/narrata/actions/runs/41083435285)八项全绿，复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
-3. [阅读器跨构件/确认组合](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-039.md)已完成干净交接、源码复审和主线固定包验收，准备 verified 归档并保留分支。完整 gate 和精确 screen/confirmed 身份断言已通过；此前等待环是测试本身的问题，已用真实 503 与可见重试修复。主线打包完全相同；启动 PG 的 Tee 管道问题已修正为独立进程文件重定向，实库检查最终通过。下一步推送主线并核对 CI 与该固定包；不得把本地通过说成当前 CI 已通过。
+2. [存档维护/浅恢复](tasks/G-038.md)已 verified 归档、保留分支并推送 2a92cc5；[维护增量 CI](https://github.com/rezics/narrata/actions/runs/41083435285)八项全绿，复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
+3. [阅读器跨构件/确认组合](tasks/G-039.md)已完成干净交接、源码复审和主线固定包验收，准备 verified 归档并保留分支。完整 gate 和精确 screen/confirmed 身份断言已通过；此前等待环是测试本身的问题，已用真实 503 与可见重试修复。主线打包完全相同；启动 PG 的 Tee 管道问题已修正为独立进程文件重定向，实库检查最终通过。下一步推送主线并核对 CI 与该固定包；不得把本地通过说成当前 CI 已通过。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
 ## 维护评审检查点
@@ -59,4 +59,4 @@ attempt 3 后续 Web 检查在刷新失败测试等待 error 阶段超时。mana
 
 2026-10-31 维护者最新偏好：后续常规实现、审计和回归优先 Luna max，替代之前的 Sol/high 默认；仅确有必要再选更重模型。会话子代理显式指定 gpt-6-luna/max；goalctl 接续先设置 GOAL_CODEX_MODEL=gpt-6-luna 再 resume --effort max（只写 effort 会重新取仓库默认 Sol）。本地 CLI 目录与 goalctl 均支持 max，attempt 3 已验证实际启动。地图 attempt 7 的 fresh 历史修复仍是历史事实；所有成果保留。等待以实际 PID/会话为准，不因观测超时重启。
 
-PostgreSQL 官方 EDB portable 18.6 在 `.temp/postgresql/18.6-5/pgsql/bin`，来源/校验和在 `.temp/postgresql/download.json`；`.temp/manager-postgresql.ps1` 使用隔离 loopback cluster、fsync/synchronous_commit on 并最终停库。维护的新实库结果必须单独证明，不能沿用地图/旧存档测试。临时文件都在 `.temp/`。不修改 REZICS，能力请求只记入[集成文档](../../integrations/rezics.md)。
+PostgreSQL 官方 EDB portable 18.6 在 `.temp/postgresql/18.6-5/pgsql/bin`，来源/校验和在 `.temp/postgresql/download.json`；`.temp/manager-postgresql.ps1` 使用隔离 loopback cluster、fsync/synchronous_commit on 并最终停库。维护的新实库结果必须单独证明，不能沿用地图/旧存档测试。临时文件都在 `.temp/`。不修改 REZICS，能力请求只记入[集成文档](../../../docs/integrations/rezics.md)。
