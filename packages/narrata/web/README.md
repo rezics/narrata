@@ -54,8 +54,12 @@ is rejected rather than overwritten. Without `storage`, the session stays in mem
 Load maintenance from the authoring entry on demand (`server` in Node/Bun). Supply a host-authorized
 library transport and its immutable StoreId, then register the exact trusted publications needed
 by the save, including historical artifacts after migrations.
-When reopening with `openBook`, pass those exact older packs in `historyPacks` (at most 64 packs
-and 64 MiB combined) so the reader can reconstruct historical arguments and migration boundaries.
+When reopening with `openBook`, supply `loadArtifact(artifactId)` for historical manifests,
+optional names and their own `fetchChunk` loader. Registration reads metadata only; history
+rendering loads the chunks it uses. `historyPacks` remains available for full-pack imports.
+`ArtifactUnavailable` identifies a retryable source failure separately from rejected save bytes.
+Keep the existing library and execution when retrying; do not replace a missing historic artifact
+with the current publication.
 
 ```ts
 const { loadAuthoring } = await import("@rezics/narrata/authoring");
@@ -127,6 +131,33 @@ await reader.start();
 await session.close();
 ```
 
+`OnlineSession` uses the same `loadArtifact` callback for the exact programs named by historical
+commits. For edition-dependent content, set `ReaderOptions.contextForArtifact(artifact, context)`
+to select the host realization for that artifact. The built-in runtime supplies checked commit
+provenance; older worker proxies can retain their existing interface unless using this option.
+Content slots then receive each presentation or timeline entry's context, including after checkout.
+
+To offer a story update, load the authoring evaluator on demand (or use the host's server boundary),
+register the trusted publication path, and connect it to the same library and execution. Call
+`session.assessUpdate(evolution, options)` and display its assessment/report. `continueOld()`
+dismisses the review. For `automatic`, an explicit apply action calls `applyUpdate()`;
+`needs_confirmation` requires a separate confirmation action calling `applyUpdate(true)`.
+Changing the target or comparison budget requires another assessment. A reading choice or checkout
+also invalidates the review. Core reassessment and cursor CAS remain authoritative.
+
+Application reopens and inspects the durable artifact before resolving as migrated. Refresh the
+reader controller after success. An unknown result keeps the previous confirmed screen; use the
+session's `retrySave()` and then refresh, or let the reader's retry control do both. Definite
+rejections/conflicts permit reload and reassessment. Keep the evaluator alive through unknown
+outcomes, close it when its session closes, and discard old-account content and review UI on account
+switch. `exact`, `old_version_only`, `needs_objects` and `invalid_save` do not apply a migration;
+offer the assessment's available continuation/retry/restart actions without changing the old root.
+Keep host review/apply actions disabled while the Reader controller resolves a screen. Disable
+Reader mutations while a migration saves or switches programs. After a confirmed migration, call
+`reader.refresh()` and report the mounted edition as ready only if it returns `true`. When it
+returns `false`, leave choices unavailable, show the saved outcome, and let the reader retry the
+saved screen before continuing.
+
 Only an absent active cursor consults the current publication. Existing executions locate their
 exact artifact through the checked read-only `locateSave` helper, then verify the loaded manifest's
 identity before fetching its chunks. Each journey keeps that artifact's chunk loader even if the
@@ -153,11 +184,23 @@ immutable-object serving stay in the Node host. The browser never initializes th
 assembles a pack for persistence.
 
 This one work contains a local reply/rejoin, a later consequence of that choice, a parameterized
-keeper subgraph and both endings. The same rendered journey exercises A/B restoration and online
-failures. Its body blocks and distinct labels come from the example's content host, outside the
+keeper subgraph and both endings. The same rendered journey exercises A/B/C updates, historical
+checkout and choices, refresh and online failures. Its body blocks and distinct labels come from the example's content host, outside the
 program and save. `online-cold.spec.ts` and the installed-tarball suite run the same route and check
 its actual response identities and lengths, including unavailable chunks and recovery. Screenshots
 and request/byte evidence accompany those checks.
+
+The reference's “Publication and recovery scenarios” controls publish divergent, recovery and
+incompatible editions through the same authoring API. Import controls use checked maintenance
+export/import into a cold library and select it only after acknowledgement; the original library
+remains stored. A readable shallow page still has incomplete map evidence: the host exports its
+checked shallow checkpoint for the server map, which retains missing-ancestor markers and does
+not invent visits or a frontier. Complete saves continue to use `exportConfirmedSave()`.
+
+The cold route intentionally omits optional names on its manifest-plus-entry first screen.
+Independent tarball probes in Node, Bun and Chromium separately supply each artifact's names,
+load historical manifests/chunks on demand, compare timeline keys through checkout and choices,
+and restore both native and retained legacy A roots from an initially B/C-only reader.
 
 `/` remains the legacy pack demo with custom-pack import compatibility. `/?online` remains the
 minimal in-browser authoring sample; neither is the evidence for cold M1 loading. These reference
@@ -204,7 +247,7 @@ reader.dispose();
 ```
 
 The controller collects screen references with `collectScreenContent` and resolves bounded
-batches in one context. A snapshot is stable until an update and its nested values are frozen.
+batches in the selected contexts. A snapshot is stable until an update and its nested values are frozen.
 `setContext` resolves the screen in a new context; it refuses changes while another action is
 pending. `toggle`, `selection`, and `choose` enforce enabled options and selection counts;
 submissions use author order. `checkout` accepts only commits in the revealed history.
@@ -240,7 +283,7 @@ const slots: ReaderSlots = {
 
 The body slot receives body and reply segments; the option slot receives labels; the reference
 slot receives titles, disabled reasons, path titles and reference-valued state. Each receives
-the original item (including arguments), its resolution and the screen context. Presented items
+the original item (including arguments), its resolution and selected content context. Presented items
 also carry `(execution, commit, occurrence)` and node identity, so a host can use the stable
 presentation key. Keep option and short-reference output suitable for a button or inline label;
 Narrata owns the interactive controls.

@@ -7,9 +7,9 @@ import { strict as assert } from "node:assert";
 import { chromium } from "@playwright/test";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
-import { verifyReferenceJourney } from "../../../../examples/gamebook-web/scripts/reference-journey.ts";
+import { verifyReferenceJourney, verifyUpdateScenarios } from "../../../../examples/gamebook-web/scripts/reference-journey.ts";
 import { verifyMapJourney } from "./install/map-journey.mjs";
-import { demoPack, execution, splitPack } from "../test/fixture.ts";
+import { demoPack, execution, splitPack, objectId } from "../test/fixture.ts";
 import { npmCli, tarball } from "./pack.mjs";
 
 const here = resolve(import.meta.dirname, "..");
@@ -45,6 +45,53 @@ for (const name of ["unseen-rule","republished-after-migration","proposal-retain
 }
 cpSync(resolve(here,"../../../fixtures/compat/nodes-r2-proposals"),join(publicDirectory,"maintenance-fixtures/legacy"),{recursive:true});
 for (const [id, bytes] of parts.objects) writeFileSync(join(publicDirectory, "objects", `${id.slice(7)}.cbor`), bytes);
+// Extract immutable objects in Node. The independent consumers request each old manifest,
+// provided names table and required chunk separately, never a historical full pack.
+const { openBook: installedBook } = await import(pathToFileURL(join(installed, "dist/reader/index.js")).href);
+const historyRoot = resolve(here, "../../../fixtures/compat/nodes-evolution-v1/republished-after-migration");
+const historyPacks = ["ancestor", "source", "target"].map(name => new Uint8Array(readFileSync(join(historyRoot, `${name}.narpack`))));
+const historyInput = { execution, current: "", checkpoint: readFileSync(join(historyRoot, "target.checkpoint")).toString("hex"), artifacts: [], steps: [], incoming: [] };
+mkdirSync(join(publicDirectory, "historical"), { recursive: true });
+for (const pack of historyPacks) {
+  const probe = await installedBook({ pack, execution });
+  const artifact = probe.artifactId; await probe.close();
+  const parts = splitPack(pack);
+  const objects = new Map([...parts.objects, [objectId(parts.names), parts.names], [`object:${artifact.slice(9)}`, parts.manifest]]);
+  for (const [id, bytes] of objects) writeFileSync(join(publicDirectory, "historical", `${id.slice(7)}.cbor`), bytes);
+  historyInput.artifacts.push({ artifact, manifest: `/historical/${artifact.slice(9)}.cbor`, names: `/historical/${objectId(parts.names).slice(7)}.cbor`,
+    objects: Object.fromEntries([...parts.objects.keys()].map(id => [id, `/historical/${id.slice(7)}.cbor`])) });
+  historyInput.current = artifact;
+}
+const historyReference = await installedBook({ pack: historyPacks[2], historyPacks: historyPacks.slice(0, 2), execution });
+try {
+  await historyReference.restore(historyInput.checkpoint);
+  for (const row of (await historyReference.inspect()).view.history) {
+    await historyReference.checkout(row.id);
+    const before = await historyReference.inspect(), lookahead = await historyReference.nextContentUnits();
+    const interaction = before.view.interaction;
+    const choice = interaction.kind === "choose" ? { point: interaction.choice_point, options: interaction.options.filter(option => option.enabled).slice(0, Math.max(1, interaction.min)).map(option => option.id) } : undefined;
+    if (choice) await historyReference.choose(row.id, choice.point, choice.options);
+    historyInput.steps.push({ commit: row.id, before: { view: before.view, page: before.page }, lookahead, choice,
+      after: await historyReference.inspect(), save: await historyReference.exportSave() });
+  }
+} finally { await historyReference.close(); }
+for (const format of ["native", "legacy"]) {
+  const root = resolve(historyRoot, "../old-save-continue");
+  const save = format === "native" ? readFileSync(join(root, "source.checkpoint")).toString("hex") : readFileSync(join(root, "legacy.json"), "utf8");
+  const reference = await installedBook({ pack: historyPacks[2], historyPacks: [historyPacks[0]], execution });
+  try {
+    await reference.restore(save); const expected = await reference.inspect();
+    historyInput.incoming.push({ format, save, view: expected.view, page: expected.page, lookahead: await reference.nextContentUnits() });
+  } finally { await reference.close(); }
+}
+writeFileSync(join(publicDirectory, "historical/input.json"), JSON.stringify(historyInput));
+cpSync(resolve(here, "scripts/install/history-reader.mjs"), join(directory, "history-reader.mjs"));
+writeFileSync(join(directory, "history-reader-node.mjs"), `import { readFile } from "node:fs/promises";
+import { historyReaderJourney } from "./history-reader.mjs";
+const input = JSON.parse(await readFile(new URL("./public/historical/input.json", import.meta.url), "utf8"));
+const result = await historyReaderJourney(input, async path => new Uint8Array(await readFile(new URL("./public" + path, import.meta.url))));
+console.log(JSON.stringify(result));`);
+for (const runtime of [process.execPath, "bun"]) execFileSync(runtime, [join(directory, "history-reader-node.mjs")], { cwd: directory, stdio: "inherit" });
 writeFileSync(join(directory, "objects.json"), JSON.stringify(Object.fromEntries([...parts.objects].map(([id, bytes]) => [id, [...bytes]]))));
 writeFileSync(join(directory, "manifest.cbor"), parts.manifest);
 cpSync(resolve(here, "test/types.ts"), join(directory, "types.ts"));
@@ -225,6 +272,7 @@ window.ready = new URLSearchParams(location.search).has("reference") ? (async ()
     firstScreenRequests = firstScreenUrls.length;
   } });
   window.installed = { inspect: () => book.inspect(), save: () => book.exportSave(), prefetch: () => book.nextContentUnits(), firstScreen: () => firstScreenRequests, firstScreenUrls: () => firstScreenUrls,
+    history: async () => { const { historyReaderJourney } = await import("./history-reader.mjs"); return historyReaderJourney(await (await fetch("/historical/input.json")).json(), bytes); },
     maintenance: async () => {
       const [{loadAuthoring},{verifyMaintenance,verifyHistoricalMaintenance}] = await Promise.all([import("@rezics/narrata/authoring"),import("./maintenance.mjs")]);
       const api = await loadAuthoring();
@@ -272,7 +320,7 @@ const port = 4193;
 const served = [];
 // Loaded from the unpacked consumer, this Node host publishes through its installed server API.
 const { createReferenceHost } = await import(pathToFileURL(join(directory, "reference-host.ts")).href);
-const referenceHost = await createReferenceHost();
+let referenceHost = await createReferenceHost();
 const server = createServer(async (request, response) => {
   try {
     if (await referenceHost.handle(request, response)) return;
@@ -318,11 +366,27 @@ try {
   const save = await page.evaluate(() => window.installed.save());
   await page.evaluate(() => window.installed.close());
   const coldContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const authoringBytes = readFileSync(join(installed, "dist/authoring-wasm/narrata_authoring_wasm_bg.wasm"));
+  const authoringWasm = { bytes: authoringBytes.length, sha256: sha256(authoringBytes) };
   try {
     const bytes = readFileSync(join(installed, "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"));
-    await verifyReferenceJourney(await coldContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "cold-reference"), { bytes: bytes.length, sha256: sha256(bytes) });
+    await verifyReferenceJourney(await coldContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "cold-reference"), { bytes: bytes.length, sha256: sha256(bytes) }, { authoringWasm });
+    const readerBytes = readFileSync(join(installed, "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"));
+    await verifyUpdateScenarios(await coldContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "visible-updates"),
+      { readerWasm: { bytes: readerBytes.length, sha256: sha256(readerBytes) }, authoringWasm });
     await verifyMapJourney(await coldContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "reader-map"));
   } finally { await coldContext.close(); }
+  // Repeat the complete public-page journey on a narrow viewport against a freshly
+  // authored A/B/C catalog, still using only this independently installed tarball.
+  referenceHost.close(); referenceHost = await createReferenceHost();
+  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    const bytes = readFileSync(join(installed, "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"));
+    await verifyReferenceJourney(await mobileContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "cold-reference-mobile"),
+      { bytes: bytes.length, sha256: sha256(bytes) }, { mobile: true, authoringWasm });
+    await verifyUpdateScenarios(await mobileContext.newPage(), `http://127.0.0.1:${port}`, join(directory, "visible-updates-mobile"),
+      { mobile: true, readerWasm: { bytes: bytes.length, sha256: sha256(bytes) }, authoringWasm });
+  } finally { await mobileContext.close(); }
   await page.reload();
   await page.waitForFunction(() => document.querySelector("#status")?.textContent === "ready", { timeout: 30_000 });
   await page.evaluate(() => window.ready);
@@ -336,6 +400,8 @@ try {
   assert.equal(authored.firstScreen, 1, "Published A's first screen fetches only the entry chunk");
   assert.ok(served.includes("authoring") && !served.includes("compat"), "The Worker loads the authoring Wasm on demand; nothing loads the compatibility module");
   const maintenance = await page.evaluate(() => window.installed.maintenance());
+  const historical = await page.evaluate(() => window.installed.history());
+  writeFileSync(join(directory, "provided-history-names.json"), JSON.stringify(historical, null, 2));
   writeFileSync(join(directory,"maintenance-browser.json"),JSON.stringify(maintenance,null,2));
   assert.deepEqual(errors, []);
   writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored }, null, 2));

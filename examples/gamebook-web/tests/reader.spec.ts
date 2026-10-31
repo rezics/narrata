@@ -243,11 +243,14 @@ test("work imports are checked, content swaps keep saves, and saves need their a
   native("compose", project, "--out", resolve(directory, "story.narpack"));
   await importWork(page, await readFile(resolve(directory, "story.narpack")), retitled(content, "另一部作品"));
   await expect(page).toHaveTitle("另一部作品 · Narrata");
+  const currentWork = await stored(page);
   await importSave(page, save);
-  await expect(page.getByRole("alert")).toContainText("incompatible_save");
+  await expect(page.getByRole("alert")).toContainText("needs_artifact at artifact:");
+  expect(await stored(page)).toEqual(currentWork);
   await expect(page).toHaveTitle("另一部作品 · Narrata");
   await page.reload();
   await expect(page).toHaveTitle("另一部作品 · Narrata");
+  expect(await stored(page)).toEqual(currentWork);
 });
 
 test("two tabs cannot overwrite each other's newer persisted state", async ({ page, context }) => {

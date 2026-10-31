@@ -12,7 +12,7 @@
 | Node.js / npm | CI 用 24，本机 26 | Web npm 包、参考阅读器、TypeScript 绑定、IndexedDB 存储适配器 | `.github/workflows/ci.yml` |
 | Playwright | 1.63.0 | Web 包 tarball 安装、阅读器与 IndexedDB 存储适配器的浏览器回归 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json`、`packages/narrata/kernel/js/package.json` |
 | Vite | 8.2.4（各 Web/存储包及协议绑定测试统一固定） | Web 包安装测试的生产构建、阅读器构建、存储适配器浏览器测试页及协议测试运行器 | 同上；`bindings/typescript/package.json`、`bindings/typescript/package-lock.json` |
-| Rolldown | 1.2.12（与 Vite 的锁定依赖相同） | 按 ESM 模块压缩 authoring/maintenance/server/shared storage JS、authoring Wasm glue 与可选地图校验器，保留独立加载边界与包内 URL；reader/作者图预算不变 | `packages/narrata/web/package-lock.json` |
+| Rolldown | 1.2.12（与 Vite 的锁定依赖相同） | 按 ESM 模块压缩 authoring/maintenance/server/shared storage JS、authoring 与 raw compatibility Wasm glue、可选地图校验器，保留独立加载边界与包内 URL；既有预算不变 | `packages/narrata/web/package-lock.json` |
 | React | 19.2.8（`@rezics/narrata/react` 的可选 peer，接受 React 18 与 19） | Web 包的 React 阅读器组件、参考阅读器 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json` |
 | Vitest、fake-indexeddb | 5.0.3、6.2.5 | Web 运行时包装、IndexedDB 存储适配器及旧 TypeScript 协议绑定的单元测试；协议绑定已移除旧 worker-pool 审计阻碍 | `packages/narrata/web/package.json`、`packages/narrata/kernel/js/package.json`、`bindings/typescript/package.json` |
 | PGlite、node-postgres / @types/pg | 0.5.8、8.23.1 / 8.23.1 | PostgreSQL 协议参考宿主的本机 SQL/事务一致性与 CI 双连接测试；仅开发依赖 | `packages/narrata/kernel/js/package-lock.json` |
@@ -63,6 +63,21 @@ M1 的冷读参考入口是 `examples/gamebook-web` 的 `/?reference`：Node 测
 `check:web` 把同一宿主、入口与旅程复制到 tarball 安装工程，在新浏览器上下文核对实际清单/入口块/Wasm
 字节身份，并验证合流、延后后果、传参、两个结局及在线故障。开发证据在 `.temp/cold-reference-evidence/`，
 安装证据在系统临时目录的 `.temp/narrata-web-install-*/cold-reference/`。
+
+同一参考旅程现在通过可见动作复核演化报告、旧版继续、持久确认、未知写入的原字节重试、
+A/B 历史回退再选择、同库再次发布 C 与迁移、受限比较的单独确认、演化后读者地图及真实刷新。
+`history-reader.test.ts` 比对完整 timeline、身份、名字表、页面、analysis、lookahead 与后续选择；
+历史 manifest 注册不读取整部旧作，缺 manifest/chunk 可重试且不替换持久根。
+`reader-upgrade.test.ts` 组合实际 reader/在线会话与公共 evaluator，覆盖恢复、分歧、可读浅历史、
+Exact、不可迁移、缺对象、CAS 与配额。raw compatibility glue 沿用已有 Rolldown 压缩，
+为新增的薄 reader 接口保留预算余量，不提高已有体积上限。
+
+`upgrade.spec.ts` 与 tarball 安装工程共用可见控件旅程，在桌面和 390px 分别验证真实创作的
+分歧、恢复点/丢失报告、不可迁移、缺发布对象/重试、目标/游标/预算失效，以及维护完整导入、
+冷库浅恢复后的当前页、刷新、继续选择和不完整地图。A/B/C 旅程另比对历史 A/B 的精确揭示集合、
+前沿与内容上下文，包含 C 刷新后的历史继续；已核实的更新会清除属于该次未知写入的旧失败提示。
+独立 tarball 的 Node/Bun/Chromium 名字表探针使用提供的每构件 names，验证时间线别名及
+只有 B/C 已注册时原生/legacy A 根的异步受检恢复；不改变 M1 冷读首屏省略可选 names 的策略。
 
 每个 git worktree 有自己的 `target/`（主 checkout 约 20 GB），并发 worker 的磁盘与编译开销
 按 worktree 数线性增长。
