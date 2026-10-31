@@ -10,7 +10,7 @@ VN 阅读 API 切片的固定包版本同为 `0.1.0-alpha.1`，SHA-256 为 `11db
 
 ## 下一步与未交付结果
 
-下一项交付桌面/手机参考播放器、受检媒体 callback、图层与音轨协调、资源失败恢复和真实浏览器旅程。已审阅概念与独立素材位于 `.temp/vn-player-design/`，简报草稿在 `.temp/vn1-player-task-body.md`。VN2 的有界候选预取/按需媒体交付与 VN3 的作者 API、即预览、多场景短篇及完整固定包仍必需；完整范围见 [GOAL.md](GOAL.md)。
+下一项 [G-043](tasks/G-043.md) 交付桌面/手机参考播放器、受检媒体 callback、图层与音轨协调、资源失败恢复和真实浏览器旅程，简报已准备。已审阅概念与独立素材位于 `.temp/vn-player-design/`；立绘以实际 alpha/浏览器合成核对，不能把工具预览中的透明 RGB 当成已渲染背景。VN2 的有界候选预取/按需媒体交付与 VN3 的作者 API、即预览、多场景短篇及完整固定包仍必需；完整范围见 [GOAL.md](GOAL.md)。
 
 manager 为 `codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn`。worker 使用 `engine: codex`、`effort: max`，环境设置 `GOAL_ID=web-vn`、`GOAL_ENGINE=codex`、`GOAL_CODEX_MODEL=gpt-6-luna`；实时派发、认领与进程以 `task goal -- status` 为准。
 
