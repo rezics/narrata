@@ -57,7 +57,7 @@ REZICS 是第一个落地宿主，但 Narrata 不只服务 REZICS：所有接口
 ## 路线
 
 1. 内核去文本、内容引用与选择模型，以及 kernel、窄存储契约与可移植存档的既有基础继续复用。
-2. 当前 [Gamebook Goal](../goals/web-and-rezics/GOAL.md)：先接续已有成果；M1 交付创作/发布、阅读、按需加载与在线存档的固定 SDK 包，供宿主接入；M2 完整交付图、演化与维护，M3 验证并收敛。一个平台运行时和阶段内兼容继续按决定 17。
+2. [Gamebook SDK](../../packages/narrata/web/README.md)：首发交付创作/发布、阅读、按需加载与在线存档的固定包，供宿主接入；完整阶段补齐图、演化与维护，并验证、交接和收敛。实际交付版本与验收范围见[固定输入](../integrations/rezics.md#narrata-自己的交付依赖)。一个平台运行时和阶段内兼容继续按决定 17。
 3. REZICS 按[能力请求](../integrations/rezics.md)实施自己的存储、权限与界面；准备好后用固定包做真实联合验收。Narrata 不修改 REZICS，模拟宿主验收不等同产品上线。
 4. [Web VN Goal](../goals/web-vn/GOAL.md)：在 Gamebook 交付基线上增加传统 VN 语义、可恢复播放器与媒体按需分发；当前待启动，先完成范围移交和格式 ADR。
 5. 之后按具体作品需要推进本地游戏、人物关系、同伴、任务和作者工作台；[重建提案](../../archive/2026-09-05-rebuild-proposal.md)保留长期方向，不作为首发功能清单。

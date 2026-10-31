@@ -16,7 +16,7 @@ Narrata 不修改 REZICS 仓库，也不在自己的 goalctl 中登记或派发 
 
 ## Narrata 交付里程碑
 
-[当前 Narrata Goal](../goals/web-and-rezics/GOAL.md) 的 M1 提供首发可安装包；REZICS 可从该版本开始接入和核对边界，完整阶段的图、演化和维护按 M2 后续包验证。每次接入只使用实际交付的公开能力，不把 ADR 或未合入分支当作现成 API。M3 提供发行与交接证据；双方最终以同一固定版本执行真实联合旅程。
+Narrata 的 M1 提供首发可安装包，使用本页所指的[固定输入](rezics.md#narrata-自己的交付依赖)与 [SDK 接入说明](../../packages/narrata/web/README.md)；REZICS 可从该版本开始接入和核对边界，完整阶段的图、演化和维护按 M2 后续包验证。每次接入只使用实际交付的公开能力，不把 ADR 或未合入分支当作现成 API。M3 提供发行与交接证据；双方最终以同一固定版本执行真实联合旅程。
 
 [后续 Web VN](../goals/web-vn/GOAL.md) 的规划已记录，尚未启动；需要的媒体和分发能力见集成文档，不与首发正文/选择型 Gamebook 混为同一阅读体验。
 

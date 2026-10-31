@@ -140,7 +140,7 @@ M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公�
 
 存档维护增量已通过固定包验收，涵盖独立安装的 Node/Bun/浏览器、IndexedDB 和真实 PostgreSQL。固定输入为版本 `0.1.0-alpha.1`、[源码 ffc0f966578c184ef45f36559001bc029fbdc3a2](https://github.com/rezics/narrata/tree/ffc0f966578c184ef45f36559001bc029fbdc3a2)、tarball SHA-256 `120771d9253c6185bf3e4a4ca3e5a639600fcd060dceaba791c6fbd0517c54b8`；由维护者提供该文件，不把上述历史包或同版本其他构建当作本次输入。npm registry 尚未发布。
 
-[Gamebook Goal](../goals/web-and-rezics/GOAL.md) 已按 M1 首发包、M2 完整能力、M3 收敛排序；[Web VN Goal](../goals/web-vn/GOAL.md) 另列为待启动计划。Narrata 的模拟宿主和参考适配在本仓库实现，REZICS 专用实现仍只列为本页能力请求。
+[Gamebook SDK](../../packages/narrata/web/README.md) 按 M1 首发包、M2 完整能力、M3 验证与收敛交付，实际固定输入以上述已验收记录为准；[Web VN Goal](../goals/web-vn/GOAL.md) 另列为待启动计划。Narrata 的模拟宿主和参考适配在本仓库实现，REZICS 专用实现仍只列为本页能力请求。
 
 ### 地图与关系接入
 
