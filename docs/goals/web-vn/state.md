@@ -12,4 +12,6 @@
 
 worker 优先 gpt-6-luna/max：设置 GOAL_ID=web-vn、GOAL_ENGINE=codex、GOAL_CODEX_MODEL=gpt-6-luna，再生成/派发简报；简报 effort=max。保留完整 VN1 播放器、VN2 按需分发、VN3 短篇/安装包结果，当前设计不代表这些结果已实现。
 
+后续[可安装 VN 阅读 API](tasks/G-042.md)已预留，依赖 G-041 验收后才派发；范围为 Wasm/npm 有类型入口、逻辑块加载、存档确认与安装包消费验证。作者入口、桌面/手机播放器、媒体管理和短篇发行仍是后续必交结果，不因该接口切片而缩减。
+
 REZICS 的媒体与内容资源实现只列在[宿主能力](../../integrations/rezics.md#web-vn-后续需要的宿主能力)，本 Goal 不实施。当前仅设计已接受，代码仍在验收，不代表 VN 产品能力已交付。
