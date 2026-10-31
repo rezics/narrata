@@ -1,6 +1,8 @@
 # State
 
-2026-10-31 检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1/M2 已通过完整本地验收，M3 尚需当前主线 CI、最终交接与 Goal 收敛。任务状态以 `task goal -- status` 为准。
+2026-10-31 最终检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1/M2 本地完整交付及 M3 主线 CI、交接均已验证，按程序归档本 Goal。任务状态以 `task goal -- status` 为准。
+
+主线 bca510bd238b83b6fe2646c38d1e29e841c3074e 的 [CI](https://github.com/rezics/narrata/actions/runs/41182162270) 八项全部成功；Windows 作者图用例首次整体 40s 超时，原失败保留，同源码/同限制本地重复 5 次成功、失败作业重跑成功，未据此改代码或认定根因。固定 SDK 源码 a36d496 与该 CI 的产品/检查实现一致，仅相差已检查的归档文档；完整回执 `.temp/delivery/gamebook-ci-code.json`，包元数据 `.temp/delivery/gamebook-release.json`。集成与宿主交接已写入最终固定版本和 CI；没有 registry 发布或真实 REZICS 联合验收。Web VN 的完整 VN0–VN3 计划和只读接续侦察保留，尚未认领实施。下方中间过程不替代此最终结果。
 
 当前固定完整 SDK：主线 a36d4966d7bf40df9e03f38e5d080885d73595ff，版本 0.1.0-alpha.1，tarball SHA256 0a1ed393ab8b60ad1400609fcd26b0a060911917fce88169efc459d25819da30（1,719,805 bytes）；主线独立打包与受检 79b437d 候选整包逐字节相同。主线 Web 重跑通过 138 包测试、25 安装故障及 Node/Bun/Worker/Chromium 桌面/390px 完整旅程；实库重跑 75 通过/3 个预期 PGlite 跳过，PostgreSQL 已关闭。复用完全相同阅读器源码/检查输入的 R1 28 浏览器及 WebStorage 60 单元/19 浏览器结果；main 仅另有已验证的脚本超时调整和文档差异。完整元数据 `.temp/delivery/gamebook-release.json`，逐项 manager 回执 `.temp/goal/runs/G-039/manager-acceptance.json`。此前中间失败和源码快照记录继续保留，不作为最终成功证据。
 

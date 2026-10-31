@@ -1,6 +1,6 @@
 # REZICS 集成
 
-更新：2026-10-30。首个产品 Gamingbook 采用正文阅读与分支选择；传统视觉小说随后纳入，方向是纯 Web、按需分发。本文据重建后的宿主重新整理首发能力请求，取代 2026-10-05 对 Occurrence、Expression、Structure 等宿主实现的映射假设。
+更新：2026-10-31。首个产品 Gamingbook 采用正文阅读与分支选择；传统视觉小说随后纳入，方向是纯 Web、按需分发。本文据重建后的宿主重新整理首发能力请求，取代 2026-10-05 对 Occurrence、Expression、Structure 等宿主实现的映射假设。
 
 Narrata 的工作不修改 REZICS 仓库（[决定 13](../product/decisions.md)）。本页供维护者交给 REZICS 评估和实施；“提出”表示尚未取得宿主接受及联合验收证据。字段、限额、交换格式以现有 schema 与 ADR 为准；需要改变格式时先写 ADR，本页不另定协议。
 
@@ -136,11 +136,15 @@ Narrata 负责场景依赖、推进与恢复语义；播放器负责资源准备
 
 M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公开创作的同一复合短篇、真实正文/标签、冷读取、A/B 逻辑隔离与在线故障恢复均有证据。接受的参考入口为 `/?reference`，`/` 仅作旧兼容示例。固定输入为版本 `0.1.0-alpha.1`、[源码 fa0266b1063428e855efea1408768029818500d0](https://github.com/rezics/narrata/tree/fa0266b1063428e855efea1408768029818500d0)、tarball SHA-256 `524a383e20ecb147351a496a26a18993aa00f00a19b03c565a123d944bf7ff19`；由维护者提供该文件，不把同版本其他构建或 `latest` 当同一输入。尚未发布 npm registry；同一产品源码树的 a6f8952 已通过[主线 CI](https://github.com/rezics/narrata/actions/runs/40923433584)。
 
-正文依宿主当前可用修订解析，同一画面/原生片段使用一次解析快照；固定旧逻辑构件不保证历史正文永久原样可得。visits、揭示读者地图、稀疏关系与有界 PostgreSQL 装载/查询的公开 SDK 已交付并通过固定包验收，涵盖独立安装的 Node/Bun/Worker、参考阅读器浏览器及真实 PostgreSQL 检查。地图增量固定输入为版本 `0.1.0-alpha.1`、[源码 5c02e6107c20858b67a0ce9d643b3b9de73bc218](https://github.com/rezics/narrata/tree/5c02e6107c20858b67a0ce9d643b3b9de73bc218)、tarball SHA-256 `e2751a827b71629cf139e5d371123787af80cc19635d6285f1c4756f1fa0aaf3`；由维护者提供该文件，不复用上述 M1 历史包或同版本的其他构建。npm registry 仍未发布。存档维护能力的固定交付见下文；作者端演化规划、描述符、评估/应用控制器与只读影响作业已交付，完整阅读器迁移组合仍待交付，M2 尚未完成；REZICS 真实联合验收尚未执行。
+正文依宿主当前可用修订解析，同一画面/原生片段使用一次解析快照；固定旧逻辑构件不保证历史正文永久原样可得。visits、揭示读者地图、稀疏关系与有界 PostgreSQL 装载/查询的公开 SDK 已交付并通过固定包验收，涵盖独立安装的 Node/Bun/Worker、参考阅读器浏览器及真实 PostgreSQL 检查。地图增量历史固定输入为版本 `0.1.0-alpha.1`、[源码 5c02e6107c20858b67a0ce9d643b3b9de73bc218](https://github.com/rezics/narrata/tree/5c02e6107c20858b67a0ce9d643b3b9de73bc218)、tarball SHA-256 `e2751a827b71629cf139e5d371123787af80cc19635d6285f1c4756f1fa0aaf3`；由维护者提供该文件，不复用上述 M1 历史包或同版本的其他构建。npm registry 仍未发布。存档维护能力的固定交付见下文；作者端演化规划、描述符、评估/应用控制器与只读影响作业及存档维护均已有各自固定包验收记录。最终完整 Gamebook SDK 固定包（见下文）包含完整阅读器迁移与历史读取能力及全部 M2；REZICS 真实联合验收尚未执行。
 
 存档维护增量已通过固定包验收，涵盖独立安装的 Node/Bun/浏览器、IndexedDB 和真实 PostgreSQL。固定输入为版本 `0.1.0-alpha.1`、[源码 ffc0f966578c184ef45f36559001bc029fbdc3a2](https://github.com/rezics/narrata/tree/ffc0f966578c184ef45f36559001bc029fbdc3a2)、tarball SHA-256 `120771d9253c6185bf3e4a4ca3e5a639600fcd060dceaba791c6fbd0517c54b8`；由维护者提供该文件，不把上述历史包或同版本其他构建当作本次输入。npm registry 尚未发布。
 
-[Gamebook SDK](../../packages/narrata/web/README.md) 按 M1 首发包、M2 完整能力、M3 验证与收敛交付，实际固定输入以上述已验收记录为准；[Web VN Goal](../goals/web-vn/GOAL.md) 另列为待启动计划。Narrata 的模拟宿主和参考适配在本仓库实现，REZICS 专用实现仍只列为本页能力请求。
+后续接入以本次完整 Gamebook SDK 固定包为基线：版本 `0.1.0-alpha.1`，[源码 a36d4966d7bf40df9e03f38e5d080885d73595ff](https://github.com/rezics/narrata/tree/a36d4966d7bf40df9e03f38e5d080885d73595ff)，tarball SHA-256 `0a1ed393ab8b60ad1400609fcd26b0a060911917fce88169efc459d25819da30`，对应[主线 CI 记录](https://github.com/rezics/narrata/actions/runs/41182162270)。此包包括 M1 与原定全部 M2 的作者图、关系、演化、存档维护及完整阅读器历史/迁移能力。M1、地图、维护的旧 tarball 仍保留各自历史身份与验收证据，不拼成或互换为最终包。最终包本地验收包括 138 项 Web 包测试、25 项独立安装故障用例、Node/Bun/Chromium 提供历史名称的旅程、桌面与 390px 阅读器全矩阵；R1、存储、脚本与文档检查均通过。npm registry 尚未发布；REZICS 真实联合验收尚未执行，七项能力请求仍为“提出”。
+
+REZICS 侧需保留每个历史构件的精确清单、程序块，以及随发布提供的名称元数据，并按需提供该构件；升级界面呈现 SDK 评估报告，对要求确认的计划取得读者确认。存档服务提供耐久的修订比较写入，结果未知时保留原请求并核实，同时落实账号隔离及关闭/删库生命周期。升级已确认后，只有在对应构件的正文与标签解析就绪时才开放新画面的选择；尚未就绪时保留已确认进度并允许重试。接口操作顺序见 [SDK 在线旅程说明](../../packages/narrata/web/README.md#authenticated-online-journeys) 与 [存档维护说明](../../packages/narrata/web/README.md#save-maintenance)。
+
+[Gamebook SDK](../../packages/narrata/web/README.md) 的完整固定包已通过本地及主线 CI 验收，源码与包身份见上文；tarball 由维护者提供，安装前核对固定身份。[Web VN Goal](../goals/web-vn/GOAL.md) 另列为待启动计划。Narrata 的模拟宿主和参考适配在本仓库实现，REZICS 专用实现仍只列为本页能力请求。
 
 ### 地图与关系接入
 
@@ -152,7 +156,7 @@ M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公�
 
 ### 存档维护接入
 
-按[包说明](../../packages/narrata/web/README.md#save-maintenance)按需加载 authoring/server，调用 `createMaintenance`，绑定已授权传输和不可变 StoreId，注册存档需要的精确受信发布。先 `inspectSave` 核实完整/浅 checkpoint 或 legacy JSON 的 artifact/cursor，再按观察到的修订调用 `importSave`；`expected_revision: null` 只允许目标不存在时创建。`exportSave` 导出完整或浅 bundle；浅导出的祖先数是下限，额外保留重建精确当前页面、局部回应和调用参数的上下文，不足时在移动持久根前拒绝。完整导出和 replay 仍拒绝真正截断的历史。重新打开仅承诺存档当前精确构件，较旧程序通过 `historyPacks` 提供完整受信包；历史名称、切回旧构件后的程序/loader 组合、历史清单按需加载、时间线及演化确认界面仍待交付。
+按[包说明](../../packages/narrata/web/README.md#save-maintenance)按需加载 authoring/server，调用 `createMaintenance`，绑定已授权传输和不可变 StoreId，注册存档需要的精确受信发布。先 `inspectSave` 核实完整/浅 checkpoint 或 legacy JSON 的 artifact/cursor，再按观察到的修订调用 `importSave`；`expected_revision: null` 只允许目标不存在时创建。`exportSave` 导出完整或浅 bundle；浅导出的祖先数是下限，额外保留重建精确当前页面、局部回应和调用参数的上下文，不足时在移动持久根前拒绝。完整导出和 replay 仍拒绝真正截断的历史。重新打开时，宿主按存档的精确构件身份提供其清单、必要程序块及可用的名称元数据；完整阅读器迁移、时间线和按需历史读取包含在上文固定 SDK 包中，具体调用见 [在线旅程说明](../../packages/narrata/web/README.md#authenticated-online-journeys)。
 
 用 `run` 分页读取 roots/pins，按返回游标继续；展示可删除的根，在读者选择后用已观察修订和 commit 调用 `delete_roots`，冲突时重读。`integrity` 只读；`collect` 必须显式提供可信 Unix 秒时钟、`grace_seconds` 和 `dry_run`，先展示候选再执行。有限或无效扫描不能授权 GC；全部对象仍被根保活时可能无法回收空间，不能因配额自动删除读者保留的路线。原生读取按预算在复制对象载荷前拒绝；Web 的 `load_bytes` 是完整编码回复的累计接收阈值，可能先收到一个符合传输上限的拒收回复，再阻止其进入维护缓存/Wasm，不能当作宿主网络 I/O 或分配内存的硬上限。
 
