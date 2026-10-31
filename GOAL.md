@@ -4,20 +4,20 @@
 
 ## 已交付基线
 
-[Gamebook SDK](packages/narrata/web/README.md) 已完成首发及完整阶段能力交付；固定源码、包校验和与验收记录见[集成交接](docs/integrations/rezics.md#narrata-自己的交付依赖)。
+[Gamebook SDK](packages/narrata/web/README.md) 已完成首发及完整阶段能力交付；固定源码、包校验和与验收记录见[集成交接](docs/integrations/rezics.md#narrata-自己的交付依赖)。该固定 Gamebook 基线继续保留，Web VN 不重新派发或改写已交付能力。
 
 模拟宿主和独立安装验收表示 Narrata SDK 交付证据齐备；Gamingbook 的实际产品可用还需双方固定版本的真实联合验收。
 
-## 待启动 Goal
+## 当前 Goal
 
-| Goal | 启动依赖 | 结果 |
+| Goal | 当前阶段 | 范围 |
 | --- | --- | --- |
-| [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | Gamebook SDK 交付基线成立，并且现有 Goal 已关闭，或双方明确移交没有未关闭认领的路径 | 逐句对白、可恢复场景与媒体状态、按需资源加载、可安装播放包与短篇样例 |
+| [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | VN0：语义与兼容设计 | VN0 → VN1 → VN2 → VN3 |
 
-Web VN 的计划已落地，尚未登记 manager 或认领实现路径。启动前按其 Goal 填写实际范围；两个 Goal 不同时占用现有 packages/narrata/** 的范围。
+Web VN 已进入 VN0 语义与兼容设计阶段；此阶段标记不代表已有 VN 实现或能力交付。首个工作是明确逐句对白、选择、场景、安全点、呈现游标与资源准备之间的语义和兼容路径，再按 VN1、VN2、VN3 完成播放器、按需分发与可复现短篇交付。实际管理器登记、任务与路径认领以 goalctl 账本为准。
 
 ## 接续
 
 [Goal 程序](docs/goals/README.md)说明登记、派发、合并与关闭；manager 遵循[章程](docs/goals/manager.md)，worker 遵循[协议](docs/goals/worker.md)。
 
-2026-10-31：Gamebook 完整固定包已通过本地与主线 CI 验收，任务分支保留、认领释放。Web VN 仍待启动；按其计划核对范围与启动条件，不重新派发已完成的 Gamebook 工作。实时状态以 task goal -- status 为准。
+2026-10-31：Gamebook 完整固定包继续作为已交付基线。Web VN 当前处于 VN0 语义与兼容设计阶段；尚无 VN 能力交付。实际开始派发前，manager 须核对最近的归档后验证已终结并通过、实时 Goal 账本及路径认领；实时状态以 `task goal -- status` 为准。

@@ -1,11 +1,14 @@
 ---
-# 待启动计划；尚未认领实现路径。启动前根据 ADR 和移交结果填写。
-areas: []
+areas:
+  - packages/narrata/**
+  - examples/visual-novel-web/**
+  - products/visual-novel-demo/**
+  - docs/integrations/**
 ---
 
 # Web VN 与按需分发
 
-状态：2026-10-29 已整理计划，待启动；未登记 manager，未启动 worker。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。当前首发为正文与选择型 Gamingbook，本 Goal 面向逐句对白、背景/立绘与音轨的传统视觉小说。
+状态：2026-10-31 启动 VN0 语义与兼容设计；完整 VN0–VN3 范围保持不变，尚未交付 VN 能力。manager 与任务接续见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 已交付，本 Goal 面向逐句对白、背景/立绘与音轨的传统视觉小说。
 
 ## 结果
 
