@@ -1,6 +1,6 @@
 # State
 
-2026-10-31：VN0 已验收；原生源码 `f1adb040de40fc2b7b1f973afb64d562475343e5` 通过五项本地 gate，等价代码的[主线 CI](https://github.com/rezics/narrata/actions/runs/41204472183)八项成功。VN1 的 [G-042](tasks/G-042.md) 阅读 API 已在主线 `e81a492d5462e97cf29bbcede232c73697e81b4c` 通过 R1、Web、scripts、docs；R1 浏览器 28 项、Web 单元 147 项及独立 Node/Bun/Chromium 消费者通过。播放器、媒体呈现和完整 VN2–VN3 尚未交付。
+2026-10-31：VN0 已验收；原生源码 `f1adb040de40fc2b7b1f973afb64d562475343e5` 通过五项本地 gate，等价代码的[主线 CI](https://github.com/rezics/narrata/actions/runs/41204472183)八项成功。VN1 的 [G-042](../../../archive/goals/web-vn-2026-10-31/tasks/G-042.md) 阅读 API 已在主线 `e81a492d5462e97cf29bbcede232c73697e81b4c` 通过 R1、Web、scripts、docs；R1 浏览器 28 项、Web 单元 147 项及独立 Node/Bun/Chromium 消费者通过。播放器、媒体呈现和完整 VN2–VN3 尚未交付。
 
 ## 已验收基线
 
