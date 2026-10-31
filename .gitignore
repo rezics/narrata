@@ -12,3 +12,7 @@
 /examples/gamebook-web/src/generated/story/
 /examples/gamebook-web/test-results/
 /examples/gamebook-web/playwright-report/
+/examples/visual-novel-web/node_modules/
+/examples/visual-novel-web/dist/
+/examples/visual-novel-web/test-results/
+/examples/visual-novel-web/playwright-report/
