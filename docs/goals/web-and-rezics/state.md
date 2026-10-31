@@ -27,7 +27,7 @@
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
 2. [存档维护/浅恢复](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-038.md)已 verified 归档、保留分支并推送 2a92cc5；[维护增量 CI](https://github.com/rezics/narrata/actions/runs/41083435285)八项全绿，复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
-3. [阅读器跨构件/确认组合](tasks/G-039.md)已完成干净交接、源码复审和主线固定包验收，准备 verified 归档并保留分支。完整 gate 和精确 screen/confirmed 身份断言已通过；此前等待环是测试本身的问题，已用真实 503 与可见重试修复。主线打包完全相同；启动 PG 的 Tee 管道问题已修正为独立进程文件重定向，实库检查最终通过。下一步推送主线并核对 CI 与该固定包；不得把本地通过说成当前 CI 已通过。
+3. [阅读器跨构件/确认组合](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-039.md)已完成干净交接、源码复审和主线固定包验收，准备 verified 归档并保留分支。完整 gate 和精确 screen/confirmed 身份断言已通过；此前等待环是测试本身的问题，已用真实 503 与可见重试修复。主线打包完全相同；启动 PG 的 Tee 管道问题已修正为独立进程文件重定向，实库检查最终通过。下一步推送主线并核对 CI 与该固定包；不得把本地通过说成当前 CI 已通过。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
 ## 维护评审检查点
