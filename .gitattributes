@@ -6,6 +6,7 @@ fixtures/compat/nodes-r2/** -text
 fixtures/compat/nodes-r2-proposals/** -text
 fixtures/compat/nodes-r2-history/** -text
 fixtures/compat/nodes-vn-v1/** -text
+fixtures/compat/vn-view-v1/** -text
 fixtures/compat/graph-v1/** -text
 fixtures/compat/graph-v1-labels/** -text
 fixtures/compat/kernel-history-v1/** -text

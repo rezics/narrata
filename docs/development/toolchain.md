@@ -46,6 +46,13 @@
 Goal worker 通过 `task goal -- slot [--heavy] -- <命令>` 运行检查，以限制并发；完整 gate 与
 浏览器回归属于重型检查。见 [Goal 程序](../goals/README.md)。
 
+公共 VN View v1 的兼容样例通过独立安装包生成：
+`task goal -- slot -- node packages/narrata/web/scripts/generate-vn-view-corpus.mjs <installed-package-directory> .temp/<new-output-directory>`。
+同一输入分别用 Node 与 Bun 运行并逐字节比较；生成器只接受尚不存在的 `.temp/` 输出目录。
+首次审阅后加入新的版本化 corpus，现有 `fixtures/compat/` 文件不覆盖；`check:web` 经公共 reader 与
+`decodeVnView` 验证冻结样例。构建生成 VN v1 的声明与校验器，预算单列其可选 JS 和共享 Wasm 增量，
+完整 JS 总量包含该能力；Gamebook reader 的既有 Wasm/运行时上限保持不变。
+
 `check:web-storage` 的计数器浏览器夹具直接调用 stock CacheBackend，验证默认 StorageHost 的
 冷键页、已存在/缺失对象点读、最大批次的缺失检查，以及跨批次的累计 flush 字节拒绝。
 `check:web` 的维护故障矩阵同时复制到独立 tarball 消费者，包含真实 Wasm 导入的累计 flush

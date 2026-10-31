@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "view": {
+    "artifact_id": "artifact:e4833208cb0e335d55cdfbc27cee38568bc916f05c60337f14c028f0a4b72b06",
+    "execution": "execution:0190f2a0000070008000000000000001",
+    "cursor": "commit:08971c02e96dfe59038d6d3c3de4f785c0def1f0548b0fed67a45ce39dc1c349",
+    "depth": 3,
+    "product": {
+      "id": "vn-demo"
+    },
+    "scene": {
+      "background": {
+        "kind": "image",
+        "provider": "demo",
+        "key": "bg/room",
+        "revision": "r1"
+      },
+      "layers": [
+        {
+          "id": "hero",
+          "order": 10,
+          "asset": {
+            "kind": "image",
+            "provider": "demo",
+            "key": "portrait/hero-neutral",
+            "revision": "v4"
+          }
+        }
+      ],
+      "music": {
+        "kind": "audio",
+        "provider": "demo",
+        "key": "music/theme",
+        "revision": "a7"
+      }
+    },
+    "presentation": [],
+    "interaction": {
+      "kind": "choose",
+      "graph": {
+        "package": "main",
+        "graph": "start"
+      },
+      "node": "node:00000000000000000000000000000005",
+      "choice_point": "choice-point:00000000000000000000000000000001",
+      "key": "route",
+      "min": 1,
+      "max": 1,
+      "args": {},
+      "options": [
+        {
+          "id": "option:00000000000000000000000000000001",
+          "key": "left",
+          "label": {
+            "provider": "host",
+            "key": "option.left"
+          },
+          "enabled": true,
+          "outcome": "branch"
+        },
+        {
+          "id": "option:00000000000000000000000000000002",
+          "key": "right",
+          "label": {
+            "provider": "host",
+            "key": "option.right"
+          },
+          "enabled": true,
+          "outcome": "branch"
+        }
+      ]
+    },
+    "shared": [],
+    "frames": [
+      {
+        "graph": {
+          "package": "main",
+          "graph": "start"
+        },
+        "node": "node:00000000000000000000000000000005",
+        "key": "route",
+        "at": "choice-point:00000000000000000000000000000001",
+        "instance": 1,
+        "parameters": [],
+        "locals": []
+      }
+    ],
+    "history": [
+      {
+        "id": "commit:211b1f7b4dce1deda22d2fa310ebaccc59aa6143ae4670fbdbe76c1791129b30",
+        "depth": 0,
+        "graph": {
+          "package": "main",
+          "graph": "start"
+        },
+        "node": "node:00000000000000000000000000000002",
+        "key": "line_one",
+        "instance": 1,
+        "finished": false,
+        "current": false
+      },
+      {
+        "id": "commit:8d7f63b81ead32d085156ff11b8d69f36f3b34c968aaaab82085b39f7b3b6124",
+        "parent": "commit:211b1f7b4dce1deda22d2fa310ebaccc59aa6143ae4670fbdbe76c1791129b30",
+        "depth": 1,
+        "graph": {
+          "package": "main",
+          "graph": "start"
+        },
+        "node": "node:00000000000000000000000000000003",
+        "key": "line_two",
+        "instance": 1,
+        "finished": false,
+        "current": false
+      },
+      {
+        "id": "commit:fdf4ca34f4ff0723818bfffeec2dc145dbeb17b7f766d582d2b205c6a13c3da9",
+        "parent": "commit:8d7f63b81ead32d085156ff11b8d69f36f3b34c968aaaab82085b39f7b3b6124",
+        "depth": 2,
+        "graph": {
+          "package": "main",
+          "graph": "start"
+        },
+        "node": "node:00000000000000000000000000000004",
+        "key": "line_three",
+        "instance": 1,
+        "finished": false,
+        "current": false
+      },
+      {
+        "id": "commit:08971c02e96dfe59038d6d3c3de4f785c0def1f0548b0fed67a45ce39dc1c349",
+        "parent": "commit:fdf4ca34f4ff0723818bfffeec2dc145dbeb17b7f766d582d2b205c6a13c3da9",
+        "depth": 3,
+        "graph": {
+          "package": "main",
+          "graph": "start"
+        },
+        "node": "node:00000000000000000000000000000005",
+        "key": "route",
+        "instance": 1,
+        "finished": false,
+        "current": true
+      }
+    ]
+  }
+}

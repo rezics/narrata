@@ -1,0 +1,24 @@
+{
+  "corpus_version": 1,
+  "format": "ADR 0024 public @rezics/narrata/vn VnViewV1 JSON",
+  "package_version": "0.1.0-alpha.1",
+  "source_program": "../nodes-vn-v1/story.narpack",
+  "source_program_sha256": "29f630892dc14ae70e6ce5addc8592060766c5290459b51902dc485d3795822c",
+  "execution": "execution:0190f2a0000070008000000000000001",
+  "artifact_id": "artifact:e4833208cb0e335d55cdfbc27cee38568bc916f05c60337f14c028f0a4b72b06",
+  "generation": "generate-vn-view-corpus.mjs through the independently installed public VN entry",
+  "artifacts": {
+    "dialogue.json": {
+      "sha256": "3f6bd0ce8465c9bde7e05570932f1a0b43e28989acdcd96bbfc79b1374202faf"
+    },
+    "choice.json": {
+      "sha256": "19f722beed5307e73f3a893e909d6acb3d0e59c69673928f52df2ab327f084d4"
+    },
+    "scene-transition.json": {
+      "sha256": "0b6db10cef567d8e7f988d5539a5661ef3d6e27febbdc1e25e8825ada0b2fd31"
+    },
+    "finished.json": {
+      "sha256": "20641ec2bba6f56af74518ab02b6e2350864b917611b99fa678db25bbc54ff7b"
+    }
+  }
+}

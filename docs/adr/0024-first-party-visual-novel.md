@@ -72,7 +72,7 @@ Gamebook format 2/schema 1/revision 2 的读写行为、`BookView` 与现有冻�
 
 Gamebook 的 R1 存档继续通过现有受检读取/迁移路径回到 Gamebook 格式 2。这不构成 Gamebook 到 VN 的迁移：不得自动推造说话者、场景或音轨，也不得把现有 Gamebook State 强转为 VN State；作者须显式改写源稿并创建新的 VN 执行根，旧构件和存档继续可读、可分支且不被覆盖。
 
-兼容语料 `fixtures/compat/nodes-vn-v1/` 已随 VN0 实现加入；既有 `fixtures/compat/nodes-r2/` 等语料保持不变。未来任何格式变化仍需新的 ADR、旧格式读取/迁移路径和新增冻结证据。
+兼容语料 `fixtures/compat/nodes-vn-v1/` 冻结原生执行与对象格式；`fixtures/compat/vn-view-v1/` 从独立安装包的公共 API 生成，冻结版本化 Web View 的对白、选择、场景变化与结局样例。两者分别证明原生格式与公开交换边界，既有语料保持不变。未来任何格式变化仍需新的 ADR、旧格式读取/迁移路径和新增冻结证据。
 
 Web 交换 View 是独立版本边界：`@rezics/narrata/vn` 提供 version 1 的判别联合，按权威 Rust/schema 生成 TypeScript 声明和运行时校验。Gamebook `BookView` 与既有入口保持不变；VN View 不伪装成旧 Gamebook 交互，也不含渲染句柄。此 reader 子路径与合同尚未从 npm 包公开。
 

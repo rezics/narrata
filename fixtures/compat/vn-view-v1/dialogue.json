@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "view": {
+    "artifact_id": "artifact:e4833208cb0e335d55cdfbc27cee38568bc916f05c60337f14c028f0a4b72b06",
+    "execution": "execution:0190f2a0000070008000000000000001",
+    "cursor": "commit:211b1f7b4dce1deda22d2fa310ebaccc59aa6143ae4670fbdbe76c1791129b30",
+    "depth": 0,
+    "product": {
+      "id": "vn-demo"
+    },
+    "scene": {
+      "background": {
+        "kind": "image",
+        "provider": "demo",
+        "key": "bg/room",
+        "revision": "r1"
+      },
+      "layers": [
+        {
+          "id": "hero",
+          "order": 10,
+          "asset": {
+            "kind": "image",
+            "provider": "demo",
+            "key": "portrait/hero-neutral",
+            "revision": "v4"
+          }
+        }
+      ],
+      "music": {
+        "kind": "audio",
+        "provider": "demo",
+        "key": "music/theme",
+        "revision": "a7"
+      }
+    },
+    "music_action": {
+      "kind": "play",
+      "track": {
+        "kind": "audio",
+        "provider": "demo",
+        "key": "music/theme",
+        "revision": "a7"
+      }
+    },
+    "presentation": [],
+    "interaction": {
+      "kind": "advance",
+      "graph": {
+        "package": "main",
+        "graph": "start"
+      },
+      "dialogue": "node:00000000000000000000000000000002",
+      "speaker": {
+        "provider": "host",
+        "key": "speaker.hero"
+      },
+      "line": {
+        "unit": {
+          "provider": "host",
+          "key": "dialogue.one"
+        },
+        "first": "line-start",
+        "last": "line-end"
+      },
+      "voice": {
+        "kind": "audio",
+        "provider": "demo",
+        "key": "voice/one",
+        "revision": "a1"
+      }
+    },
+    "shared": [],
+    "frames": [
+      {
+        "graph": {
+          "package": "main",
+          "graph": "start"
+        },
+        "node": "node:00000000000000000000000000000002",
+        "key": "line_one",
+        "instance": 1,
+        "parameters": [],
+        "locals": []
+      }
+    ],
+    "history": [
+      {
+        "id": "commit:211b1f7b4dce1deda22d2fa310ebaccc59aa6143ae4670fbdbe76c1791129b30",
+        "depth": 0,
+        "graph": {
+          "package": "main",
+          "graph": "start"
+        },
+        "node": "node:00000000000000000000000000000002",
+        "key": "line_one",
+        "instance": 1,
+        "finished": false,
+        "current": true
+      }
+    ]
+  }
+}
