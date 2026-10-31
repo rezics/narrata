@@ -8,7 +8,7 @@ areas:
 
 # Web VN 与按需分发
 
-状态：VN0 语义与兼容设计已接受，原生执行与双格式兼容已在 `f1adb040de40fc2b7b1f973afb64d562475343e5` 通过 G5、R1、Web、scripts、docs 五项主线 gate 并验收。G-042（VN1 可安装阅读 API）待派发；播放器、媒体解析/播放、作者入口、短篇样例与 VN2–VN3 尚未交付。manager 与任务接续见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 保持为已验收基线。
+状态：VN0 语义与兼容设计已接受，原生执行与双格式兼容已在 `f1adb040de40fc2b7b1f973afb64d562475343e5` 通过 G5、R1、Web、scripts、docs 五项主线 gate 并验收。G-042 正在推进 VN1 可安装阅读 API；播放器、媒体解析/播放、作者入口、短篇样例与 VN2–VN3 尚未交付。manager 与任务接续见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 保持为已验收基线。
 
 ## 结果
 
@@ -21,6 +21,7 @@ areas:
 本 Goal 的完整结果仍为 VN0 → VN1 → VN2 → VN3。VN0 原生执行与兼容实现已通过主线五项 gate 并验收；已交付 Gamebook 基线固定不变，按[集成交接](../../integrations/rezics.md#narrata-自己的交付依赖)与[包说明](../../../packages/narrata/web/README.md)读取。
 
 初始范围以本文件 frontmatter 的 `areas` 为准，每项任务仍由实际简报逐路径认领。格式变化继续遵守 ADR 0024：使用真实任务保留共享 ADR 槽位、保留旧读取路径并新增兼容证据；现有 `fixtures/compat/**` 语料只读。
+
 ## VN0：确定第一方 VN 语义（已验收）
 
 节点组合与 kernel 上的第一方 VN 语义已实现。旧 Flow/Scene 只作为行为证据；不向 RuntimeStateV0 增加产品能力，也不以任意运行时插件为前提。对白推进、说话者、选择、场景与可恢复呈现语义见 [ADR 0024](../../adr/0024-first-party-visual-novel.md)。
@@ -31,7 +32,7 @@ ADR 0024 记录已接受的 safe point、呈现恢复、场景/音轨和宿主�
 
 ## VN1：可恢复的播放器与公开接口
 
-G-042（待派发）只交付可安装的有类型阅读 API；播放器 UI、媒体解析/播放及桌面/手机浏览器旅程仍未交付，不能据此标记整个 VN1 完成。
+G-042 正在实现可安装的有类型阅读 API；播放器 UI、媒体解析/播放及桌面/手机浏览器旅程由后续任务交付。
 
 交付浏览器可安装的 VN 能力、类型和参考播放器：逐句推进、说话者、背景与立绘、选项、基本音乐/语音。视觉效果由可恢复的场景状态协调；恢复不靠从开头重放全部动画或外部副作用。
 
