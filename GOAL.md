@@ -22,4 +22,4 @@ Web VN 的计划已落地，尚未登记 manager 或认领实现路径。启动�
 
 [Goal 程序](docs/goals/README.md)说明登记、派发、合并与关闭；manager 遵循[章程](docs/goals/manager.md)，worker 遵循[协议](docs/goals/worker.md)。
 
-2026-10-30：M0、M1、M2 地图/关系 SQL 与存档维护增量已完成本地固定包验收，继续主线 CI、阅读器演化组合及最终收敛。已关闭任务分支保留、认领释放。读[检查点](docs/goals/web-and-rezics/state.md)恢复现场，不重新派发已完成工作。实时状态以 task goal -- status 为准。
+2026-10-31：Gamebook 的 M0/M1/M2 完整 SDK 已通过主线本地固定包验收，继续当前 CI、最终交接与 Goal 收敛。已关闭任务分支保留、认领释放；Web VN 仍待启动。读[检查点](docs/goals/web-and-rezics/state.md)恢复现场，不重新派发已完成工作。实时状态以 task goal -- status 为准。

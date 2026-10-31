@@ -1,6 +1,8 @@
 # State
 
-2026-10-31 检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1、地图与维护增量已本地验收，M2 阅读器演化组合及 M3 收敛尚未完成。任务状态以 `task goal -- status` 为准。
+2026-10-31 检查点。manager：codex-01a187ba-9af7-71c1-b110-0ee55db54795。完整范围见 [Goal](GOAL.md)；M0/M1/M2 已通过完整本地验收，M3 尚需当前主线 CI、最终交接与 Goal 收敛。任务状态以 `task goal -- status` 为准。
+
+当前固定完整 SDK：主线 a36d4966d7bf40df9e03f38e5d080885d73595ff，版本 0.1.0-alpha.1，tarball SHA256 0a1ed393ab8b60ad1400609fcd26b0a060911917fce88169efc459d25819da30（1,719,805 bytes）；主线独立打包与受检 79b437d 候选整包逐字节相同。主线 Web 重跑通过 138 包测试、25 安装故障及 Node/Bun/Worker/Chromium 桌面/390px 完整旅程；实库重跑 75 通过/3 个预期 PGlite 跳过，PostgreSQL 已关闭。复用完全相同阅读器源码/检查输入的 R1 28 浏览器及 WebStorage 60 单元/19 浏览器结果；main 仅另有已验证的脚本超时调整和文档差异。完整元数据 `.temp/delivery/gamebook-release.json`，逐项 manager 回执 `.temp/goal/runs/G-039/manager-acceptance.json`。此前中间失败和源码快照记录继续保留，不作为最终成功证据。
 
 ## 已验收
 
@@ -25,7 +27,7 @@
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
 2. [存档维护/浅恢复](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-038.md)已 verified 归档、保留分支并推送 2a92cc5；[维护增量 CI](https://github.com/rezics/narrata/actions/runs/41083435285)八项全绿，复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
-3. [阅读器跨构件/确认组合](tasks/G-039.md)从 2a92cc5 开始，attempt 1 因网络/TLS 故障退出（code 4），原成果保留。attempt 2 提交四项历史恢复/升级协调及回归修复，Web 包 gate 和四项桌面/390px 冷加载、地图、升级旅程通过；完整 R1 是 26 浏览器通过、2 失败，不能算全绿。manager 等重型检查结束后持锁停止，保留全部提交、10 份工作文件与证据，补入独立 UI 并发复审。2026-10-31 已依维护者最新偏好在同一工作区恢复 gpt-6-luna/max attempt 3，继续原完整范围；实时 PID/检查以 goalctl 为准。
+3. [阅读器跨构件/确认组合](tasks/G-039.md)已完成干净交接、源码复审和主线固定包验收，准备 verified 归档并保留分支。完整 gate 和精确 screen/confirmed 身份断言已通过；此前等待环是测试本身的问题，已用真实 503 与可见重试修复。主线打包完全相同；启动 PG 的 Tee 管道问题已修正为独立进程文件重定向，实库检查最终通过。下一步推送主线并核对 CI 与该固定包；不得把本地通过说成当前 CI 已通过。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
 ## 维护评审检查点
