@@ -19,6 +19,9 @@ const nativeModules = new Set(["content/native.js", "testing/native-document.js"
 const isNativeContent = path => nativeModules.has(modulePath(path));
 // Authoring and server entries, their Wasm glue, generated types and sample; never on a reader route.
 const isAuthoring = path => ["authoring", "maintenance", "server", "authoring-wasm"].includes(group(path)) || ["generated/authoring.js", "testing/authoring.js"].includes(modulePath(path));
+// The versioned VN entry and its generated validator are optional; root/reader keep their
+// Gamebook runtime budget while the complete VN route is measured separately below.
+const isVn = path => group(path) === "vn" || modulePath(path) === "generated/validate-vn-view.js";
 // The raw dist/wasm module keeps legacy publishGraph; no package entry imports it.
 const isCompat = path => group(path) === "wasm";
 // Measure both independent optional capabilities with identical bundling settings. Every
@@ -32,15 +35,25 @@ async function bundled(entry) {
 }
 const graph = await bundled({ graph: "dist/graph/index.js", react: "dist/graph/react.js" });
 const readerMap = await bundled({ map: "dist/graph/reader-map.js", react: "dist/graph/reader-map-react.js" });
+// Count only modules unique to the new entry. Shared runtime transport, storage and Wasm glue
+// stay in the common runtime/reader asset totals rather than being charged twice here.
+const vn = measure(javascript.filter(isVn));
 // All graph-directory JS is already included in one of these two bundles (including the
 // generated map validator), so ordinary modules must not count those files a second time.
 const ordinary = measure(javascript.filter(path => group(path) !== "graph"));
+const budget = JSON.parse(readFileSync(resolve(here, "size-budget.json")));
 export const sizes = {
   readerWasm: wasm("reader-wasm/narrata_nodes_wasm_bg.wasm"),
+  // This reader Wasm is shared by Gamebook and VN; compare it with the frozen Gamebook size
+  // to keep the new facade's compiled cost visible without changing the old reader ceiling.
+  vnWasmIncrement: {
+    raw: Math.max(0, wasm("reader-wasm/narrata_nodes_wasm_bg.wasm").raw - budget.baseline.readerWasm.raw),
+    gzip: Math.max(0, wasm("reader-wasm/narrata_nodes_wasm_bg.wasm").gzip - budget.baseline.readerWasm.gzip),
+  },
   compatWasm: wasm("wasm/narrata_nodes_wasm_bg.wasm"),
   authoringWasm: wasm("authoring-wasm/narrata_authoring_wasm_bg.wasm"),
   javascript: { raw: ordinary.raw + graph.raw + readerMap.raw, gzip: ordinary.gzip + graph.gzip + readerMap.gzip },
-  runtime: measure(javascript.filter(path => !["react", "testing", "graph"].includes(group(path)) && !isNativeContent(path) && !isAuthoring(path) && !isCompat(path))),
+  runtime: measure(javascript.filter(path => !["react", "testing", "graph"].includes(group(path)) && !isNativeContent(path) && !isAuthoring(path) && !isVn(path) && !isCompat(path))),
   authoring: measure(javascript.filter(isAuthoring)),
   compat: measure(javascript.filter(isCompat)),
   react: measure(javascript.filter(path => group(path) === "react")),
@@ -48,9 +61,9 @@ export const sizes = {
   nativeContent: measure(javascript.filter(isNativeContent)),
   graph,
   readerMap,
+  vn,
 };
 console.log(JSON.stringify(sizes, null, 2));
-const budget = JSON.parse(readFileSync(resolve(here, "size-budget.json")));
 for (const asset of Object.keys(sizes)) for (const compression of ["raw", "gzip"]) {
   if (!budget.maximum[asset]) throw new Error(`Missing ${asset} budget`);
   if (sizes[asset][compression] > budget.maximum[asset][compression]) throw new Error(`${asset} ${compression}: ${sizes[asset][compression]} exceeds ${budget.maximum[asset][compression]}`);

@@ -110,6 +110,10 @@ mod native {
             let output = one(&flags, "--out").ok_or("schemas requires --out <directory>")?;
             for (name, schema) in narrata_nodes::schemas()
                 .into_iter()
+                .chain(std::iter::once((
+                    "vn-view.schema.json",
+                    schemars::schema_for!(narrata_nodes::view::VnViewV1),
+                )))
                 .chain(narrata_content_local::schemas())
                 .chain(narrata_authoring::schemas())
                 .chain(narrata_nodes::history::evolution::schemas())

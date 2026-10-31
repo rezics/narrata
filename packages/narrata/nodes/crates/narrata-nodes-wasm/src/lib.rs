@@ -57,9 +57,62 @@ mod maintenance_tests {
             .join("../../../../../fixtures/compat/nodes-vn-v1");
         let pack = std::fs::read(directory.join("story.narpack")).unwrap();
         let (program, _) = Program::from_pack(&pack).unwrap();
-        let error = ensure_gamebook(&program, "pack", "NodeBook accepts Gamebook artifacts only")
-            .unwrap_err();
+        let error = ensure_kind(
+            &program,
+            ArtifactKind::Gamebook,
+            "pack",
+            "NodeBook accepts Gamebook artifacts only",
+        )
+        .unwrap_err();
         assert_eq!(error.code, "version");
+    }
+
+    #[test]
+    fn vn_reader_emits_its_checked_versioned_view_and_rejects_gamebook_packs() {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../../fixtures/compat/nodes-vn-v1");
+        let pack = std::fs::read(directory.join("story.narpack")).unwrap();
+        let mut reader = VnBook::new(&pack, "execution:0190f2a0000070008000000000000001").unwrap();
+        reader.memory().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&reader.inspect().unwrap()).unwrap();
+        assert_eq!(value["version"], 1);
+        assert!(value["view"]["scene"].is_object());
+        let checked: narrata_nodes::view::VnViewV1 = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(checked.version(), 1);
+
+        let mut unsupported = value.clone();
+        unsupported["version"] = serde_json::json!(2);
+        assert!(serde_json::from_value::<narrata_nodes::view::VnViewV1>(unsupported).is_err());
+        let mut missing_scene = value;
+        missing_scene["view"]
+            .as_object_mut()
+            .unwrap()
+            .remove("scene");
+        assert!(serde_json::from_value::<narrata_nodes::view::VnViewV1>(missing_scene).is_err());
+
+        let gamebook = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../../products/gamebook-demo/story.narpack");
+        let gamebook = std::fs::read(gamebook).unwrap();
+        let (gamebook_program, _) = Program::from_pack(&gamebook).unwrap();
+        let (vn_program, _) = Program::from_pack(&pack).unwrap();
+        assert!(
+            ensure_kind(
+                &gamebook_program,
+                ArtifactKind::VisualNovel,
+                "pack",
+                "VnBook accepts visual novel artifacts only",
+            )
+            .is_err()
+        );
+        assert!(
+            ensure_kind(
+                &vn_program,
+                ArtifactKind::Gamebook,
+                "pack",
+                "NodeBook accepts Gamebook artifacts only",
+            )
+            .is_err()
+        );
     }
 }
 
@@ -81,11 +134,26 @@ fn js_error(error: Error) -> JsError {
     JsError::new(&error.to_string())
 }
 
-fn ensure_gamebook(program: &Program, path: &str, message: &str) -> narrata_nodes::Result<()> {
-    if program.is_visual_novel() {
-        Err(Error::new("version", path, message))
-    } else {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ArtifactKind {
+    Gamebook,
+    VisualNovel,
+}
+
+fn ensure_kind(
+    program: &Program,
+    expected: ArtifactKind,
+    path: &str,
+    message: &str,
+) -> narrata_nodes::Result<()> {
+    let is_expected = match expected {
+        ArtifactKind::Gamebook => !program.is_visual_novel(),
+        ArtifactKind::VisualNovel => program.is_visual_novel(),
+    };
+    if is_expected {
         Ok(())
+    } else {
+        Err(Error::new("version", path, message))
     }
 }
 
@@ -130,8 +198,9 @@ struct GraphPublication<'a> {
 #[wasm_bindgen(js_name = publishGraph)]
 pub fn publish_graph(pack: &[u8], outlines: Option<String>) -> Result<String, JsError> {
     let (program, names) = Program::from_pack(pack).map_err(js_error)?;
-    ensure_gamebook(
+    ensure_kind(
         &program,
+        ArtifactKind::Gamebook,
         "pack",
         "publishGraph accepts Gamebook artifacts only",
     )
@@ -302,6 +371,7 @@ struct ReaderArtifact {
 /// A checked artifact registry and one session. The cursor selects its active context.
 #[wasm_bindgen]
 pub struct NodeBook {
+    kind: ArtifactKind,
     artifacts: BTreeMap<narrata_nodes::ArtifactId, ReaderArtifact>,
     initial: narrata_nodes::ArtifactId,
     execution: narrata_nodes::ExecutionId,
@@ -311,6 +381,86 @@ pub struct NodeBook {
 }
 
 impl NodeBook {
+    fn from_pack(pack: &[u8], execution: &str, kind: ArtifactKind) -> Result<NodeBook, JsError> {
+        let (program, names) = Program::from_pack(pack).map_err(js_error)?;
+        ensure_kind(
+            &program,
+            kind,
+            "pack",
+            match kind {
+                ArtifactKind::Gamebook => "NodeBook accepts Gamebook artifacts only",
+                ArtifactKind::VisualNovel => "VnBook accepts visual novel artifacts only",
+            },
+        )
+        .map_err(js_error)?;
+        program.verify_artifact().map_err(js_error)?;
+        let analysis = match kind {
+            ArtifactKind::Gamebook => Some(analyze(&program, names.as_ref()).map_err(js_error)?),
+            ArtifactKind::VisualNovel => None,
+        };
+        let execution = parse(execution, "execution", "execution:<32 hex digits>")?;
+        let initial = program.artifact_id();
+        Ok(Self {
+            kind,
+            artifacts: [(
+                initial,
+                ReaderArtifact {
+                    pack: Some(pack.to_vec()),
+                    names,
+                    analysis,
+                    chunks: None,
+                    program: Arc::new(program),
+                },
+            )]
+            .into(),
+            initial,
+            execution,
+            cache: CacheBackend::new(),
+            session: None,
+            history_bytes: 0,
+        })
+    }
+
+    fn from_manifest_kind(
+        manifest: &[u8],
+        execution: &str,
+        kind: ArtifactKind,
+    ) -> Result<NodeBook, JsError> {
+        let chunks = HostChunks::default();
+        let program =
+            Program::from_manifest(manifest, Box::new(chunks.clone())).map_err(js_error)?;
+        ensure_kind(
+            &program,
+            kind,
+            "manifest",
+            match kind {
+                ArtifactKind::Gamebook => "NodeBook accepts Gamebook artifacts only",
+                ArtifactKind::VisualNovel => "VnBook accepts visual novel artifacts only",
+            },
+        )
+        .map_err(js_error)?;
+        let initial = program.artifact_id();
+        Ok(Self {
+            kind,
+            artifacts: [(
+                initial,
+                ReaderArtifact {
+                    pack: None,
+                    names: None,
+                    analysis: None,
+                    chunks: Some(chunks),
+                    program: Arc::new(program),
+                },
+            )]
+            .into(),
+            initial,
+            execution: parse(execution, "execution", "execution:<32 hex digits>")?,
+            cache: CacheBackend::new(),
+            session: None,
+            history_bytes: 0,
+        })
+    }
+
     fn active(&self) -> &ReaderArtifact {
         let id = self
             .session
@@ -366,60 +516,14 @@ impl NodeBook {
     /// Opens a pack and checks every chunk. Call open or memory to start the session.
     #[wasm_bindgen(constructor)]
     pub fn new(pack: &[u8], execution: &str) -> Result<NodeBook, JsError> {
-        let (program, names) = Program::from_pack(pack).map_err(js_error)?;
-        ensure_gamebook(&program, "pack", "NodeBook accepts Gamebook artifacts only")
-            .map_err(js_error)?;
-        program.verify_artifact().map_err(js_error)?;
-        let analysis = analyze(&program, names.as_ref()).map_err(js_error)?;
-        let execution = parse(execution, "execution", "execution:<32 hex digits>")?;
-
-        let initial = program.artifact_id();
-        Ok(Self {
-            artifacts: [(
-                initial,
-                ReaderArtifact {
-                    pack: Some(pack.to_vec()),
-                    names,
-                    analysis: Some(analysis),
-                    chunks: None,
-                    program: Arc::new(program),
-                },
-            )]
-            .into(),
-            initial,
-            execution,
-            cache: CacheBackend::new(),
-            session: None,
-            history_bytes: 0,
-        })
+        Self::from_pack(pack, execution, ArtifactKind::Gamebook)
     }
 
     /// Opens a checked manifest; missing chunks are requested and checked on demand.
     /// Finish retrying the pending operation before starting another runtime/tool call.
     #[wasm_bindgen(js_name = fromManifest)]
     pub fn from_manifest(manifest: &[u8], execution: &str) -> Result<NodeBook, JsError> {
-        let chunks = HostChunks::default();
-        let program =
-            Program::from_manifest(manifest, Box::new(chunks.clone())).map_err(js_error)?;
-        let initial = program.artifact_id();
-        Ok(Self {
-            artifacts: [(
-                initial,
-                ReaderArtifact {
-                    pack: None,
-                    names: None,
-                    analysis: None,
-                    chunks: Some(chunks),
-                    program: Arc::new(program),
-                },
-            )]
-            .into(),
-            initial,
-            execution: parse(execution, "execution", "execution:<32 hex digits>")?,
-            cache: CacheBackend::new(),
-            session: None,
-            history_bytes: 0,
-        })
+        Self::from_manifest_kind(manifest, execution, ArtifactKind::Gamebook)
     }
 
     /// Registers only metadata. No graph bodies are fetched to register an old program.
@@ -434,6 +538,13 @@ impl NodeBook {
         let chunks = HostChunks::default();
         let program =
             Program::from_manifest(manifest, Box::new(chunks.clone())).map_err(js_error)?;
+        ensure_kind(
+            &program,
+            self.kind,
+            "history.manifest",
+            "historical artifact format does not match this reader",
+        )
+        .map_err(js_error)?;
         if program.artifact_id() != expected {
             return Err(js_error(Error::new(
                 "artifact",
@@ -582,10 +693,11 @@ impl NodeBook {
     #[wasm_bindgen(js_name = registerHistoryPack)]
     pub fn register_history_pack(&mut self, bytes: &[u8]) -> Result<(), JsError> {
         let (program, names) = Program::from_pack(bytes).map_err(js_error)?;
-        ensure_gamebook(
+        ensure_kind(
             &program,
+            self.kind,
             "pack",
-            "NodeBook history packs must be Gamebook artifacts",
+            "historical artifact format does not match this reader",
         )
         .map_err(js_error)?;
         program.verify_artifact().map_err(js_error)?;
@@ -643,6 +755,13 @@ impl NodeBook {
             .map_err(|error| JsError::new(&error.to_string()))?;
         let id = location.map_or(self.initial, |location| location.artifact);
         let program = self.artifact(id)?.program.clone();
+        ensure_kind(
+            &program,
+            self.kind,
+            "history.artifact",
+            "saved artifact format does not match this reader",
+        )
+        .map_err(js_error)?;
         self.session = None;
         let mut session =
             Session::open(program, self.execution, self.cache.share()).map_err(js_error)?;
@@ -910,6 +1029,182 @@ impl NodeBook {
             .import_session(&migrated)
             .map_err(js_error)?;
         self.finish(Ok(()))
+    }
+}
+
+/// The VN-only Wasm reader facade. It shares the checked session and cache transport with
+/// `NodeBook`, while never serializing a Gamebook `BookView`.
+#[wasm_bindgen]
+pub struct VnBook {
+    inner: NodeBook,
+}
+
+#[wasm_bindgen]
+impl VnBook {
+    #[wasm_bindgen(constructor)]
+    pub fn new(pack: &[u8], execution: &str) -> Result<VnBook, JsError> {
+        Ok(Self {
+            inner: NodeBook::from_pack(pack, execution, ArtifactKind::VisualNovel)?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromManifest)]
+    pub fn from_manifest(manifest: &[u8], execution: &str) -> Result<VnBook, JsError> {
+        Ok(Self {
+            inner: NodeBook::from_manifest_kind(manifest, execution, ArtifactKind::VisualNovel)?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = registerHistoryManifest)]
+    pub fn register_history_manifest(
+        &mut self,
+        expected: &str,
+        manifest: &[u8],
+        names: Option<Vec<u8>>,
+    ) -> Result<(), JsError> {
+        self.inner
+            .register_history_manifest(expected, manifest, names)
+    }
+
+    #[wasm_bindgen(js_name = takeProgramRequest)]
+    pub fn take_program_request(&self) -> Result<Option<String>, JsError> {
+        self.inner.take_program_request()
+    }
+
+    #[wasm_bindgen(js_name = takeChunkRequest)]
+    pub fn take_chunk_request(&self) -> Option<String> {
+        self.inner.take_chunk_request()
+    }
+
+    #[wasm_bindgen(js_name = loadChunk)]
+    pub fn load_chunk(&self, id: &str, bytes: &[u8]) -> Result<(), JsError> {
+        self.inner.load_chunk(id, bytes)
+    }
+
+    #[wasm_bindgen(js_name = loadArtifactChunk)]
+    pub fn load_artifact_chunk(
+        &self,
+        artifact: &str,
+        id: &str,
+        bytes: &[u8],
+    ) -> Result<(), JsError> {
+        self.inner.load_artifact_chunk(artifact, id, bytes)
+    }
+
+    #[wasm_bindgen(js_name = loadNames)]
+    pub fn load_names(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        self.inner.load_names(bytes)
+    }
+
+    #[wasm_bindgen(js_name = registerHistoryPack)]
+    pub fn register_history_pack(&mut self, bytes: &[u8]) -> Result<(), JsError> {
+        self.inner.register_history_pack(bytes)
+    }
+
+    #[wasm_bindgen(js_name = verifyArtifact)]
+    pub fn verify_artifact(&self) -> Result<(), JsError> {
+        self.inner.verify_artifact()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn artifact_id(&self) -> String {
+        self.inner.artifact_id()
+    }
+
+    pub fn cursor(&self) -> Result<String, JsError> {
+        self.inner.cursor()
+    }
+
+    pub fn open(&mut self) -> Result<(), JsError> {
+        self.inner.open()
+    }
+
+    pub fn resume(&mut self) -> Result<(), JsError> {
+        self.inner.resume()
+    }
+
+    #[wasm_bindgen(js_name = takeRequest)]
+    pub fn take_request(&self) -> Option<Vec<u8>> {
+        self.inner.take_request()
+    }
+
+    pub fn load(&mut self, bytes: &[u8]) -> Result<bool, JsError> {
+        self.inner.load(bytes)
+    }
+
+    pub fn unconfirmed(&self) -> Option<Vec<u8>> {
+        self.inner.unconfirmed()
+    }
+
+    pub fn confirm(&mut self, bytes: &[u8]) -> Result<bool, JsError> {
+        self.inner.confirm(bytes)
+    }
+
+    pub fn reload(&mut self) {
+        self.inner.reload();
+    }
+
+    pub fn memory(&mut self) -> Result<(), JsError> {
+        self.inner.memory()
+    }
+
+    pub fn confirm_memory(&mut self) -> Result<(), JsError> {
+        self.inner.confirm_memory()
+    }
+
+    pub fn pack(&self) -> Result<Vec<u8>, JsError> {
+        self.inner.pack()
+    }
+
+    /// The versioned VN view carries a required checked scene target and its own closed
+    /// interaction union. A Gamebook artifact is rejected before it reaches this conversion.
+    pub fn inspect(&self) -> Result<String, JsError> {
+        let view = self
+            .inner
+            .opened()?
+            .view_with_names(|id| self.inner.artifacts.get(&id).and_then(|a| a.names.as_ref()))
+            .map_err(js_error)?;
+        let view = narrata_nodes::view::VnViewV1::try_from(view).map_err(js_error)?;
+        self.inner.finish(json(&view))
+    }
+
+    #[wasm_bindgen(js_name = historyArtifacts)]
+    pub fn history_artifacts(&self, expected: &str) -> Result<String, JsError> {
+        self.inner.history_artifacts(expected)
+    }
+
+    /// Advances only the currently shown dialogue at the expected commit.
+    pub fn advance(&mut self, expected: &str, dialogue: &str) -> Result<String, JsError> {
+        let expected = parse(expected, "expected", "commit:<64 hex digits>")?;
+        let dialogue = parse(dialogue, "dialogue", "node:<32 hex digits>")?;
+        let commit = self
+            .inner
+            .opened_mut()?
+            .advance(&expected, dialogue)
+            .map_err(js_error)?;
+        self.inner.finish(Ok(commit.to_string()))
+    }
+
+    /// Chooses options at the current choice point; it remains a separate operation from Advance.
+    pub fn choose(
+        &mut self,
+        expected: &str,
+        choice_point: &str,
+        options: Vec<String>,
+    ) -> Result<String, JsError> {
+        self.inner.choose(expected, choice_point, options)
+    }
+
+    pub fn checkout(&mut self, commit: &str) -> Result<(), JsError> {
+        self.inner.checkout(commit)
+    }
+
+    pub fn export(&self) -> Result<String, JsError> {
+        self.inner.export()
+    }
+
+    pub fn restore(&mut self, export: &str) -> Result<(), JsError> {
+        self.inner.restore(export)
     }
 }
 

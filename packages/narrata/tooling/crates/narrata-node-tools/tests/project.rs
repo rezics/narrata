@@ -629,6 +629,7 @@ fn inspect_and_schemas_write_readable_json() {
     run(&["schemas", "--out", directory.path().to_str().unwrap()]).unwrap();
     for name in [
         "book-view.schema.json",
+        "vn-view.schema.json",
         "content-pack.schema.json",
         "session-export.schema.json",
     ] {
@@ -636,6 +637,11 @@ fn inspect_and_schemas_write_readable_json() {
             serde_json::from_str(&read_text(&directory.path().join(name)).unwrap()).unwrap();
         assert!(schema.get("$schema").is_some(), "{name}");
     }
+    let vn: Value =
+        serde_json::from_str(&read_text(&directory.path().join("vn-view.schema.json")).unwrap())
+            .unwrap();
+    assert!(vn.to_string().contains("VnInteractionV1"));
+    assert!(vn.to_string().contains("scene"));
 }
 
 #[test]

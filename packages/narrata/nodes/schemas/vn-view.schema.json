@@ -1,0 +1,844 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VnViewV1",
+  "description": "The independently versioned, text-free view exchanged by the installed VN reader.\nThe wire version is checked by Serde and constrained to version 1 in the generated schema.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "format": "uint8",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "view": {
+      "$ref": "#/$defs/VnSessionViewV1"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "view"
+  ],
+  "$defs": {
+    "AnchorId": {
+      "type": "string",
+      "pattern": "^[ -~]{1,128}$"
+    },
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "CharacterLayer": {
+      "description": "A stable character layer in a complete visual scene target.",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/MediaRef"
+        },
+        "id": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "order",
+        "asset"
+      ]
+    },
+    "ChoicePointId": {
+      "type": "string",
+      "pattern": "^choice-point:[0-9a-f]{32}$"
+    },
+    "CommitId": {
+      "type": "string",
+      "pattern": "^commit:[0-9a-f]{64}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "ExecutionId": {
+      "type": "string",
+      "pattern": "^execution:[0-9a-f]{32}$"
+    },
+    "FrameView": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphRef"
+        },
+        "instance": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "locals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VariableView"
+          }
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VariableView"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "graph",
+        "node",
+        "instance",
+        "parameters",
+        "locals"
+      ]
+    },
+    "GraphRef": {
+      "description": "A graph of one package instance. Package aliases and graph names are composition\nstructure, so unlike node aliases they are part of the artifact identity.",
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "HistoryView": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "type": "boolean"
+        },
+        "depth": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "graph": {
+          "description": "Where the commit waits, or the node that finished the story.",
+          "$ref": "#/$defs/GraphRef"
+        },
+        "id": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "instance": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CommitId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "description": "The waiting passage's title, or the ending's title.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "depth",
+        "graph",
+        "node",
+        "instance",
+        "finished",
+        "current"
+      ]
+    },
+    "MediaKind": {
+      "type": "string",
+      "enum": [
+        "image",
+        "audio"
+      ]
+    },
+    "MediaRef": {
+      "description": "A content-owned media identity. Narrata stores the provider's immutable key and revision,\nnever a URL, credential, decoded byte buffer or player handle.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MediaKind"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "key",
+        "revision"
+      ]
+    },
+    "MusicAction": {
+      "description": "Music intent performed by a scene transition. `Keep` carries the existing logical track.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "keep"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "play"
+            },
+            "track": {
+              "$ref": "#/$defs/MediaRef"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "track"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "stop"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "OptionId": {
+      "type": "string",
+      "pattern": "^option:[0-9a-f]{32}$"
+    },
+    "OptionView": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/OptionId"
+        },
+        "key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/OutcomeKind"
+        },
+        "reason": {
+          "description": "Only for a disabled option that declares a reason.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "enabled",
+        "outcome"
+      ]
+    },
+    "OutcomeKind": {
+      "type": "string",
+      "enum": [
+        "local",
+        "branch"
+      ]
+    },
+    "PresentationItem": {
+      "description": "One item to present. `(execution, commit, occurrence)` is the presentation key that\ngenerative content providers cache by.",
+      "type": "object",
+      "properties": {
+        "args": {
+          "description": "The passage's named arguments when the item was presented.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ViewScalar"
+          }
+        },
+        "commit": {
+          "description": "The commit whose step presented the item.",
+          "$ref": "#/$defs/CommitId"
+        },
+        "content": {
+          "$ref": "#/$defs/Presented"
+        },
+        "node": {
+          "$ref": "#/$defs/NodeId"
+        },
+        "occurrence": {
+          "description": "The item's position in that commit's presentation.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "occurrence",
+        "role",
+        "node",
+        "content",
+        "args"
+      ]
+    },
+    "Presented": {
+      "description": "A title is a reference; body and reply items are segments.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Segment"
+        },
+        {
+          "$ref": "#/$defs/ContentRef"
+        }
+      ]
+    },
+    "ProductView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ]
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    },
+    "Role": {
+      "type": "string",
+      "enum": [
+        "title",
+        "body",
+        "reply"
+      ]
+    },
+    "SceneTarget": {
+      "description": "The entire recoverable visual/audio target for a VN scene safe point.",
+      "type": "object",
+      "properties": {
+        "background": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MediaRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CharacterLayer"
+          }
+        },
+        "music": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MediaRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "layers"
+      ]
+    },
+    "Segment": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnchorId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/ContentRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "unit"
+      ]
+    },
+    "VariableView": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/ViewScalar"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "ViewScalar": {
+      "description": "Exchange form of a value. Integers are decimal strings so that 64-bit values survive\nJavaScript; `ref` values are resolved by the host's content provider.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "int"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "text"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "ref"
+            },
+            "value": {
+              "$ref": "#/$defs/ContentRef"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        }
+      ]
+    },
+    "VnInteractionV1": {
+      "description": "The closed interaction vocabulary for VN View version 1.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "dialogue": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "kind": {
+              "type": "string",
+              "const": "advance"
+            },
+            "line": {
+              "$ref": "#/$defs/Segment"
+            },
+            "speaker": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ContentRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "voice": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/MediaRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph",
+            "dialogue",
+            "line"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/ViewScalar"
+              }
+            },
+            "choice_point": {
+              "$ref": "#/$defs/ChoicePointId"
+            },
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "key": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "choose"
+            },
+            "max": {
+              "type": "integer",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0
+            },
+            "min": {
+              "type": "integer",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0
+            },
+            "node": {
+              "$ref": "#/$defs/NodeId"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OptionView"
+              }
+            },
+            "proposals": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph",
+            "node",
+            "choice_point",
+            "min",
+            "max",
+            "args",
+            "options"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "body": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Segment"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "finished"
+            },
+            "outcome": {
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ContentRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "outcome"
+          ]
+        }
+      ]
+    },
+    "VnSessionViewV1": {
+      "description": "The reader-safe VN view. Unlike the shared internal session view, the scene is required.",
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "depth": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "execution": {
+          "$ref": "#/$defs/ExecutionId"
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FrameView"
+          }
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HistoryView"
+          }
+        },
+        "interaction": {
+          "$ref": "#/$defs/VnInteractionV1"
+        },
+        "music_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MusicAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "presentation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PresentationItem"
+          }
+        },
+        "product": {
+          "$ref": "#/$defs/ProductView"
+        },
+        "scene": {
+          "$ref": "#/$defs/SceneTarget"
+        },
+        "shared": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VariableView"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "execution",
+        "cursor",
+        "depth",
+        "product",
+        "scene",
+        "presentation",
+        "interaction",
+        "shared",
+        "frames",
+        "history"
+      ]
+    }
+  }
+}

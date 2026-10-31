@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 
 export const execution = "execution:0190f2a0000070008000000000000001";
 export const demoPack = new Uint8Array(readFileSync(resolve(import.meta.dirname, "../../../../products/gamebook-demo/story.narpack")));
+export const vnPack = new Uint8Array(readFileSync(resolve(import.meta.dirname, "../../../../fixtures/compat/nodes-vn-v1/story.narpack")));
+export const lazyVnPack = new Uint8Array(readFileSync(resolve(import.meta.dirname, "./fixtures/lazy-vn/story.narpack")));
 
 // Fixture extraction of ADR 0013's canonical pack map; production decoding remains in Rust.
 export function splitPack(bytes: Uint8Array) {

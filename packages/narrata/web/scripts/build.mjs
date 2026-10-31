@@ -38,9 +38,14 @@ if (!check) {
   cargo("run", "--quiet", "--locked", "-p", "narrata-authoring-wasm", "--example", "interface_schema", "--", resolve(root, interfaceSchema));
 }
 const schemaPath = resolve(check ? root : stage, check ? "packages/narrata/nodes/schemas/book-view.schema.json" : "schemas/book-view.schema.json");
+const vnSchemaPath = resolve(check ? root : stage, check ? "packages/narrata/nodes/schemas/vn-view.schema.json" : "schemas/vn-view.schema.json");
 mkdirSync(resolve(here, "src/generated"), { recursive: true });
 // Declarations are generated from Rust schemas; check mode compares them with the committed ones.
-for (const [schema, name, title] of [[schemaPath, "book-view.ts", "BookView"], [resolve(root, interfaceSchema), "authoring.ts", "authoring interface"]]) {
+for (const [schema, name, title] of [
+  [schemaPath, "book-view.ts", "BookView"],
+  [vnSchemaPath, "vn-view.ts", "VN View v1"],
+  [resolve(root, interfaceSchema), "authoring.ts", "authoring interface"],
+]) {
   const types = await compileFromFile(schema, { bannerComment: `/* Generated from Rust ${title} JSON Schema. Run task web:build. */`, additionalProperties: false });
   const typePath = resolve(here, "src/generated", name);
   if (check) {
@@ -70,6 +75,12 @@ const validator = ajv.compile(JSON.parse(readFileSync(schemaPath, "utf8")));
 const code = standalone(ajv, validator).replace(/require\("ajv\/dist\/runtime\/ucs2length"\)\.default/g, '(value => Array.from(value).length)');
 writeFileSync(resolve(stage, "src/generated/validate-book.js"), code);
 writeFileSync(resolve(stage, "src/generated/validate-book.d.ts"), 'import type { BookView } from "./book-view.js";\ndeclare const validate: (value: unknown) => value is BookView;\nexport default validate;\n');
+const vnValidator = ajv.compile(JSON.parse(readFileSync(vnSchemaPath, "utf8")));
+const vnCode = standalone(ajv, vnValidator).replace(/require\("ajv\/dist\/runtime\/ucs2length"\)\.default/g, '(value => Array.from(value).length)');
+const compactVnValidator = await minify("validate-vn-view.js", vnCode, { module: true });
+if (compactVnValidator.errors.length) throw new Error(JSON.stringify(compactVnValidator.errors));
+writeFileSync(resolve(stage, "src/generated/validate-vn-view.js"), compactVnValidator.code);
+writeFileSync(resolve(stage, "src/generated/validate-vn-view.d.ts"), 'import type { VnViewV1 } from "./vn-view.js";\ndeclare const validate: (value: unknown) => value is VnViewV1;\nexport default validate;\n');
 const mapSchemaPath = resolve(check ? root : stage, check ? "packages/narrata/nodes/schemas/reader-map.schema.json" : "schemas/reader-map.schema.json");
 const mapValidator = ajv.compile(JSON.parse(readFileSync(mapSchemaPath, "utf8")));
 const mapCode = standalone(ajv, mapValidator).replace(/require\("ajv\/dist\/runtime\/ucs2length"\)\.default/g, '(value => Array.from(value).length)');
@@ -105,4 +116,7 @@ if (!check) {
   cpSync(resolve(stage, "src/generated/validate-book.js"), resolve(dist, "generated/validate-book.js"));
   cpSync(resolve(stage, "src/generated/validate-book.d.ts"), resolve(dist, "generated/validate-book.d.ts"));
   cpSync(schemaPath, resolve(dist, "generated/book-view.schema.json"));
+  cpSync(resolve(stage, "src/generated/validate-vn-view.js"), resolve(dist, "generated/validate-vn-view.js"));
+  cpSync(resolve(stage, "src/generated/validate-vn-view.d.ts"), resolve(dist, "generated/validate-vn-view.d.ts"));
+  cpSync(vnSchemaPath, resolve(dist, "generated/vn-view.schema.json"));
 }

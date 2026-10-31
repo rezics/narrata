@@ -1,7 +1,7 @@
 # @rezics/narrata
 
-The ESM package for hosts that run Narrata Gamebooks in a browser, Node or Bun. Content references
-in `BookView` are resolved by the host; the runtime maintains structure, state and history.
+The ESM package for hosts that run Narrata Gamebooks and visual novels in a browser, Node or Bun.
+Content and media references are resolved by the host; the runtime maintains structure, state and history.
 
 Build and pack from the repository with `task web:pack`, then install the printed `.tgz` path
 with npm. The tarball includes JavaScript, TypeScript declarations and a separate Wasm asset;
@@ -48,6 +48,53 @@ and checked before retrying the pending operation. Calls on a book run in order;
 only after the storage host persists and confirms their batches. A failed write rejects the call;
 use `reload()` to discard unconfirmed changes before continuing. Another writer's newer state
 is rejected rather than overwritten. Without `storage`, the session stays in memory.
+
+## Visual novel reader
+
+Import the VN reader from its own entry. It accepts a complete checked pack or an exact manifest
+and chunk loader, and it keeps dialogue advance separate from option choice. The returned scene,
+speaker, line and audio values are typed references; the host resolves their content and media.
+
+```ts
+import { openVn } from "@rezics/narrata/vn";
+import { IndexedDbStore } from "@rezics/narrata/storage";
+
+async function bytes(url: string): Promise<Uint8Array> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+const execution = "execution:0190f2a0000070008000000000000001";
+const store = await IndexedDbStore.open(`my-vn-${execution}`);
+const reader = await openVn({
+  execution,
+  manifest: await bytes("/story/manifest.cbor"),
+  fetchChunk: id => bytes(`/story/objects/${id.slice(7)}.cbor`),
+  storage: store,
+});
+try {
+  const view = await reader.inspect();
+  const interaction = view.view.interaction;
+  if (interaction.kind === "advance") {
+    await reader.advance(view.view.cursor, interaction.dialogue);
+  } else if (interaction.kind === "choose") {
+    const option = interaction.options.find(option => option.enabled);
+    if (option) await reader.choose(view.view.cursor, interaction.choice_point, [option.id]);
+  }
+  const checkpoint = await reader.exportSave();
+} finally {
+  await reader.close();
+  store.close();
+}
+```
+
+`openVn` returns a version 1 VN view with a required scene target. Missing logical chunks are
+checked before the pending operation is retried. With durable storage, `advance`, `choose`,
+`checkout` and `restore` resolve after the host confirms their writes. If a write outcome is
+unknown, `retrySave()` sends the same pending bytes; `reload()` reopens the confirmed cursor.
+The VN entry shares the reader Wasm and storage host, and is not imported by the Gamebook root
+or reader entry.
 
 ## Save maintenance
 

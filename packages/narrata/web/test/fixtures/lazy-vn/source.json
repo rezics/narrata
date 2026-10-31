@@ -1,0 +1,76 @@
+{
+  "manifest": {
+    "format_version": 3,
+    "product": { "id": "lazy-vn", "entry": { "package": "main", "graph": "start" } },
+    "packages": { "main": "main.json" }
+  },
+  "package": {
+    "id": "lazy-vn.main",
+    "version": "1",
+    "exports": ["start"],
+    "graphs": {
+      "start": {
+        "outcomes": ["done"],
+        "entry": "one",
+        "nodes": {
+          "one": {
+            "id": "node:00000000000000000000000000000010",
+            "type_id": "narrata.dialogue",
+            "data": {
+              "line": { "unit": { "provider": "host", "key": "dialogue.one" }, "first": "start", "last": "end" },
+              "next": "call"
+            }
+          },
+          "call": {
+            "id": "node:00000000000000000000000000000011",
+            "type_id": "narrata.call",
+            "data": {
+              "target": { "kind": "local", "graph": "helper" },
+              "on_return": { "done": "three" }
+            }
+          },
+          "three": {
+            "id": "node:00000000000000000000000000000012",
+            "type_id": "narrata.dialogue",
+            "data": {
+              "line": { "unit": { "provider": "host", "key": "dialogue.three" }, "first": "start", "last": "end" },
+              "next": "four"
+            }
+          },
+          "four": {
+            "id": "node:00000000000000000000000000000013",
+            "type_id": "narrata.dialogue",
+            "data": {
+              "line": { "unit": { "provider": "host", "key": "dialogue.four" }, "first": "start", "last": "end" },
+              "next": "ending"
+            }
+          },
+          "ending": {
+            "id": "node:00000000000000000000000000000014",
+            "type_id": "narrata.return",
+            "data": { "outcome": "done" }
+          }
+        }
+      },
+      "helper": {
+        "outcomes": ["done"],
+        "entry": "two",
+        "nodes": {
+          "two": {
+            "id": "node:00000000000000000000000000000020",
+            "type_id": "narrata.dialogue",
+            "data": {
+              "line": { "unit": { "provider": "host", "key": "dialogue.two" }, "first": "start", "last": "end" },
+              "next": "return"
+            }
+          },
+          "return": {
+            "id": "node:00000000000000000000000000000021",
+            "type_id": "narrata.return",
+            "data": { "outcome": "done" }
+          }
+        }
+      }
+    }
+  }
+}

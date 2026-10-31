@@ -1,5 +1,5 @@
 {
-  "measurement": "Wasm and dist/**/*.js; gzip level 9 per module. Web Wasm uses the size-optimized Cargo `wasm` profile without a name section. readerWasm is the slim runtime the root and ./reader entries load (no legacy publishGraph, compiler, layout or trace); compatWasm is the raw dist/wasm module that keeps publishGraph and no entry imports; authoringWasm serves ./authoring and ./server. runtime counts reader-route modules including the reader Wasm glue and shared storage codec; authoring counts the authoring and server entries, their Wasm glue, generated authoring types and the testing short story; compat counts the raw module's glue. nativeContent counts content/native.js and testing/native-document.js separately. Graph is a separate minified Vite ESM library build of both graph entry points, including lazy Sigma/graphology and transitive dependencies with the optional React peer external. javascript aggregates ordinary dist modules plus that graph build. Authoring, compat Wasm, native content and graph never enter the reader's first-screen import chain. Reader map is a distinct bundled capability from the two direct reader-map subpaths, with the same settings and external React peer as the author graph. It includes the complete standalone validator. All graph-directory source modules are excluded from ordinary-module sums; graph and readerMap bundles are each added once to aggregate JavaScript. Existing reader/author-graph/aggregate maximums are unchanged.",
+  "measurement": "Wasm and dist/**/*.js; gzip level 9 per module. Web Wasm uses the size-optimized Cargo `wasm` profile without a name section. readerWasm is the shared runtime asset used by root, ./reader and ./vn (no legacy publishGraph, compiler, layout or trace); vnWasmIncrement reports its added bytes over the frozen Gamebook baseline. compatWasm is the raw dist/wasm module that keeps publishGraph and no entry imports; authoringWasm serves ./authoring and ./server. runtime counts root/reader modules including shared storage transport but excludes the optional VN entry and its validator. authoring counts the authoring and server entries, their Wasm glue, generated authoring types and the testing short story; compat counts the raw module's glue. nativeContent counts content/native.js and testing/native-document.js separately. Graph is a separate minified Vite ESM library build of both graph entry points, including lazy Sigma/graphology and transitive dependencies with the optional React peer external. Reader map is a separate bundle from both reader-map subpaths with the same settings and external React peer; it includes the complete standalone validator. VN counts its entry-exclusive JavaScript and generated validator; common transport, storage and reader Wasm glue remain in their shared totals. javascript aggregates ordinary dist modules plus graph and readerMap bundles once each; the separate vn metric is a visibility measure and is not added again. Root/reader first-screen imports do not load the VN wrapper or validator. The aggregate JavaScript maximum is the measured new total plus its previous raw/gzip headroom; the unchanged Gamebook runtime, reader Wasm and other capability maximums retain their prior values. All graph-directory source modules are excluded from ordinary-module sums; graph and readerMap bundles are each added once to aggregate JavaScript.",
   "baseline": {
     "readerWasm": { "raw": 1399144, "gzip": 392434 },
     "compatWasm": { "raw": 1667319, "gzip": 452168 },
@@ -12,13 +12,15 @@
     "testing": { "raw": 18280, "gzip": 6577 },
     "nativeContent": { "raw": 6533, "gzip": 2221 },
     "graph": { "raw": 221674, "gzip": 50231 },
-    "readerMap": { "raw": 56925, "gzip": 7904 }
+    "readerMap": { "raw": 56925, "gzip": 7904 },
+    "vnWasmIncrement": { "raw": 48788, "gzip": 15099 },
+    "vn": { "raw": 78997, "gzip": 10381 }
   },
   "maximum": {
     "readerWasm": { "raw": 1730000, "gzip": 445000 },
     "compatWasm": { "raw": 2075000, "gzip": 523000 },
     "authoringWasm": { "raw": 3300000, "gzip": 810000 },
-    "javascript": { "raw": 653200, "gzip": 138200 },
+    "javascript": { "raw": 752771, "gzip": 150219 },
     "runtime": { "raw": 250000, "gzip": 45500 },
     "authoring": { "raw": 91000, "gzip": 20000 },
     "compat": { "raw": 33000, "gzip": 6100 },
@@ -26,6 +28,8 @@
     "testing": { "raw": 19100, "gzip": 6860 },
     "nativeContent": { "raw": 6900, "gzip": 2340 },
     "graph": { "raw": 260000, "gzip": 70000 },
-    "readerMap": { "raw": 59000, "gzip": 8400 }
+    "readerMap": { "raw": 59000, "gzip": 8400 },
+    "vnWasmIncrement": { "raw": 65000, "gzip": 18000 },
+    "vn": { "raw": 95000, "gzip": 12500 }
   }
 }

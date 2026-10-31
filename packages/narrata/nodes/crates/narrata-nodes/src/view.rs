@@ -228,6 +228,178 @@ pub enum Interaction {
     },
 }
 
+/// The independently versioned, text-free view exchanged by the installed VN reader.
+/// The wire version is checked by Serde and constrained to version 1 in the generated schema.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "VnViewV1")]
+pub struct VnViewV1 {
+    #[schemars(range(min = 1, max = 1))]
+    #[serde(deserialize_with = "deserialize_vn_view_version")]
+    version: u8,
+    pub view: VnSessionViewV1,
+}
+
+impl VnViewV1 {
+    pub const VERSION: u8 = 1;
+
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+}
+
+fn deserialize_vn_view_version<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let version = u8::deserialize(deserializer)?;
+    if version == VnViewV1::VERSION {
+        Ok(version)
+    } else {
+        Err(serde::de::Error::custom("unsupported VN view version"))
+    }
+}
+
+impl TryFrom<SessionView> for VnViewV1 {
+    type Error = crate::Error;
+
+    fn try_from(view: SessionView) -> Result<Self, Self::Error> {
+        Ok(Self {
+            version: Self::VERSION,
+            view: VnSessionViewV1::try_from(view)?,
+        })
+    }
+}
+
+/// The reader-safe VN view. Unlike the shared internal session view, the scene is required.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "VnSessionViewV1")]
+pub struct VnSessionViewV1 {
+    pub artifact_id: ArtifactId,
+    pub execution: ExecutionId,
+    pub cursor: CommitId,
+    pub depth: u64,
+    pub product: ProductView,
+    pub scene: SceneTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music_action: Option<MusicAction>,
+    pub presentation: Vec<PresentationItem>,
+    pub interaction: VnInteractionV1,
+    pub shared: Vec<VariableView>,
+    pub frames: Vec<FrameView>,
+    pub history: Vec<HistoryView>,
+}
+
+impl TryFrom<SessionView> for VnSessionViewV1 {
+    type Error = crate::Error;
+
+    fn try_from(view: SessionView) -> Result<Self, Self::Error> {
+        let scene = view.scene.ok_or_else(|| {
+            crate::Error::new(
+                "version",
+                "view.scene",
+                "a VN view requires a checked scene target",
+            )
+        })?;
+        let interaction = match view.interaction {
+            Interaction::Advance {
+                graph,
+                dialogue,
+                speaker,
+                line,
+                voice,
+            } => VnInteractionV1::Advance {
+                graph,
+                dialogue,
+                speaker,
+                line,
+                voice,
+            },
+            Interaction::Choose {
+                graph,
+                node,
+                choice_point,
+                key,
+                min,
+                max,
+                proposals,
+                args,
+                options,
+            } => VnInteractionV1::Choose {
+                graph,
+                node,
+                choice_point,
+                key,
+                min,
+                max,
+                proposals,
+                args,
+                options,
+            },
+            Interaction::Finished {
+                outcome,
+                title,
+                body,
+            } => VnInteractionV1::Finished {
+                outcome,
+                title,
+                body,
+            },
+        };
+        Ok(Self {
+            artifact_id: view.artifact_id,
+            execution: view.execution,
+            cursor: view.cursor,
+            depth: view.depth,
+            product: view.product,
+            scene,
+            music_action: view.music_action,
+            presentation: view.presentation,
+            interaction,
+            shared: view.shared,
+            frames: view.frames,
+            history: view.history,
+        })
+    }
+}
+
+/// The closed interaction vocabulary for VN View version 1.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(rename = "VnInteractionV1")]
+pub enum VnInteractionV1 {
+    Advance {
+        graph: GraphRef,
+        dialogue: NodeId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        speaker: Option<ContentRef>,
+        line: Segment,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        voice: Option<MediaRef>,
+    },
+    Choose {
+        graph: GraphRef,
+        node: NodeId,
+        choice_point: ChoicePointId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
+        min: u16,
+        max: u16,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        proposals: bool,
+        args: BTreeMap<String, ViewScalar>,
+        options: Vec<OptionView>,
+    },
+    Finished {
+        outcome: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<ContentRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        body: Option<Segment>,
+    },
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct OptionView {

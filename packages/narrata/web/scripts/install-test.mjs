@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { verifyReferenceJourney, verifyUpdateScenarios } from "../../../../examples/gamebook-web/scripts/reference-journey.ts";
 import { verifyMapJourney } from "./install/map-journey.mjs";
-import { demoPack, execution, splitPack, objectId } from "../test/fixture.ts";
+import { demoPack, execution, splitPack, objectId, vnPack } from "../test/fixture.ts";
 import { npmCli, tarball } from "./pack.mjs";
 
 const here = resolve(import.meta.dirname, "..");
@@ -18,17 +18,20 @@ const temporaryRoot = join(tmpdir(), ".temp");
 mkdirSync(temporaryRoot, { recursive: true });
 const directory = mkdtempSync(join(temporaryRoot, "narrata-web-install-"));
 const parts = splitPack(demoPack);
+const vnParts = splitPack(vnPack);
 const npm = (...args) => execFileSync(process.execPath, [npmCli, ...args], { cwd: directory, stdio: "inherit" });
 writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "narrata-install-test", private: true, type: "module" }));
 npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarball, `vite@${packageMetadata.devDependencies.vite}`, "typescript@~5.9.3", "@types/node@^24.0.0");
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./reader-map", "./reader-map/react", "./content/native"]);
+assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./vn", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./reader-map", "./reader-map/react", "./content/native"]);
 assert.deepEqual(manifest.dependencies, { graphology: "0.26.0", sigma: "3.0.3" }, "Only the lazy graph entry uses runtime dependencies");
 assert.deepEqual(manifest.peerDependenciesMeta, { react: { optional: true } });
 assert.equal(existsSync(join(directory, "node_modules/react")), false, "Framework-free hosts must not install React");
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
+assert.ok(existsSync(join(installed, "dist/generated/vn-view.schema.json")), "The VN schema must ship in the tarball");
+assert.ok(existsSync(join(installed, "dist/generated/validate-vn-view.js")), "The checked VN validator must ship in the tarball");
 // Served Wasm is identified by content: reader, raw compatibility module or authoring.
 const wasmKinds = new Map();
 for (const [kind, path] of [["reader", "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"], ["compat", "dist/wasm/narrata_nodes_wasm_bg.wasm"], ["authoring", "dist/authoring-wasm/narrata_authoring_wasm_bg.wasm"]]) {
@@ -40,6 +43,10 @@ const publicDirectory = join(directory, "public");
 mkdirSync(join(publicDirectory, "objects"), { recursive: true });
 writeFileSync(join(publicDirectory, "manifest.cbor"), parts.manifest);
 writeFileSync(join(publicDirectory, "story.narpack"), demoPack);
+writeFileSync(join(publicDirectory, "vn-manifest.cbor"), vnParts.manifest);
+writeFileSync(join(publicDirectory, "vn-story.narpack"), vnPack);
+mkdirSync(join(publicDirectory, "vn-objects"), { recursive: true });
+for (const [id, bytes] of vnParts.objects) writeFileSync(join(publicDirectory, "vn-objects", `${id.slice(7)}.cbor`), bytes);
 for (const name of ["unseen-rule","republished-after-migration","proposal-retained","shallow-history"]) {
   cpSync(resolve(here,"../../../fixtures/compat/nodes-evolution-v1",name),join(publicDirectory,"maintenance-fixtures",name),{recursive:true});
 }
@@ -95,6 +102,7 @@ for (const runtime of [process.execPath, "bun"]) execFileSync(runtime, [join(dir
 writeFileSync(join(directory, "objects.json"), JSON.stringify(Object.fromEntries([...parts.objects].map(([id, bytes]) => [id, [...bytes]]))));
 writeFileSync(join(directory, "manifest.cbor"), parts.manifest);
 cpSync(resolve(here, "test/types.ts"), join(directory, "types.ts"));
+cpSync(resolve(here, "test/vn-types.ts"), join(directory, "vn-types.ts"));
 cpSync(resolve(here, "scripts/install/source.ts"), join(directory, "source.ts"));
 writeFileSync(join(directory, "native-types.ts"), `
 import { createNativeContentAdapter, type NativeDocument } from "@rezics/narrata/content/native";
@@ -104,12 +112,13 @@ const adapter = createNativeContentAdapter<SampleNativeValue>({ resolve: async (
 void adapter;
 `);
 cpSync(resolve(here, "../../../fixtures/compat/graph-v1"), join(directory, "graph"), { recursive: true });
-writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true }, include: ["types.ts", "native-types.ts", "source.ts"] }));
+writeFileSync(join(directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", lib: ["ES2022", "DOM"], strict: true, skipLibCheck: true, noEmit: true }, include: ["types.ts", "vn-types.ts", "native-types.ts", "source.ts"] }));
 execFileSync(process.execPath, [join(directory, "node_modules/typescript/bin/tsc"), "-p", join(directory, "tsconfig.json")], { cwd: directory, stdio: "inherit" });
 writeFileSync(join(directory, "node.mjs"), `
 import { readFile } from "node:fs/promises";
 import { strict as assert } from "node:assert";
 import { openBook, initialize, resolveContent } from "@rezics/narrata";
+import { openVn } from "@rezics/narrata/vn";
 import { MockRezicsContent, mountainLetterData, mountainLetterKeys, nativeDocumentSample } from "@rezics/narrata/testing";
 import { createNativeContentAdapter, nativeContentOutline } from "@rezics/narrata/content/native";
 import { decodeIndex, decodeTile } from "@rezics/narrata/graph";
@@ -155,6 +164,29 @@ try {
   assert.equal(await book.exportSave(), save);
 }
 finally { await book.close(); }
+const vnPack = new Uint8Array(await readFile(new URL("./public/vn-story.narpack", import.meta.url)));
+const vnRequests = [];
+const vn = await openVn({
+  manifest: new Uint8Array(await readFile(new URL("./public/vn-manifest.cbor", import.meta.url))),
+  execution: ${JSON.stringify(execution)},
+  fetchChunk: async id => { vnRequests.push(id); return new Uint8Array(await readFile(new URL("./public/vn-objects/" + id.slice(7) + ".cbor", import.meta.url))); },
+});
+let vnSave;
+try {
+  const start = await vn.inspect();
+  assert.equal(start.version, 1); assert.equal(start.view.interaction.kind, "advance");
+  assert.equal(start.view.scene.music.key, "music/theme"); assert.equal(vnRequests.length, 1);
+  await vn.advance(start.view.cursor, start.view.interaction.dialogue);
+  vnSave = await vn.exportSave();
+} finally { await vn.close(); }
+const coldVn = await openVn({ pack: vnPack, execution: ${JSON.stringify(execution)} });
+try {
+  await coldVn.restore(vnSave);
+  const reopened = await coldVn.inspect();
+  assert.equal(reopened.view.artifact_id, coldVn.artifactId);
+  assert.equal(reopened.view.depth, 1); assert.equal(reopened.view.interaction.kind, "advance");
+  assert.equal(reopened.view.interaction.line.unit.key, "dialogue.two");
+} finally { await coldVn.close(); }
 console.log("Installed package opened in " + process.argv[2]);
 `);
 cpSync(resolve(here, "scripts/install/journey.mjs"), join(directory, "journey.mjs"));
@@ -217,6 +249,8 @@ cpSync(resolve(here, "test/online.test.ts"), join(directory, "online.test.ts"));
 cpSync(resolve(here, "test/maintenance.test.ts"), join(directory, "maintenance.test.ts"));
 writeFileSync(join(directory, "story.narpack"), demoPack);
 writeFileSync(join(directory, "fixture.ts"), readFileSync(resolve(here, "test/fixture.ts"), "utf8").replace("../../../../products/gamebook-demo/story.narpack", "story.narpack"));
+mkdirSync(join(directory, "fixtures/lazy-vn"), { recursive: true });
+writeFileSync(join(directory, "fixtures/lazy-vn/story.narpack"), readFileSync(resolve(here, "test/fixtures/lazy-vn/story.narpack")));
 execFileSync(process.execPath, [join(directory, "node_modules/vitest/vitest.mjs"), "run", "online.test.ts", "maintenance.test.ts"], { cwd: directory, stdio: "inherit" });
 cpSync(resolve(here, "test/reader-types.tsx"), join(directory, "reader-types.tsx"));
 cpSync(resolve(here, "test/graph-types.tsx"), join(directory, "graph-types.tsx"));
@@ -281,6 +315,27 @@ window.ready = new URLSearchParams(location.search).has("reference") ? (async ()
       })};
     },
     failContentOnce: async () => { failContent = true; const failed = await controller.refresh(); const phase = controller.getSnapshot().phase; const retried = await controller.retry(); return { failed, phase, retried, after: controller.getSnapshot().phase }; },
+    vn: async () => {
+      const { openVn } = await import("@rezics/narrata/vn");
+      const requested = [];
+      const novel = await openVn({ manifest: await bytes("/vn-manifest.cbor"), execution: ${JSON.stringify(execution)}, fetchChunk: async id => {
+        requested.push(id); return bytes("/vn-objects/" + id.slice(7) + ".cbor");
+      } });
+      let saved;
+      let first;
+      try {
+        first = await novel.inspect();
+        await novel.advance(first.view.cursor, first.view.interaction.dialogue);
+        saved = await novel.exportSave();
+      } finally { await novel.close(); }
+      const cold = await openVn({ pack: await bytes("/vn-story.narpack"), execution: ${JSON.stringify(execution)} });
+      try {
+        await cold.restore(saved);
+        const reopened = await cold.inspect();
+        return { version: first.version, artifact: reopened.view.artifact_id, cursor: reopened.view.cursor, depth: reopened.view.depth,
+          line: reopened.view.interaction.kind === "advance" ? reopened.view.interaction.line.unit.key : "wrong-interaction", requested: requested.length };
+      } finally { await cold.close(); }
+    },
     author: () => new Promise((done, fail) => {
       const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
       worker.onerror = event => { worker.terminate(); fail(new Error(event.message)); };
@@ -352,6 +407,11 @@ try {
   assert.equal(requests.filter(path => path.endsWith(".wasm")).length, 1);
   assert.deepEqual(served, ["reader"], "The reader route fetches only the reader Wasm: no authoring or compatibility module");
   writeFileSync(join(directory, "first-screen-requests.json"), JSON.stringify({ cbor: await page.evaluate(() => window.installed.firstScreenUrls()), wasm: requests.filter(path => path.endsWith(".wasm")), requests: [...requests] }, null, 2));
+  const vnEvidence = await page.evaluate(() => window.installed.vn());
+  assert.equal(vnEvidence.version, 1); assert.equal(vnEvidence.depth, 1); assert.equal(vnEvidence.line, "dialogue.two");
+  assert.equal(vnEvidence.artifact, "artifact:e4833208cb0e335d55cdfbc27cee38568bc916f05c60337f14c028f0a4b72b06");
+  assert.equal(vnEvidence.requested, 1);
+  assert.deepEqual(served, ["reader"], "The VN entry reuses the package reader Wasm and adds no authoring or compatibility module request");
   assert.deepEqual(requests.filter(path => /sigma|graphology|renderer|graph/i.test(path)), [], "The first screen loads no graph code or tiles");
   assert.deepEqual(await page.evaluate(() => window.installed.native()), { status: "ok", ids: ["arrival", "map"], image: "image", marker: "choice-point:" + "1".repeat(32) });
   const beforePrefetch = await page.evaluate(() => window.installed.save());
@@ -404,7 +464,7 @@ try {
   writeFileSync(join(directory, "provided-history-names.json"), JSON.stringify(historical, null, 2));
   writeFileSync(join(directory,"maintenance-browser.json"),JSON.stringify(maintenance,null,2));
   assert.deepEqual(errors, []);
-  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored }, null, 2));
+  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored, vn: vnEvidence }, null, 2));
   await page.screenshot({ path: join(directory, "desktop-reader.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: join(directory, "mobile-reader.png"), fullPage: true });
