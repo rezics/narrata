@@ -248,7 +248,11 @@ execFileSync("bun",[join(directory,"maintenance-node.mjs")],{cwd:directory,stdio
 cpSync(resolve(here, "test/online.test.ts"), join(directory, "online.test.ts"));
 cpSync(resolve(here, "test/maintenance.test.ts"), join(directory, "maintenance.test.ts"));
 writeFileSync(join(directory, "story.narpack"), demoPack);
-writeFileSync(join(directory, "fixture.ts"), readFileSync(resolve(here, "test/fixture.ts"), "utf8").replace("../../../../products/gamebook-demo/story.narpack", "story.narpack"));
+writeFileSync(join(directory, "fixture.ts"), readFileSync(resolve(here, "test/fixture.ts"), "utf8")
+  .replace("../../../../products/gamebook-demo/story.narpack", "story.narpack")
+  .replace("../../../../fixtures/compat/nodes-vn-v1/story.narpack", "fixtures/compat/nodes-vn-v1/story.narpack"));
+mkdirSync(join(directory, "fixtures/compat/nodes-vn-v1"), { recursive: true });
+writeFileSync(join(directory, "fixtures/compat/nodes-vn-v1/story.narpack"), readFileSync(resolve(here, "../../../fixtures/compat/nodes-vn-v1/story.narpack")));
 mkdirSync(join(directory, "fixtures/lazy-vn"), { recursive: true });
 writeFileSync(join(directory, "fixtures/lazy-vn/story.narpack"), readFileSync(resolve(here, "test/fixtures/lazy-vn/story.narpack")));
 execFileSync(process.execPath, [join(directory, "node_modules/vitest/vitest.mjs"), "run", "online.test.ts", "maintenance.test.ts"], { cwd: directory, stdio: "inherit" });
