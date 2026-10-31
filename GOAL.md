@@ -14,10 +14,10 @@
 | --- | --- | --- |
 | [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | VN0：原生执行与兼容验收 | VN0 → VN1 → VN2 → VN3 |
 
-Web VN 的语义与兼容设计已接受，原生执行实现正在工作分支验收，尚未合并或交付。通过后继续按 VN1、VN2、VN3 完成公开接口、播放器、按需分发与可复现短篇交付。实际管理器登记、任务与路径认领以 goalctl 账本为准。
+VN0 原生执行与双格式兼容实现已合入主线提交 `f1adb040de40fc2b7b1f973afb64d562475343e5`，G5、R1、Web、scripts、docs 五项 gate 已通过并验收。下一项 G-042 是 VN1 可安装阅读 API，当前待派发；播放器 UI、媒体解析/播放、作者入口、短篇样例与 VN2–VN3 仍未交付。实际管理器登记、任务与路径认领以 goalctl 账本为准。
 
 ## 接续
 
 [Goal 程序](docs/goals/README.md)说明登记、派发、合并与关闭；manager 遵循[章程](docs/goals/manager.md)，worker 遵循[协议](docs/goals/worker.md)。
 
-2026-10-31：Gamebook 完整固定包继续作为已交付基线。Web VN 当前处于 VN0 原生执行与兼容验收；尚无 VN 能力交付。实时状态以 `task goal -- status` 为准。
+2026-10-31：Gamebook 完整固定包继续作为已交付基线。VN0 原生执行与双格式兼容已在 `f1adb040de40fc2b7b1f973afb64d562475343e5` 通过五项主线 gate 并验收。G-042（VN1 可安装阅读 API）待派发；播放器、媒体、作者流程、短篇样例及 VN2–VN3 尚未交付。实时状态以 `task goal -- status` 为准。

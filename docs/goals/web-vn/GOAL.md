@@ -8,7 +8,7 @@ areas:
 
 # Web VN 与按需分发
 
-状态：2026-10-31，VN0 语义与兼容设计已接受，原生执行实现正在工作分支验收；完整 VN0–VN3 范围保持不变，尚未交付 VN 能力。manager 与任务接续见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 已交付，本 Goal 面向逐句对白、背景/立绘与音轨的传统视觉小说。
+状态：VN0 语义与兼容设计已接受，原生执行与双格式兼容已在 `f1adb040de40fc2b7b1f973afb64d562475343e5` 通过 G5、R1、Web、scripts、docs 五项主线 gate 并验收。G-042（VN1 可安装阅读 API）待派发；播放器、媒体解析/播放、作者入口、短篇样例与 VN2–VN3 尚未交付。manager 与任务接续见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 保持为已验收基线。
 
 ## 结果
 
@@ -16,21 +16,22 @@ areas:
 
 内容、媒体、本地化和授权仍由宿主所有；Narrata 提供执行与可恢复呈现语义、第一方播放器及参考作者流程。REZICS 需要增补的能力只记录在[集成文档](../../integrations/rezics.md#web-vn-后续需要的宿主能力)，本 Goal 不修改任何 REZICS 仓库。
 
-## 启动条件与范围
+## 当前范围
 
-1. [Gamebook SDK](../../../packages/narrata/web/README.md) 的 M1 固定包及其按需加载、内容解析、在线存档接口有验收基线；实际源码与包身份见[固定输入](../../integrations/rezics.md#narrata-自己的交付依赖)。
-2. 现有 web-and-rezics Goal 已关闭；或双方已逐路径移交，且相应路径没有未关闭任务认领。按[根索引](../../../GOAL.md)与实时账本核对，不以交付包存在代替关闭或移交。空 areas 不表示可以越过当前 Goal 的 packages/narrata/** 归属。
-3. 未来 manager 先读本页与 state.md，核对范围，填写实际 areas 后登记当前 manager。此时才生成实施简报。
+本 Goal 的完整结果仍为 VN0 → VN1 → VN2 → VN3。VN0 原生执行与兼容实现已通过主线五项 gate 并验收；已交付 Gamebook 基线固定不变，按[集成交接](../../integrations/rezics.md#narrata-自己的交付依赖)与[包说明](../../../packages/narrata/web/README.md)读取。
 
-## VN0：确定第一方 VN 语义
+初始范围以本文件 frontmatter 的 `areas` 为准，每项任务仍由实际简报逐路径认领。格式变化继续遵守 ADR 0024：使用真实任务保留共享 ADR 槽位、保留旧读取路径并新增兼容证据；现有 `fixtures/compat/**` 语料只读。
+## VN0：确定第一方 VN 语义（已验收）
 
-以节点组合与 kernel 为基础，审查旧 Flow/Scene 的语义和测试中可复用的部分；不继续在 RuntimeStateV0 上增加新产品能力。围绕短篇样例确定对白推进、说话者、选择、场景与可恢复呈现状态，不以任意运行时插件作为前提。
+节点组合与 kernel 上的第一方 VN 语义已实现。旧 Flow/Scene 只作为行为证据；不向 RuntimeStateV0 增加产品能力，也不以任意运行时插件为前提。对白推进、说话者、选择、场景与可恢复呈现语义见 [ADR 0024](../../adr/0024-first-party-visual-novel.md)。
 
-写明 safe point、呈现游标、背景/角色层、音轨状态、逻辑与资源准备的关系。资产只以引用进入程序/状态，DOM、播放器句柄与解码缓冲由播放端管理。保存或交换格式变化先有 ADR、读取/迁移路径与新冻结语料计划；此计划不预先确定字段或编码。
+ADR 0024 记录已接受的 safe point、呈现恢复、场景/音轨和宿主边界；具体类型与编码由实现、生成 schema 和兼容语料表达。资产只以引用进入程序/状态，DOM、播放器句柄与解码缓冲由播放端管理。未来格式变化仍须先有 ADR、旧格式读取/迁移路径与新冻结语料计划。
 
 验收：同一输入轨迹可确定执行；至少覆盖连续对白、分支、场景转换与恢复；Gamebook 现有兼容证据继续有效。
 
 ## VN1：可恢复的播放器与公开接口
+
+G-042（待派发）只交付可安装的有类型阅读 API；播放器 UI、媒体解析/播放及桌面/手机浏览器旅程仍未交付，不能据此标记整个 VN1 完成。
 
 交付浏览器可安装的 VN 能力、类型和参考播放器：逐句推进、说话者、背景与立绘、选项、基本音乐/语音。视觉效果由可恢复的场景状态协调；恢复不靠从开头重放全部动画或外部副作用。
 
