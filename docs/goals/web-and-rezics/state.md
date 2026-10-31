@@ -39,7 +39,9 @@
 当前 B 根加完整历史 pack 的注册/重开已交付，复核记录在 `.temp/review-history-registration.md`；历史名字表、旧 A 根后 NodeBook/Session 一致性及各自懒 loader 仍归下一任务。不能把省略 timeline/identity/analysis 的断言、笼统 history_truncated 或终态相等算完整继续阅读。上述维护证据已齐备并完成本地验收，剩余历史组合在下一任务验证；不能据此声称完整 M2 或全 Goal 完成。
 维护最终 raw/gzip：reader Wasm 1,373,924/385,105，作者 Wasm 2,896,459/737,581，总 JS 631,853/135,714；reader/作者图原上限不变。SDK 三个 Wasm 采用 z 与按模块 ESM 压缩已写工具链。manager 证据在 `.temp/goal/runs/G-038/manager-preserved/` 与 `main-acceptance/`，原始失败实库日志由最终成功重跑覆盖，不作通过证据。
 
-M3 契约文档已在 f903f5d 按源码与 Accepted ADR0022 收敛：更新已揭示地图状态/坐标，不删章节锁/社区比例等后续意图；choices/content 的机械规则回指类型和测试，179 文件链接检查通过。最终 Goal 关闭还须处理 `.temp/final-contract-docs-audit.md` 列出的三条长期文档入链，不能只归档目录留下悬空链接。
+M3 契约文档已在 f903f5d 按源码与 Accepted ADR0022 收敛：更新已揭示地图状态/坐标，不删章节锁/社区比例等后续意图；choices/content 的机械规则回指类型和测试。031100e 已将三条长期文档入链改为永久 SDK/固定输入说明，179 文件链接检查通过，未提前宣称完整交付或关闭 Goal。
+
+完整逐项证据清单在 `.temp/final-goal-evidence-audit.md`；历史三份固定 tarball 已重新计算 SHA-256，均匹配元数据，记录 `.temp/delivery/historical-package-recheck.json`。G031 作者图真实浏览器桌面/390px 证据属于源码示例，当前安装包检查只覆盖图解码和类型；最终交付还需窄范围的公共 tarball 渲染补证。独立脚本已准备于 `.temp/final-author-graph/`，仅语法检查通过；待最终外部安装包及重型空槽运行并查看六张截图，不重复未变的全套图回归或 SQL 规模测量。G039 attempt 2 当前修复后的构建/聚焦测试尚未通过，不能复用修复前通过日志宣称已验收。
 
 ## 接续约束与主机
 
