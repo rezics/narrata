@@ -1,0 +1,23 @@
+{
+  "content": {
+    "host:speaker.hero": "Mira",
+    "host:speaker.friend": "Tomas",
+    "host:dialogue.one": "The last train is already gone.",
+    "host:dialogue.two": "Then we will take the river road.",
+    "host:dialogue.three": "It ends at the old hall.",
+    "host:dialogue.four": "Someone left the lantern burning.",
+    "host:option.left": "Take the narrow passage.",
+    "host:option.right": "Cross the courtyard."
+  },
+  "media": [
+    {"kind": "image", "provider": "demo", "key": "bg/room", "revision": "r1"},
+    {"kind": "image", "provider": "demo", "key": "portrait/hero-neutral", "revision": "v4"},
+    {"kind": "image", "provider": "demo", "key": "bg/hall", "revision": "r2"},
+    {"kind": "image", "provider": "demo", "key": "portrait/hero-alert", "revision": "v5"},
+    {"kind": "image", "provider": "demo", "key": "portrait/friend", "revision": "v2"},
+    {"kind": "audio", "provider": "demo", "key": "music/theme", "revision": "a7"},
+    {"kind": "audio", "provider": "demo", "key": "voice/one", "revision": "a1"},
+    {"kind": "audio", "provider": "demo", "key": "voice/three", "revision": "a3"},
+    {"kind": "audio", "provider": "demo", "key": "voice/four", "revision": "a4"}
+  ]
+}

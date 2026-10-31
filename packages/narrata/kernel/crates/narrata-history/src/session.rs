@@ -70,11 +70,14 @@ pub(crate) fn checked_state<D: Domain>(
     domain: &D,
     state: &D::State,
 ) -> Result<(Object, D::State), HistoryError> {
-    let object = Object::new(D::STATE_KIND, D::STATE_SCHEMA, &domain.encode_state(state));
+    let schema = domain.state_schema(state);
+    let object = Object::new(D::STATE_KIND, schema, &domain.encode_state(state));
     let decoded = domain
-        .decode_state(object.payload())
+        .decode_state_schema(object.schema(), object.payload())
         .map_err(|error| HistoryError::Corrupt(object.id(), error.to_string()))?;
-    if domain.encode_state(&decoded) != object.payload() {
+    if domain.state_schema(&decoded) != object.schema()
+        || domain.encode_state(&decoded) != object.payload()
+    {
         return Err(HistoryError::Corrupt(
             object.id(),
             "state does not re-encode to the same bytes".to_owned(),
@@ -87,9 +90,15 @@ fn checked_input<D: Domain>(
     domain: &D,
     input: &D::Input,
 ) -> Result<(Object, D::Input), HistoryError> {
-    let object = Object::new(D::INPUT_KIND, D::INPUT_SCHEMA, &domain.encode_input(input));
+    let object = Object::new(
+        D::INPUT_KIND,
+        domain.input_schema(input),
+        &domain.encode_input(input),
+    );
     let decoded = decode_input(domain, &object)?;
-    if domain.encode_input(&decoded) != object.payload() {
+    if domain.input_schema(&decoded) != object.schema()
+        || domain.encode_input(&decoded) != object.payload()
+    {
         return Err(HistoryError::Corrupt(
             object.id(),
             "input does not re-encode to the same bytes".to_owned(),
@@ -99,20 +108,20 @@ fn checked_input<D: Domain>(
 }
 
 fn decode_state<D: Domain>(domain: &D, object: &Object) -> Result<D::State, HistoryError> {
-    if object.kind() != D::STATE_KIND || object.schema() != D::STATE_SCHEMA {
+    if object.kind() != D::STATE_KIND || !D::supports_state_schema(object.schema()) {
         return Err(HistoryError::ObjectKind(object.id()));
     }
     domain
-        .decode_state(object.payload())
+        .decode_state_schema(object.schema(), object.payload())
         .map_err(|error| HistoryError::Corrupt(object.id(), error.to_string()))
 }
 
 fn decode_input<D: Domain>(domain: &D, object: &Object) -> Result<D::Input, HistoryError> {
-    if object.kind() != D::INPUT_KIND || object.schema() != D::INPUT_SCHEMA {
+    if object.kind() != D::INPUT_KIND || !D::supports_input_schema(object.schema()) {
         return Err(HistoryError::ObjectKind(object.id()));
     }
     domain
-        .decode_input(object.payload())
+        .decode_input_schema(object.schema(), object.payload())
         .map_err(|error| HistoryError::Corrupt(object.id(), error.to_string()))
 }
 
@@ -224,7 +233,11 @@ impl<B: StorageBackend, R: Registry> History<B, R> {
             )
             .map_err(history)?;
             let next = step(domain, &state, &input).map_err(AuditError::Step)?;
-            let replayed = object_id(D::STATE_KIND, D::STATE_SCHEMA, &domain.encode_state(&next));
+            let replayed = object_id(
+                D::STATE_KIND,
+                domain.state_schema(&next),
+                &domain.encode_state(&next),
+            );
             if replayed != header.state {
                 return Err(AuditError::Diverged {
                     commit: *id,

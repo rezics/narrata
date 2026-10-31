@@ -1,7 +1,7 @@
 //! Node sessions driven by the kernel history layer. JSON R2 exports are import-only.
 
 use crate::{
-    ArtifactId, ChoicePointId, ChunkPins, CommitId, Error, ExecutionId, ObjectId, OptionId,
+    ArtifactId, ChoicePointId, ChunkPins, CommitId, Error, ExecutionId, NodeId, ObjectId, OptionId,
     Program, ProposalRequest, Result,
     history::{NodeDomain, history_error},
     json::parse_json_limited,
@@ -446,7 +446,7 @@ impl<B: StorageBackend> Session<B> {
         records.sort_by_key(|(id, c)| (c.depth, *id));
         Ok(records.into_iter())
     }
-    fn advance(&mut self, expected: &CommitId, input: Input) -> Result<CommitId> {
+    fn advance_input(&mut self, expected: &CommitId, input: Input) -> Result<CommitId> {
         if *expected != self.current.id {
             return Err(Error::new(
                 "stale_input",
@@ -514,7 +514,7 @@ impl<B: StorageBackend> Session<B> {
         choice_point: ChoicePointId,
         options: Vec<OptionId>,
     ) -> Result<CommitId> {
-        self.advance(
+        self.advance_input(
             expected,
             Input::Choose {
                 choice_point,
@@ -522,8 +522,11 @@ impl<B: StorageBackend> Session<B> {
             },
         )
     }
+    pub fn advance(&mut self, expected: &CommitId, dialogue: NodeId) -> Result<CommitId> {
+        self.advance_input(expected, Input::Advance { dialogue })
+    }
     pub fn propose(&mut self, expected: &CommitId, request: &ProposalRequest) -> Result<CommitId> {
-        self.advance(expected, crate::proposal::materialize(expected, request)?)
+        self.advance_input(expected, crate::proposal::materialize(expected, request)?)
     }
     pub fn checkout(&mut self, commit: &CommitId) -> Result<()> {
         let target = self.load(*commit)?;
@@ -1076,7 +1079,8 @@ impl<B: StorageBackend> Session<B> {
         };
         let product = &self.program.manifest().product;
         let state = &record.state;
-        let presentation = items(record.id, self.step(record.id)?.presentation);
+        let step = self.step(record.id)?;
+        let presentation = items(record.id, step.presentation);
         let variables = |values: &BTreeMap<String, crate::Scalar>| -> Vec<VariableView> {
             values
                 .iter()
@@ -1119,6 +1123,8 @@ impl<B: StorageBackend> Session<B> {
                 id: product.id.clone(),
                 title: product.title.clone(),
             },
+            scene: state.scene.clone(),
+            music_action: step.music_action,
             presentation,
             interaction: machine.interaction(state, names)?,
             shared: state

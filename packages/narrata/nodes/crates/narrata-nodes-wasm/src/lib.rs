@@ -28,7 +28,7 @@ mod maintenance_tests {
             .collect::<String>();
         book.restore(&save).unwrap();
         let view: BookView = serde_json::from_str(&book.inspect().unwrap()).unwrap();
-        if let narrata_nodes::view::Interaction::Choose {
+        if let narrata_nodes::view::GamebookInteraction::Choose {
             choice_point,
             options,
             min,
@@ -50,6 +50,17 @@ mod maintenance_tests {
             book.inspect().unwrap();
         }
     }
+
+    #[test]
+    fn gamebook_reader_rejects_visual_novel_artifacts() {
+        let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../../fixtures/compat/nodes-vn-v1");
+        let pack = std::fs::read(directory.join("story.narpack")).unwrap();
+        let (program, _) = Program::from_pack(&pack).unwrap();
+        let error = ensure_gamebook(&program, "pack", "NodeBook accepts Gamebook artifacts only")
+            .unwrap_err();
+        assert_eq!(error.code, "version");
+    }
 }
 
 use std::{
@@ -68,6 +79,14 @@ use wasm_bindgen::prelude::*;
 
 fn js_error(error: Error) -> JsError {
     JsError::new(&error.to_string())
+}
+
+fn ensure_gamebook(program: &Program, path: &str, message: &str) -> narrata_nodes::Result<()> {
+    if program.is_visual_novel() {
+        Err(Error::new("version", path, message))
+    } else {
+        Ok(())
+    }
 }
 
 fn parse<T: std::str::FromStr>(text: &str, path: &str, expected: &str) -> Result<T, JsError> {
@@ -111,6 +130,12 @@ struct GraphPublication<'a> {
 #[wasm_bindgen(js_name = publishGraph)]
 pub fn publish_graph(pack: &[u8], outlines: Option<String>) -> Result<String, JsError> {
     let (program, names) = Program::from_pack(pack).map_err(js_error)?;
+    ensure_gamebook(
+        &program,
+        "pack",
+        "publishGraph accepts Gamebook artifacts only",
+    )
+    .map_err(js_error)?;
     program.verify_artifact().map_err(js_error)?;
     let outlines: Vec<narrata_nodes::ContentOutline> = outlines
         .as_deref()
@@ -342,6 +367,8 @@ impl NodeBook {
     #[wasm_bindgen(constructor)]
     pub fn new(pack: &[u8], execution: &str) -> Result<NodeBook, JsError> {
         let (program, names) = Program::from_pack(pack).map_err(js_error)?;
+        ensure_gamebook(&program, "pack", "NodeBook accepts Gamebook artifacts only")
+            .map_err(js_error)?;
         program.verify_artifact().map_err(js_error)?;
         let analysis = analyze(&program, names.as_ref()).map_err(js_error)?;
         let execution = parse(execution, "execution", "execution:<32 hex digits>")?;
@@ -555,6 +582,12 @@ impl NodeBook {
     #[wasm_bindgen(js_name = registerHistoryPack)]
     pub fn register_history_pack(&mut self, bytes: &[u8]) -> Result<(), JsError> {
         let (program, names) = Program::from_pack(bytes).map_err(js_error)?;
+        ensure_gamebook(
+            &program,
+            "pack",
+            "NodeBook history packs must be Gamebook artifacts",
+        )
+        .map_err(js_error)?;
         program.verify_artifact().map_err(js_error)?;
         let analysis = analyze(&program, names.as_ref()).map_err(js_error)?;
         self.register(
@@ -746,19 +779,26 @@ impl NodeBook {
 
     /// The text-free book view as JSON.
     pub fn inspect(&self) -> Result<String, JsError> {
+        let graphs = self
+            .active()
+            .analysis
+            .as_ref()
+            .map_or_else(Vec::new, |analysis| analysis.graphs.clone())
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<narrata_nodes::Result<Vec<_>>>()
+            .map_err(js_error)?;
         self.finish(json(&BookView {
             view: self
                 .opened()?
                 .view_with_names(|id| self.artifacts.get(&id).and_then(|a| a.names.as_ref()))
+                .map_err(js_error)?
+                .try_into()
                 .map_err(js_error)?,
             page: self.opened()?.page().map_err(js_error)?,
             // Runtime inspection must not eagerly scan the whole work. Publication
             // analysis is a separate operation for hosts that need the full graph.
-            graphs: self
-                .active()
-                .analysis
-                .as_ref()
-                .map_or_else(Vec::new, |a| a.graphs.clone()),
+            graphs,
             diagnostics: self
                 .active()
                 .analysis

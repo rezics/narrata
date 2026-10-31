@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MediaRef",
+  "description": "A content-owned media identity. Narrata stores the provider's immutable key and revision,\nnever a URL, credential, decoded byte buffer or player handle.",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/MediaKind"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "provider",
+    "key",
+    "revision"
+  ],
+  "$defs": {
+    "MediaKind": {
+      "type": "string",
+      "enum": [
+        "image",
+        "audio"
+      ]
+    }
+  }
+}

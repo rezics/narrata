@@ -35,6 +35,8 @@ pub struct GraphAnalysis {
 #[serde(rename_all = "snake_case")]
 pub enum NodeKind {
     Passage,
+    Dialogue,
+    Scene,
     Branch,
     Mutate,
     Call,
@@ -141,6 +143,14 @@ pub fn analyze(program: &Program, names: Option<&NameTable>) -> Result<Analysis>
                     if let Some(next) = &passage.next {
                         node.edges.push(edge(EdgeKind::Next, None, None, next));
                     }
+                }
+                Plan::Dialogue { next, .. } => {
+                    node.kind = NodeKind::Dialogue;
+                    node.edges.push(edge(EdgeKind::Next, None, None, next));
+                }
+                Plan::Scene { next, .. } => {
+                    node.kind = NodeKind::Scene;
+                    node.edges.push(edge(EdgeKind::Next, None, None, next));
                 }
                 Plan::Branch {
                     when_true,

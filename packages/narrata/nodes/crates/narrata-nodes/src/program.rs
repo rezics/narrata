@@ -43,10 +43,13 @@ impl MemorySource {
                 },
             )
             .map_err(|error| Error::new("decode", "object", error.to_string()))?;
-            if opened.schema_version != wire::SCHEMA {
+            if !matches!(
+                opened.schema_version,
+                wire::SCHEMA | wire::VISUAL_NOVEL_SCHEMA
+            ) {
                 return Err(Error::new("decode", "object", "unsupported object schema"));
             }
-            wire::id_of(opened.kind, opened.payload)
+            wire::id_of_schema(opened.kind, opened.schema_version, opened.payload)
         };
         self.objects.insert(id, envelope);
         Ok(id)
@@ -177,14 +180,52 @@ impl Program {
     /// Chunk-local checks need no tombstones (ADR 0013 §8); lookup, proposals and full
     /// artifact verification must fetch and check the manifest's tombstone object.
     pub fn from_manifest(manifest_envelope: &[u8], source: Box<dyn ChunkSource>) -> Result<Self> {
-        let (manifest, manifest_id) = wire::open(
+        let inspected = inspect_envelope(
             manifest_envelope,
-            wire::KIND_MANIFEST,
-            MAX_MANIFEST_BYTES,
-            "manifest",
-            wire::decode_manifest,
-            wire::encode_manifest,
-        )?;
+            &EnvelopeLimits {
+                max_envelope_bytes: MAX_MANIFEST_BYTES as u64 + 56,
+                max_payload_bytes: MAX_MANIFEST_BYTES as u64,
+            },
+        )
+        .map_err(|error| Error::new("decode", "manifest", error.to_string()))?;
+        let schema = inspected.schema_version;
+        let (manifest, manifest_id) = match schema {
+            wire::SCHEMA => wire::open_schema(
+                manifest_envelope,
+                wire::KIND_MANIFEST,
+                schema,
+                MAX_MANIFEST_BYTES,
+                "manifest",
+                wire::decode_manifest,
+                wire::encode_manifest,
+            )?,
+            wire::VISUAL_NOVEL_SCHEMA => wire::open_schema(
+                manifest_envelope,
+                wire::KIND_MANIFEST,
+                schema,
+                MAX_MANIFEST_BYTES,
+                "manifest",
+                |r| wire::decode_manifest_schema(r, schema),
+                |manifest| wire::encode_manifest_schema(manifest, schema),
+            )?,
+            _ => {
+                return Err(Error::new(
+                    "decode",
+                    "manifest",
+                    "unsupported manifest schema",
+                ));
+            }
+        };
+        if (schema == wire::SCHEMA && manifest.source_format != crate::FORMAT_VERSION)
+            || (schema == wire::VISUAL_NOVEL_SCHEMA
+                && manifest.source_format != crate::VISUAL_NOVEL_FORMAT_VERSION)
+        {
+            return Err(Error::new(
+                "version",
+                "manifest.source_format",
+                "manifest schema and source format do not match",
+            ));
+        }
         check_manifest(&manifest)?;
         let chunks = Arc::new(Mutex::new(ChunkCache {
             capacity: Self::DEFAULT_CHUNK_CAPACITY,
@@ -251,6 +292,14 @@ impl Program {
         self.artifact_id
     }
 
+    pub fn source_format(&self) -> u16 {
+        self.manifest.source_format
+    }
+
+    pub fn is_visual_novel(&self) -> bool {
+        self.manifest.source_format == crate::VISUAL_NOVEL_FORMAT_VERSION
+    }
+
     pub fn manifest(&self) -> &Manifest {
         &self.manifest
     }
@@ -298,13 +347,19 @@ impl Program {
             .get(index as usize)
             .ok_or_else(|| Error::new("reference", "chunks", "chunk index out of range"))?;
         let envelope = self.source.load(id)?;
-        let (chunk, actual) = wire::open(
+        let schema = if self.is_visual_novel() {
+            wire::VISUAL_NOVEL_SCHEMA
+        } else {
+            wire::SCHEMA
+        };
+        let (chunk, actual) = wire::open_schema(
             &envelope,
             wire::KIND_CHUNK,
+            schema,
             MAX_CHUNK_BYTES,
             "chunk",
-            wire::decode_chunk,
-            wire::encode_chunk,
+            |r| wire::decode_chunk_schema(r, schema),
+            |chunk| wire::encode_chunk_schema(chunk, schema),
         )?;
         if actual != *id {
             return Err(Error::new(

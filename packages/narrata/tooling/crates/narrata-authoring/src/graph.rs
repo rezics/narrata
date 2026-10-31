@@ -127,6 +127,13 @@ fn cluster_id(source: &ClusterSource) -> ClusterId {
 /// Includes every static node. Return edges start at the matching callee return node, so
 /// called graphs connect to their continuations rather than appearing as dead ends.
 pub fn structural_graph(program: &Program) -> Result<StructuralGraph> {
+    if program.is_visual_novel() {
+        return Err(Error::new(
+            "version",
+            "graph",
+            "Gamebook graph projections do not represent VN scene semantics",
+        ));
+    }
     let manifest = program.manifest();
     let mut graphs = BTreeMap::new();
     for reference in manifest.graphs.keys() {
@@ -263,6 +270,13 @@ pub fn structural_graph(program: &Program) -> Result<StructuralGraph> {
                         }
                     }
                     NodeKind::Return
+                }
+                Plan::Dialogue { .. } | Plan::Scene { .. } => {
+                    return Err(Error::new(
+                        "version",
+                        id.to_string(),
+                        "this graph projection does not represent VN node semantics",
+                    ));
                 }
             };
             out.nodes.push(Node {

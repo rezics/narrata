@@ -14,6 +14,13 @@ use narrata_nodes::{
 
 /// Applies comma-separated steps. A step is option aliases joined by `+`; `~` chooses none.
 pub fn act(session: &mut Session, names: Option<&NameTable>, actions: &str) -> Result<()> {
+    if session.program().is_visual_novel() {
+        return Err(Error::new(
+            "version",
+            "actions",
+            "this command accepts Gamebook artifacts only",
+        ));
+    }
     let names = names.ok_or_else(|| {
         Error::new(
             "names",
@@ -50,11 +57,22 @@ pub fn act(session: &mut Session, names: Option<&NameTable>, actions: &str) -> R
 }
 
 pub fn book(session: &Session, names: Option<&NameTable>) -> Result<BookView> {
+    if session.program().is_visual_novel() {
+        return Err(Error::new(
+            "version",
+            "view",
+            "this command exposes Gamebook views only",
+        ));
+    }
     let analysis = analyze(session.program(), names)?;
     Ok(BookView {
-        view: session.view(names)?,
+        view: session.view(names)?.try_into()?,
         page: session.page()?,
-        graphs: analysis.graphs,
+        graphs: analysis
+            .graphs
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_>>()?,
         diagnostics: analysis.diagnostics,
     })
 }
@@ -197,6 +215,13 @@ pub fn render(
             }
             lines.push(format!("(outcome: {outcome})"));
         }
+        Interaction::Advance { .. } => {
+            return Err(Error::new(
+                "version",
+                "view",
+                "this command does not render visual novel interactions",
+            ));
+        }
     }
     Ok(lines.join("\n"))
 }
@@ -205,6 +230,13 @@ pub fn new_session(
     program: Arc<narrata_nodes::Program>,
     execution: Option<&str>,
 ) -> Result<Session> {
+    if program.is_visual_novel() {
+        return Err(Error::new(
+            "version",
+            "pack",
+            "the command-line player accepts Gamebook artifacts only",
+        ));
+    }
     let execution = match execution {
         Some(text) => text.parse().map_err(|_| {
             Error::new(

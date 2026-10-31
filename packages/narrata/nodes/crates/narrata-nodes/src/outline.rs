@@ -191,6 +191,13 @@ pub fn diagnose_outline(
     names: Option<&NameTable>,
     outline: &ContentOutline,
 ) -> Result<Vec<Diagnostic>> {
+    if program.is_visual_novel() {
+        return Err(Error::new(
+            "version",
+            "outline",
+            "Gamebook content outlines do not describe VN dialogue and scene references",
+        ));
+    }
     if outline.format_version != 1 {
         return Err(Error::new(
             "outline_version",

@@ -4,10 +4,12 @@
 
 use std::{borrow::Cow, collections::BTreeMap};
 
+use narrata_kernel::codec::{EnvelopeLimits, inspect_envelope};
+
 use crate::{
     ArtifactId, ChoicePointId, CommitId, Error, MAX_CALL_DEPTH, MAX_STATE_BYTES, NodeId, ObjectId,
     OptionId, Program, Result, Scalar,
-    plan::{CallTarget, Graph, GraphRef, OptionPlan, Passage, Plan},
+    plan::{CallTarget, Graph, GraphRef, MediaKind, OptionPlan, Passage, Plan, SceneTarget},
     proposal::{apply_proposal, check_overlay},
     wire,
 };
@@ -21,6 +23,9 @@ pub struct State {
     pub frames: Vec<Frame>,
     pub next_instance: u32,
     pub finished: Option<Finished>,
+    /// Present for every VN state, including an initially empty scene. Its object schema
+    /// selects the VN state payload while `None` preserves the Gamebook schema-1 bytes.
+    pub scene: Option<SceneTarget>,
 }
 
 /// A graph instance. The top frame of a persisted state waits `at` a choice point of its
@@ -114,6 +119,8 @@ pub enum Input {
         options: Vec<OptionPlan>,
         nodes: Vec<(NodeId, Passage)>,
     },
+    /// Advance exactly the dialogue node currently shown by the parent state.
+    Advance { dialogue: NodeId },
 }
 
 /// Matches the kernel node-session commit API: the identity is this payload's object ID and
@@ -129,29 +136,45 @@ pub struct Commit {
 
 impl State {
     pub fn encode(&self) -> Vec<u8> {
-        wire::encode_state(self)
+        wire::encode_state_schema(self, self.schema())
+    }
+
+    pub(crate) fn schema(&self) -> u16 {
+        if self.scene.is_some() {
+            wire::VISUAL_NOVEL_SCHEMA
+        } else {
+            wire::SCHEMA
+        }
     }
 
     pub fn id(&self) -> ObjectId {
-        wire::id_of(wire::KIND_STATE, &self.encode())
+        wire::id_of_schema(wire::KIND_STATE, self.schema(), &self.encode())
     }
 
     pub fn envelope(&self) -> Vec<u8> {
-        wire::seal(wire::KIND_STATE, &self.encode()).1
+        wire::seal_schema(wire::KIND_STATE, self.schema(), &self.encode()).1
     }
 }
 
 impl Input {
     pub fn encode(&self) -> Vec<u8> {
-        wire::encode_input(self)
+        wire::encode_input_schema(self, self.schema())
+    }
+
+    pub(crate) fn schema(&self) -> u16 {
+        if matches!(self, Self::Advance { .. }) {
+            wire::VISUAL_NOVEL_SCHEMA
+        } else {
+            wire::SCHEMA
+        }
     }
 
     pub fn id(&self) -> ObjectId {
-        wire::id_of(wire::KIND_INPUT, &self.encode())
+        wire::id_of_schema(wire::KIND_INPUT, self.schema(), &self.encode())
     }
 
     pub fn envelope(&self) -> Vec<u8> {
-        wire::seal(wire::KIND_INPUT, &self.encode()).1
+        wire::seal_schema(wire::KIND_INPUT, self.schema(), &self.encode()).1
     }
 }
 
@@ -226,14 +249,40 @@ fn invalid(message: impl Into<String>) -> Error {
 /// Decodes a State envelope and checks it against the artifact. This proves the state is
 /// well formed for the artifact, not that play can reach it; see `Session::verify_path`.
 pub fn decode_state(program: &Program, envelope: &[u8]) -> Result<(State, ObjectId)> {
-    let (state, id) = wire::open(
-        envelope,
-        wire::KIND_STATE,
-        MAX_STATE_BYTES,
-        "state",
-        wire::decode_state,
-        wire::encode_state,
-    )?;
+    let limits = EnvelopeLimits {
+        max_envelope_bytes: MAX_STATE_BYTES as u64 + 56,
+        max_payload_bytes: MAX_STATE_BYTES as u64,
+    };
+    let inspected = inspect_envelope(envelope, &limits)
+        .map_err(|error| Error::new("decode", "state", error.to_string()))?;
+    let schema = inspected.schema_version;
+    let (state, id) = match schema {
+        wire::SCHEMA if !program.is_visual_novel() => wire::open_schema(
+            envelope,
+            wire::KIND_STATE,
+            schema,
+            MAX_STATE_BYTES,
+            "state",
+            wire::decode_state_schema1,
+            wire::encode_state_schema1,
+        )?,
+        wire::VISUAL_NOVEL_SCHEMA if program.is_visual_novel() => wire::open_schema(
+            envelope,
+            wire::KIND_STATE,
+            schema,
+            MAX_STATE_BYTES,
+            "state",
+            wire::decode_state_schema2,
+            wire::encode_state_schema2,
+        )?,
+        _ => {
+            return Err(Error::new(
+                "decode",
+                "state",
+                "state schema does not match artifact",
+            ));
+        }
+    };
     check_state(program, &state)?;
     Ok((state, id))
 }
@@ -252,6 +301,12 @@ pub(crate) fn check_state(program: &Program, state: &State) -> Result<()> {
         return Err(invalid(
             "shared variables differ from the product declaration",
         ));
+    }
+    if state.scene.is_some() != program.is_visual_novel() {
+        return Err(invalid("scene state must match the artifact dialect"));
+    }
+    if let Some(scene) = &state.scene {
+        validate_scene_state(scene)?;
     }
     if let Some(finished) = &state.finished {
         if !state.frames.is_empty() {
@@ -307,17 +362,18 @@ pub(crate) fn check_state(program: &Program, state: &State) -> Result<()> {
             .plan(&graph, &frame.node)
             .ok_or_else(|| invalid(format!("unknown node {}", frame.node)))?;
         match state.frames.get(index + 1) {
-            None => {
-                let Plan::Passage(passage) = &*plan else {
-                    return Err(invalid("the top frame waits at a passage"));
-                };
-                let at = frame
-                    .at
-                    .ok_or_else(|| invalid("the top frame waits at a choice point"))?;
-                if !passage.choice_points.iter().any(|point| point.id == at) {
-                    return Err(invalid(format!("unknown choice point {at}")));
+            None => match &*plan {
+                Plan::Passage(passage) => {
+                    let at = frame
+                        .at
+                        .ok_or_else(|| invalid("the top frame waits at a choice point"))?;
+                    if !passage.choice_points.iter().any(|point| point.id == at) {
+                        return Err(invalid(format!("unknown choice point {at}")));
+                    }
                 }
-            }
+                Plan::Dialogue { .. } if frame.at.is_none() => {}
+                _ => return Err(invalid("the top frame waits at a valid interaction")),
+            },
             Some(above) => {
                 let Plan::Call { target, .. } = &*plan else {
                     return Err(invalid("a lower frame waits at a call"));
@@ -345,14 +401,41 @@ pub fn decode_input(
     parent: &State,
     envelope: &[u8],
 ) -> Result<(Input, ObjectId)> {
-    let (input, id) = wire::open(
-        envelope,
-        wire::KIND_INPUT,
-        MAX_INPUT_BYTES,
-        "input",
-        wire::decode_input,
-        wire::encode_input,
-    )?;
+    let limits = EnvelopeLimits {
+        max_envelope_bytes: MAX_INPUT_BYTES as u64 + 56,
+        max_payload_bytes: MAX_INPUT_BYTES as u64,
+    };
+    let inspected = inspect_envelope(envelope, &limits)
+        .map_err(|error| Error::new("decode", "input", error.to_string()))?;
+    let schema = inspected.schema_version;
+    let (input, id) = match schema {
+        wire::SCHEMA => wire::open_schema(
+            envelope,
+            wire::KIND_INPUT,
+            schema,
+            MAX_INPUT_BYTES,
+            "input",
+            wire::decode_input_schema1,
+            wire::encode_input_schema1,
+        )?,
+        wire::VISUAL_NOVEL_SCHEMA if program.is_visual_novel() => wire::open_schema(
+            envelope,
+            wire::KIND_INPUT,
+            schema,
+            MAX_INPUT_BYTES,
+            "input",
+            wire::decode_input_schema2,
+            |input| wire::encode_input_schema(input, schema),
+        )?,
+        _ => return Err(Error::new("decode", "input", "unsupported input schema")),
+    };
+    if input.schema() != schema {
+        return Err(Error::new(
+            "decode",
+            "input",
+            "input schema does not match its payload tag",
+        ));
+    }
     match &input {
         Input::Choose {
             choice_point,
@@ -363,8 +446,53 @@ pub fn decode_input(
         Input::Propose { .. } => {
             apply_proposal(program, parent_commit, parent, &input)?;
         }
+        Input::Advance { dialogue } => check_advance(program, parent, dialogue)?,
     }
     Ok((input, id))
+}
+
+pub(crate) fn check_advance(program: &Program, parent: &State, dialogue: &NodeId) -> Result<()> {
+    if !program.is_visual_novel() {
+        return Err(Error::new(
+            "action",
+            "input",
+            "advance requires a VN artifact",
+        ));
+    }
+    let frame = parent
+        .frames
+        .last()
+        .ok_or_else(|| Error::new("finished", "input", "the story has ended"))?;
+    if frame.at.is_some() || frame.node != *dialogue {
+        return Err(Error::new(
+            "action",
+            "input",
+            "the dialogue identity is not the current interaction",
+        ));
+    }
+    let graph = program.graph(&frame.graph)?;
+    if !matches!(graph.nodes.get(&frame.node), Some(Plan::Dialogue { .. })) {
+        return Err(Error::new(
+            "action",
+            "input",
+            "the current interaction is not dialogue",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_scene_state(scene: &SceneTarget) -> Result<()> {
+    if let Some(background) = &scene.background {
+        crate::check::validate_media_ref(background, MediaKind::Image, "state.scene.background")
+            .map_err(|error| invalid(error.to_string()))?;
+    }
+    crate::check::validate_layers(&scene.layers, "state.scene")
+        .map_err(|error| invalid(error.to_string()))?;
+    if let Some(music) = &scene.music {
+        crate::check::validate_media_ref(music, MediaKind::Audio, "state.scene.music")
+            .map_err(|error| invalid(error.to_string()))?;
+    }
+    Ok(())
 }
 
 /// Returns the indices of the chosen options within their choice point.

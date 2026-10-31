@@ -116,6 +116,7 @@ fn waiting(session: &Session, names: &NameTable) -> (ChoicePointId, Vec<OptionVi
             proposals,
             ..
         } => (choice_point, options, proposals),
+        Interaction::Advance { .. } => panic!("the story waits at dialogue"),
         Interaction::Finished { .. } => panic!("the story has ended"),
     }
 }

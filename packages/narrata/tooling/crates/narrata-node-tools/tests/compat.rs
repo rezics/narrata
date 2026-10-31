@@ -30,6 +30,10 @@ fn r1_corpus() -> PathBuf {
     repository().join("fixtures/compat/nodes-r1")
 }
 
+fn vn_corpus() -> PathBuf {
+    repository().join("fixtures/compat/nodes-vn-v1")
+}
+
 fn manifest() -> Value {
     serde_json::from_str(&read_text(&corpus().join("manifest.json")).unwrap()).unwrap()
 }
@@ -62,6 +66,22 @@ fn every_frozen_file_matches_its_recorded_digest() {
         let bytes = read_bytes(&corpus().join(name)).unwrap();
         assert_eq!(
             hex::encode(sha256(&bytes)),
+            entry["sha256"].as_str().unwrap(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn frozen_vn_files_match_their_recorded_digests() {
+    let root = vn_corpus();
+    let manifest: Value =
+        serde_json::from_str(&read_text(&root.join("manifest.json")).unwrap()).unwrap();
+    let artifacts = manifest["artifacts"].as_object().unwrap();
+    assert_eq!(artifacts.len(), 5);
+    for (name, entry) in artifacts {
+        assert_eq!(
+            hex::encode(sha256(&read_bytes(&root.join(name)).unwrap())),
             entry["sha256"].as_str().unwrap(),
             "{name}"
         );
@@ -125,6 +145,17 @@ fn frozen_exports_restore_without_replay_and_verify_from_the_root() {
         };
         assert_eq!(ended, outcome);
     }
+}
+
+#[test]
+fn gamebook_cli_does_not_treat_vn_artifacts_as_choice_only_books() {
+    let directory = vn_corpus();
+    let (program, _) = open_pack(&directory.join("story.narpack")).unwrap();
+    let error = match narrata_node_tools::new_session(program, None) {
+        Ok(_) => panic!("the Gamebook CLI accepted a VN artifact"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code, "version");
 }
 
 #[test]

@@ -33,29 +33,83 @@ impl Domain for NodeDomain {
         state.encode()
     }
 
+    fn state_schema(&self, state: &State) -> u16 {
+        state.schema()
+    }
+
+    fn supports_state_schema(schema: u16) -> bool {
+        matches!(schema, wire::SCHEMA | wire::VISUAL_NOVEL_SCHEMA)
+    }
+
     fn decode_state(&self, payload: &[u8]) -> Result<State, DecodeError> {
-        decode_state(&self.0, &wire::seal(wire::KIND_STATE, payload).1)
-            .map(|(state, _)| state)
-            .map_err(|_| DecodeError::Schema("invalid node state"))
+        let schema = if self.0.is_visual_novel() {
+            wire::VISUAL_NOVEL_SCHEMA
+        } else {
+            wire::SCHEMA
+        };
+        self.decode_state_schema(schema, payload)
+    }
+
+    fn decode_state_schema(&self, schema: u16, payload: &[u8]) -> Result<State, DecodeError> {
+        let expected = if self.0.is_visual_novel() {
+            wire::VISUAL_NOVEL_SCHEMA
+        } else {
+            wire::SCHEMA
+        };
+        if schema != expected {
+            return Err(DecodeError::Schema("state schema does not match artifact"));
+        }
+        decode_state(
+            &self.0,
+            &wire::seal_schema(wire::KIND_STATE, schema, payload).1,
+        )
+        .map(|(state, _)| state)
+        .map_err(|_| DecodeError::Schema("invalid node state"))
     }
 
     fn encode_input(&self, input: &Input) -> Vec<u8> {
         input.encode()
     }
 
+    fn input_schema(&self, input: &Input) -> u16 {
+        input.schema()
+    }
+
+    fn supports_input_schema(schema: u16) -> bool {
+        matches!(schema, wire::SCHEMA | wire::VISUAL_NOVEL_SCHEMA)
+    }
+
     fn decode_input(&self, payload: &[u8]) -> Result<Input, DecodeError> {
+        self.decode_input_schema(wire::SCHEMA, payload)
+    }
+
+    fn decode_input_schema(&self, schema: u16, payload: &[u8]) -> Result<Input, DecodeError> {
+        if schema == wire::VISUAL_NOVEL_SCHEMA && !self.0.is_visual_novel() {
+            return Err(DecodeError::Schema("input schema does not match artifact"));
+        }
         // Domain has no parent context. The runtime and legacy importer additionally check
         // choices and proposal identities against their parent commit and state.
-        wire::open(
-            &wire::seal(wire::KIND_INPUT, payload).1,
+        let envelope = wire::seal_schema(wire::KIND_INPUT, schema, payload).1;
+        let (input, _) = wire::open_schema(
+            &envelope,
             wire::KIND_INPUT,
+            schema,
             MAX_INPUT_BYTES,
             "input",
-            wire::decode_input,
-            wire::encode_input,
+            |r| {
+                if schema == wire::VISUAL_NOVEL_SCHEMA {
+                    wire::decode_input_schema2(r)
+                } else {
+                    wire::decode_input_schema1(r)
+                }
+            },
+            |input| wire::encode_input_schema(input, schema),
         )
-        .map(|(input, _)| input)
-        .map_err(|_| DecodeError::Schema("invalid node input"))
+        .map_err(|_| DecodeError::Schema("invalid node input"))?;
+        if input.schema() != schema {
+            return Err(DecodeError::Schema("input schema does not match payload"));
+        }
+        Ok(input)
     }
 }
 

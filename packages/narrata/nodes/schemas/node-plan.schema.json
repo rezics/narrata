@@ -57,6 +57,89 @@
       ]
     },
     {
+      "description": "One independently advanceable VN line. Text and the optional speaker name remain host\ncontent references; voice is a versioned media reference.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "dialogue"
+        },
+        "line": {
+          "$ref": "#/$defs/Segment"
+        },
+        "next": {
+          "type": "string"
+        },
+        "speaker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "voice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MediaRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "line",
+        "next"
+      ]
+    },
+    {
+      "description": "A scene replaces its complete visual target while music can continue, change or stop.",
+      "type": "object",
+      "properties": {
+        "background": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MediaRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "scene"
+        },
+        "layers": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CharacterLayer"
+          }
+        },
+        "music": {
+          "$ref": "#/$defs/MusicAction",
+          "default": {
+            "kind": "keep"
+          }
+        },
+        "next": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "next"
+      ]
+    },
+    {
       "type": "object",
       "properties": {
         "condition": {
@@ -230,6 +313,30 @@
         }
       ]
     },
+    "CharacterLayer": {
+      "description": "A stable character layer in a complete visual scene target.",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/MediaRef"
+        },
+        "id": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "order",
+        "asset"
+      ]
+    },
     "ChoicePointId": {
       "type": "string",
       "pattern": "^choice-point:[0-9a-f]{32}$"
@@ -392,6 +499,86 @@
             "op",
             "left",
             "right"
+          ]
+        }
+      ]
+    },
+    "MediaKind": {
+      "type": "string",
+      "enum": [
+        "image",
+        "audio"
+      ]
+    },
+    "MediaRef": {
+      "description": "A content-owned media identity. Narrata stores the provider's immutable key and revision,\nnever a URL, credential, decoded byte buffer or player handle.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MediaKind"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "key",
+        "revision"
+      ]
+    },
+    "MusicAction": {
+      "description": "Music intent performed by a scene transition. `Keep` carries the existing logical track.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "keep"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "play"
+            },
+            "track": {
+              "$ref": "#/$defs/MediaRef"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "track"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "stop"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
           ]
         }
       ]

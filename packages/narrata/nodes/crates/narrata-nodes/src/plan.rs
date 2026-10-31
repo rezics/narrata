@@ -67,6 +67,8 @@ pub enum CallTarget {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Manifest {
+    /// Explicit source/runtime dialect carried by the manifest schema.
+    pub source_format: u16,
     pub product: ProductHeader,
     pub packages: BTreeMap<String, PackageInstance>,
     pub graphs: BTreeMap<GraphRef, GraphEntry>,
@@ -136,6 +138,54 @@ pub struct GraphHeader {
     pub entry: NodeId,
 }
 
+/// A content-owned media identity. Narrata stores the provider's immutable key and revision,
+/// never a URL, credential, decoded byte buffer or player handle.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaRef {
+    pub kind: MediaKind,
+    pub provider: String,
+    pub key: String,
+    pub revision: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaKind {
+    Image,
+    Audio,
+}
+
+/// A stable character layer in a complete visual scene target.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CharacterLayer {
+    pub id: String,
+    pub order: u16,
+    pub asset: MediaRef,
+}
+
+/// Music intent performed by a scene transition. `Keep` carries the existing logical track.
+#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MusicAction {
+    #[default]
+    Keep,
+    Play {
+        track: MediaRef,
+    },
+    Stop,
+}
+
+/// The entire recoverable visual/audio target for a VN scene safe point.
+#[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneTarget {
+    pub background: Option<MediaRef>,
+    pub layers: Vec<CharacterLayer>,
+    pub music: Option<MediaRef>,
+}
+
 impl GraphHeader {
     pub(crate) fn declarations(&self) -> crate::expr::Declarations<'_> {
         crate::expr::Declarations {
@@ -158,6 +208,18 @@ impl GraphHeader {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Plan {
     Passage(Passage),
+    Dialogue {
+        speaker: Option<ContentRef>,
+        line: Segment,
+        voice: Option<MediaRef>,
+        next: NodeId,
+    },
+    Scene {
+        background: Option<MediaRef>,
+        layers: Vec<CharacterLayer>,
+        music: MusicAction,
+        next: NodeId,
+    },
     Branch {
         condition: Expr,
         when_true: NodeId,

@@ -20,9 +20,10 @@ use crate::{
     Scalar, ScalarType, Scope, Variable,
     expr::MAX_EXPRESSION_DEPTH,
     plan::{
-        CallTarget, ChoicePoint, Chunk, Ending, Graph, GraphEntry, GraphHeader, GraphNames,
-        GraphRef, ImportRef, Manifest, NameTable, OptionPlan, Outcome, PackageInstance, Passage,
-        Plan, ProductHeader, SharedVariable, Signature, TombstoneSet,
+        CallTarget, CharacterLayer, ChoicePoint, Chunk, Ending, Graph, GraphEntry, GraphHeader,
+        GraphNames, GraphRef, ImportRef, Manifest, MediaKind, MediaRef, MusicAction, NameTable,
+        OptionPlan, Outcome, PackageInstance, Passage, Plan, ProductHeader, SceneTarget,
+        SharedVariable, Signature, TombstoneSet,
     },
     proposal::{MAX_OVERLAY_NODES, MAX_PROPOSED_NODES, MAX_PROPOSED_OPTIONS},
     source::R1ArtifactId,
@@ -40,6 +41,8 @@ pub const KIND_STATE: u16 = 0x0111;
 pub const KIND_INPUT: u16 = 0x0112;
 /// Every node object kind starts at schema 1.
 pub const SCHEMA: u16 = 1;
+/// The schema used by the first-party VN payloads whose canonical form changes.
+pub const VISUAL_NOVEL_SCHEMA: u16 = 2;
 
 type D<T> = std::result::Result<T, DecodeError>;
 
@@ -47,17 +50,27 @@ const MAX_PACKAGE_ID_BYTES: u64 = 128;
 const MAX_VERSION_BYTES: u64 = 64;
 const MAX_TYPE_ID_BYTES: u64 = 128;
 const MAX_REVISION_BYTES: u64 = 64;
+const MAX_MEDIA_KEY_BYTES: u64 = 512;
+const MAX_MEDIA_REVISION_BYTES: u64 = 128;
 
 /// The `object_id` and envelope of a payload.
 pub(crate) fn seal(kind: u16, payload: &[u8]) -> (ObjectId, Vec<u8>) {
+    seal_schema(kind, SCHEMA, payload)
+}
+
+pub(crate) fn seal_schema(kind: u16, schema: u16, payload: &[u8]) -> (ObjectId, Vec<u8>) {
     (
-        ObjectId::from_bytes(object_id(kind, SCHEMA, payload)),
-        encode_envelope(kind, SCHEMA, payload),
+        ObjectId::from_bytes(object_id(kind, schema, payload)),
+        encode_envelope(kind, schema, payload),
     )
 }
 
 pub(crate) fn id_of(kind: u16, payload: &[u8]) -> ObjectId {
-    ObjectId::from_bytes(object_id(kind, SCHEMA, payload))
+    id_of_schema(kind, SCHEMA, payload)
+}
+
+pub(crate) fn id_of_schema(kind: u16, schema: u16, payload: &[u8]) -> ObjectId {
+    ObjectId::from_bytes(object_id(kind, schema, payload))
 }
 
 /// Opens an envelope of `kind` and decodes its payload with the checked decoder.
@@ -69,11 +82,24 @@ pub(crate) fn open<T>(
     decode: impl for<'a> FnOnce(&mut CborReader<'a>) -> D<T>,
     encode: impl FnOnce(&T) -> Vec<u8>,
 ) -> Result<(T, ObjectId)> {
+    open_schema(bytes, kind, SCHEMA, max_payload, what, decode, encode)
+}
+
+/// Opens a particular object schema without changing the legacy schema-1 entry point.
+pub(crate) fn open_schema<T>(
+    bytes: &[u8],
+    kind: u16,
+    schema: u16,
+    max_payload: usize,
+    what: &str,
+    decode: impl for<'a> FnOnce(&mut CborReader<'a>) -> D<T>,
+    encode: impl FnOnce(&T) -> Vec<u8>,
+) -> Result<(T, ObjectId)> {
     let fail = |error: DecodeError| Error::new("decode", what, error.to_string());
     let envelope = decode_envelope(
         bytes,
         kind,
-        SCHEMA,
+        schema,
         &EnvelopeLimits {
             max_envelope_bytes: max_payload as u64 + 56,
             max_payload_bytes: max_payload as u64,
@@ -86,7 +112,7 @@ pub(crate) fn open<T>(
         ..DecodeLimits::default()
     };
     let value = decode_checked(envelope.payload, &limits, decode, encode).map_err(fail)?;
-    Ok((value, id_of(kind, envelope.payload)))
+    Ok((value, id_of_schema(kind, schema, envelope.payload)))
 }
 
 pub(crate) struct MapIn<'r, 'a> {
@@ -230,6 +256,117 @@ fn bounded_text(r: &mut CborReader<'_>, max: u64) -> D<String> {
         return Err(DecodeError::Schema("empty text"));
     }
     Ok(text.to_owned())
+}
+
+fn write_media_ref(w: &mut CborWriter, value: &MediaRef) {
+    w.array(4);
+    w.unsigned(match value.kind {
+        MediaKind::Image => 0,
+        MediaKind::Audio => 1,
+    });
+    w.text(&value.provider);
+    w.text(&value.key);
+    w.text(&value.revision);
+}
+
+fn media_ref(r: &mut CborReader<'_>) -> D<MediaRef> {
+    exact_array(r, 4)?;
+    let kind = match r.unsigned()? {
+        0 => MediaKind::Image,
+        1 => MediaKind::Audio,
+        _ => return Err(DecodeError::Schema("media category")),
+    };
+    Ok(MediaRef {
+        kind,
+        provider: name(r)?,
+        key: bounded_text(r, MAX_MEDIA_KEY_BYTES)?,
+        revision: bounded_text(r, MAX_MEDIA_REVISION_BYTES)?,
+    })
+}
+
+fn write_layer(w: &mut CborWriter, value: &CharacterLayer) {
+    w.array(3);
+    w.text(&value.id);
+    w.unsigned(u64::from(value.order));
+    write_media_ref(w, &value.asset);
+}
+
+fn layer(r: &mut CborReader<'_>) -> D<CharacterLayer> {
+    exact_array(r, 3)?;
+    Ok(CharacterLayer {
+        id: name(r)?,
+        order: u16_value(r)?,
+        asset: media_ref(r)?,
+    })
+}
+
+fn write_music_action(w: &mut CborWriter, value: &MusicAction) {
+    match value {
+        MusicAction::Keep => {
+            w.array(1);
+            w.unsigned(0);
+        }
+        MusicAction::Play { track } => {
+            w.array(2);
+            w.unsigned(1);
+            write_media_ref(w, track);
+        }
+        MusicAction::Stop => {
+            w.array(1);
+            w.unsigned(2);
+        }
+    }
+}
+
+fn music_action(r: &mut CborReader<'_>) -> D<MusicAction> {
+    let length = r.array_len()?;
+    match (r.unsigned()?, length) {
+        (0, 1) => Ok(MusicAction::Keep),
+        (1, 2) => Ok(MusicAction::Play {
+            track: media_ref(r)?,
+        }),
+        (2, 1) => Ok(MusicAction::Stop),
+        _ => Err(DecodeError::Schema("music action")),
+    }
+}
+
+fn write_scene_target(w: &mut CborWriter, value: &SceneTarget) {
+    map_header(
+        w,
+        &[value.background.is_some(), true, value.music.is_some()],
+    );
+    if let Some(background) = &value.background {
+        w.unsigned(0);
+        write_media_ref(w, background);
+    }
+    w.unsigned(1);
+    w.array(value.layers.len() as u64);
+    for layer in &value.layers {
+        write_layer(w, layer);
+    }
+    if let Some(music) = &value.music {
+        w.unsigned(2);
+        write_media_ref(w, music);
+    }
+}
+
+fn scene_target(r: &mut CborReader<'_>) -> D<SceneTarget> {
+    let (mut background, mut layers, mut music) = (None, None, None);
+    let mut map = MapIn::new(r, 3)?;
+    while let Some(key) = map.next()? {
+        let r = map.r();
+        match key {
+            0 => background = Some(media_ref(r)?),
+            1 => layers = Some(array(r, 256, layer)?),
+            2 => music = Some(media_ref(r)?),
+            _ => return Err(unknown()),
+        }
+    }
+    Ok(SceneTarget {
+        background,
+        layers: required(layers, "scene layers")?,
+        music,
+    })
 }
 
 fn u32_value(r: &mut CborReader<'_>) -> D<u32> {
@@ -729,7 +866,7 @@ fn passage(r: &mut CborReader<'_>) -> D<Passage> {
     })
 }
 
-fn write_plan(w: &mut CborWriter, value: &Plan) {
+fn write_plan(w: &mut CborWriter, value: &Plan, schema: u16) {
     match value {
         Plan::Passage(value) => {
             w.array(2);
@@ -781,10 +918,54 @@ fn write_plan(w: &mut CborWriter, value: &Plan) {
             w.unsigned(4);
             w.text(outcome);
         }
+        Plan::Dialogue {
+            speaker,
+            line,
+            voice,
+            next,
+        } if schema == VISUAL_NOVEL_SCHEMA => {
+            w.array(5);
+            w.unsigned(5);
+            match speaker {
+                Some(speaker) => speaker.encode(w),
+                None => w.null(),
+            }
+            line.encode(w);
+            match voice {
+                Some(voice) => write_media_ref(w, voice),
+                None => w.null(),
+            }
+            w.bytes(next.as_bytes());
+        }
+        Plan::Scene {
+            background,
+            layers,
+            music,
+            next,
+        } if schema == VISUAL_NOVEL_SCHEMA => {
+            w.array(5);
+            w.unsigned(6);
+            match background {
+                Some(background) => write_media_ref(w, background),
+                None => w.null(),
+            }
+            w.array(layers.len() as u64);
+            for layer in layers {
+                write_layer(w, layer);
+            }
+            write_music_action(w, music);
+            w.bytes(next.as_bytes());
+        }
+        Plan::Dialogue { .. } | Plan::Scene { .. } => {
+            // Only a format-3 compiler can create VN plans; keep accidental legacy encoding
+            // from producing an object that claims the schema-1 interpretation.
+            w.array(1);
+            w.unsigned(u64::MAX);
+        }
     }
 }
 
-fn plan(r: &mut CborReader<'_>) -> D<Plan> {
+fn plan(r: &mut CborReader<'_>, schema: u16) -> D<Plan> {
     let length = r.array_len()?;
     match (r.unsigned()?, length) {
         (0, 2) => Ok(Plan::Passage(passage(r)?)),
@@ -811,13 +992,25 @@ fn plan(r: &mut CborReader<'_>) -> D<Plan> {
             })
         }
         (4, 2) => Ok(Plan::Return { outcome: name(r)? }),
+        (5, 5) if schema == VISUAL_NOVEL_SCHEMA => Ok(Plan::Dialogue {
+            speaker: r.optional(ContentRef::decode)?,
+            line: Segment::decode(r)?,
+            voice: r.optional(media_ref)?,
+            next: node_id(r)?,
+        }),
+        (6, 5) if schema == VISUAL_NOVEL_SCHEMA => Ok(Plan::Scene {
+            background: r.optional(media_ref)?,
+            layers: array(r, 256, layer)?,
+            music: music_action(r)?,
+            next: node_id(r)?,
+        }),
         _ => Err(DecodeError::Schema("node plan")),
     }
 }
 
 // --- chunks ---
 
-fn write_graph(w: &mut CborWriter, value: &Graph) {
+fn write_graph(w: &mut CborWriter, value: &Graph, schema: u16) {
     let header = &value.header;
     map_header(
         w,
@@ -850,11 +1043,11 @@ fn write_graph(w: &mut CborWriter, value: &Graph) {
         w,
         &value.nodes,
         |w, id: &NodeId| w.bytes(id.as_bytes()),
-        write_plan,
+        |w, plan| write_plan(w, plan, schema),
     );
 }
 
-fn graph(r: &mut CborReader<'_>) -> D<Graph> {
+fn graph(r: &mut CborReader<'_>, schema: u16) -> D<Graph> {
     let mut title = None;
     let (mut parameters, mut locals, mut shared, mut imports) = (None, None, None, None);
     let (mut outcome_names, mut entry, mut nodes) = (None, None, None);
@@ -869,7 +1062,7 @@ fn graph(r: &mut CborReader<'_>) -> D<Graph> {
             4 => imports = Some(pairs(r, MAX_VARIABLES, name, signature)?),
             5 => outcome_names = Some(outcomes(r)?),
             6 => entry = Some(node_id(r)?),
-            7 => nodes = Some(pairs(r, MAX_GRAPH_NODES, node_id, plan)?),
+            7 => nodes = Some(pairs(r, MAX_GRAPH_NODES, node_id, |r| plan(r, schema))?),
             _ => return Err(unknown()),
         }
     }
@@ -887,20 +1080,22 @@ fn graph(r: &mut CborReader<'_>) -> D<Graph> {
     })
 }
 
-pub(crate) fn encode_chunk(value: &Chunk) -> Vec<u8> {
+pub(crate) fn encode_chunk_schema(value: &Chunk, schema: u16) -> Vec<u8> {
     let mut w = CborWriter::new();
     w.map(1);
     w.unsigned(0);
-    write_pairs(&mut w, &value.graphs, write_graph_ref, write_graph);
+    write_pairs(&mut w, &value.graphs, write_graph_ref, |w, graph| {
+        write_graph(w, graph, schema)
+    });
     w.into_bytes()
 }
 
-pub(crate) fn decode_chunk(r: &mut CborReader<'_>) -> D<Chunk> {
+pub(crate) fn decode_chunk_schema(r: &mut CborReader<'_>, schema: u16) -> D<Chunk> {
     let mut graphs = None;
     let mut map = MapIn::new(r, 1)?;
     while let Some(key) = map.next()? {
         match key {
-            0 => graphs = Some(pairs(map.r(), 1 << 16, graph_ref, graph)?),
+            0 => graphs = Some(pairs(map.r(), 1 << 16, graph_ref, |r| graph(r, schema))?),
             _ => return Err(unknown()),
         }
     }
@@ -1006,8 +1201,12 @@ fn product(r: &mut CborReader<'_>) -> D<ProductHeader> {
 }
 
 pub(crate) fn encode_manifest(value: &Manifest) -> Vec<u8> {
+    encode_manifest_schema(value, SCHEMA)
+}
+
+pub(crate) fn encode_manifest_schema(value: &Manifest, schema: u16) -> Vec<u8> {
     let mut w = CborWriter::new();
-    w.map(6);
+    w.map(if schema == VISUAL_NOVEL_SCHEMA { 7 } else { 6 });
     w.unsigned(0);
     write_product(&mut w, &value.product);
     w.unsigned(1);
@@ -1035,6 +1234,10 @@ pub(crate) fn encode_manifest(value: &Manifest) -> Vec<u8> {
     write_pairs(&mut w, &value.node_types, write_name, write_name);
     w.unsigned(5);
     w.bytes(value.tombstones.as_bytes());
+    if schema == VISUAL_NOVEL_SCHEMA {
+        w.unsigned(6);
+        w.unsigned(u64::from(value.source_format));
+    }
     w.into_bytes()
 }
 
@@ -1067,9 +1270,14 @@ fn type_id(r: &mut CborReader<'_>) -> D<String> {
 }
 
 pub(crate) fn decode_manifest(r: &mut CborReader<'_>) -> D<Manifest> {
+    decode_manifest_schema(r, SCHEMA)
+}
+
+pub(crate) fn decode_manifest_schema(r: &mut CborReader<'_>, schema: u16) -> D<Manifest> {
     let (mut product_value, mut packages, mut graphs) = (None, None, None);
     let (mut chunks, mut node_types, mut tombstones) = (None, None, None);
-    let mut map = MapIn::new(r, 6)?;
+    let mut source_format = None;
+    let mut map = MapIn::new(r, if schema == VISUAL_NOVEL_SCHEMA { 7 } else { 6 })?;
     while let Some(key) = map.next()? {
         let r = map.r();
         match key {
@@ -1091,10 +1299,16 @@ pub(crate) fn decode_manifest(r: &mut CborReader<'_>) -> D<Manifest> {
                 })?)
             }
             5 => tombstones = Some(object(r)?),
+            6 if schema == VISUAL_NOVEL_SCHEMA => source_format = Some(u16_value(r)?),
             _ => return Err(unknown()),
         }
     }
     Ok(Manifest {
+        source_format: if schema == VISUAL_NOVEL_SCHEMA {
+            required(source_format, "manifest source format")?
+        } else {
+            crate::FORMAT_VERSION
+        },
         product: required(product_value, "manifest product")?,
         packages: required(packages, "manifest packages")?,
         graphs: required(graphs, "manifest graphs")?,
@@ -1289,9 +1503,25 @@ impl Pack {
 
 // --- session objects ---
 
-pub(crate) fn encode_state(value: &State) -> Vec<u8> {
+pub(crate) fn encode_state_schema1(value: &State) -> Vec<u8> {
+    encode_state_payload(value, SCHEMA)
+}
+
+pub(crate) fn encode_state_schema2(value: &State) -> Vec<u8> {
+    encode_state_payload(value, VISUAL_NOVEL_SCHEMA)
+}
+
+pub(crate) fn encode_state_schema(value: &State, schema: u16) -> Vec<u8> {
+    if schema == VISUAL_NOVEL_SCHEMA {
+        encode_state_schema2(value)
+    } else {
+        encode_state_schema1(value)
+    }
+}
+
+fn encode_state_payload(value: &State, schema: u16) -> Vec<u8> {
     let mut w = CborWriter::new();
-    w.map(3 + u64::from(value.finished.is_some()));
+    w.map(3 + u64::from(value.finished.is_some()) + u64::from(schema == VISUAL_NOVEL_SCHEMA));
     w.unsigned(0);
     write_scalar_pairs(&mut w, &value.shared);
     w.unsigned(1);
@@ -1339,6 +1569,11 @@ pub(crate) fn encode_state(value: &State) -> Vec<u8> {
         w.unsigned(u64::from(finished.instance));
         w.unsigned(2);
         w.text(&finished.outcome);
+    }
+    if schema == VISUAL_NOVEL_SCHEMA {
+        w.unsigned(4);
+        let empty_scene = SceneTarget::default();
+        write_scene_target(&mut w, value.scene.as_ref().unwrap_or(&empty_scene));
     }
     w.into_bytes()
 }
@@ -1416,9 +1651,18 @@ fn frame(r: &mut CborReader<'_>) -> D<Frame> {
     })
 }
 
-pub(crate) fn decode_state(r: &mut CborReader<'_>) -> D<State> {
+pub(crate) fn decode_state_schema1(r: &mut CborReader<'_>) -> D<State> {
+    decode_state_payload(r, SCHEMA)
+}
+
+pub(crate) fn decode_state_schema2(r: &mut CborReader<'_>) -> D<State> {
+    decode_state_payload(r, VISUAL_NOVEL_SCHEMA)
+}
+
+fn decode_state_payload(r: &mut CborReader<'_>, schema: u16) -> D<State> {
     let (mut shared, mut frames, mut next_instance, mut finished) = (None, None, None, None);
-    let mut map = MapIn::new(r, 4)?;
+    let mut scene = None;
+    let mut map = MapIn::new(r, if schema == VISUAL_NOVEL_SCHEMA { 5 } else { 4 })?;
     while let Some(key) = map.next()? {
         let r = map.r();
         match key {
@@ -1443,6 +1687,7 @@ pub(crate) fn decode_state(r: &mut CborReader<'_>) -> D<State> {
                     outcome: required(outcome, "finished outcome")?,
                 });
             }
+            4 if schema == VISUAL_NOVEL_SCHEMA => scene = Some(scene_target(r)?),
             _ => return Err(unknown()),
         }
     }
@@ -1451,10 +1696,19 @@ pub(crate) fn decode_state(r: &mut CborReader<'_>) -> D<State> {
         frames: required(frames, "state frames")?,
         next_instance: required(next_instance, "state next instance")?,
         finished,
+        scene,
     })
 }
 
-pub(crate) fn encode_input(value: &Input) -> Vec<u8> {
+pub(crate) fn encode_input_schema1(value: &Input) -> Vec<u8> {
+    encode_input_payload(value, SCHEMA)
+}
+
+pub(crate) fn encode_input_schema(value: &Input, schema: u16) -> Vec<u8> {
+    encode_input_payload(value, schema)
+}
+
+fn encode_input_payload(value: &Input, schema: u16) -> Vec<u8> {
     let mut w = CborWriter::new();
     match value {
         Input::Choose {
@@ -1485,11 +1739,28 @@ pub(crate) fn encode_input(value: &Input) -> Vec<u8> {
                 write_passage(&mut w, passage);
             }
         }
+        Input::Advance { dialogue } if schema == VISUAL_NOVEL_SCHEMA => {
+            w.array(2);
+            w.unsigned(2);
+            w.bytes(dialogue.as_bytes());
+        }
+        Input::Advance { .. } => {
+            w.array(1);
+            w.unsigned(u64::MAX);
+        }
     }
     w.into_bytes()
 }
 
-pub(crate) fn decode_input(r: &mut CborReader<'_>) -> D<Input> {
+pub(crate) fn decode_input_schema1(r: &mut CborReader<'_>) -> D<Input> {
+    decode_input_payload(r, SCHEMA)
+}
+
+pub(crate) fn decode_input_schema2(r: &mut CborReader<'_>) -> D<Input> {
+    decode_input_payload(r, VISUAL_NOVEL_SCHEMA)
+}
+
+fn decode_input_payload(r: &mut CborReader<'_>, schema: u16) -> D<Input> {
     let length = r.array_len()?;
     match (r.unsigned()?, length) {
         (0, 3) => Ok(Input::Choose {
@@ -1503,6 +1774,9 @@ pub(crate) fn decode_input(r: &mut CborReader<'_>) -> D<Input> {
                 exact_array(r, 2)?;
                 Ok((node_id(r)?, passage(r)?))
             })?,
+        }),
+        (2, 2) if schema == VISUAL_NOVEL_SCHEMA => Ok(Input::Advance {
+            dialogue: node_id(r)?,
         }),
         _ => Err(DecodeError::Schema("input")),
     }

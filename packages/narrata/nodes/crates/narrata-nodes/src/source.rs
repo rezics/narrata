@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Assignment, AuthoredId, ChoicePointId, Expr, NodeId, OptionId, Scalar, ScalarType,
-    plan::{CallTarget, GraphRef, ImportRef, Signature},
+    plan::{CallTarget, CharacterLayer, GraphRef, ImportRef, MediaRef, MusicAction, Signature},
 };
 
 /// Resolved by tooling, never by the deterministic runtime.
@@ -150,6 +150,8 @@ pub struct NodeSource {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SourcePlan {
     Passage(PassageSource),
+    Dialogue(DialogueSource),
+    Scene(SceneSource),
     Branch {
         condition: Expr,
         when_true: String,
@@ -169,6 +171,32 @@ pub enum SourcePlan {
     Return {
         outcome: String,
     },
+}
+
+/// One independently advanceable VN line. Text and the optional speaker name remain host
+/// content references; voice is a versioned media reference.
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DialogueSource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<ContentRef>,
+    pub line: Segment,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<MediaRef>,
+    pub next: String,
+}
+
+/// A scene replaces its complete visual target while music can continue, change or stop.
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneSource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<MediaRef>,
+    #[serde(default)]
+    pub layers: Vec<CharacterLayer>,
+    #[serde(default)]
+    pub music: MusicAction,
+    pub next: String,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]

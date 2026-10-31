@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use narrata_graph::{ClusterId, EndingClass, Id, SemanticSummary};
 use narrata_kernel::content::{AnchorId, ContentKey, ContentRef, ProviderId, Segment};
 use narrata_nodes::{
-    ArtifactId, ChoicePointId, NodeId, OptionId, Program, Result, canonical_json,
+    ArtifactId, ChoicePointId, Error, NodeId, OptionId, Program, Result, canonical_json,
     plan::{Outcome, Plan},
 };
 use schemars::JsonSchema;
@@ -511,6 +511,13 @@ pub(crate) fn project_with_summary(
     program: &Program,
     summary: &SemanticSummary,
 ) -> Result<CheckedRelations> {
+    if program.is_visual_novel() {
+        return Err(Error::new(
+            "version",
+            "relations",
+            "Gamebook relation projections do not represent VN scene semantics",
+        ));
+    }
     let artifact_id = program.artifact_id();
     let projection_version = Version1;
     let structural = structural_graph(program)?;
@@ -597,6 +604,13 @@ pub(crate) fn project_with_summary(
                 Plan::Mutate { .. } => 2,
                 Plan::Call { .. } => 3,
                 Plan::Return { .. } => 4,
+                Plan::Dialogue { .. } | Plan::Scene { .. } => {
+                    return Err(Error::new(
+                        "version",
+                        "relations",
+                        "this relation projection does not represent VN node semantics",
+                    ));
+                }
             };
             nodes.insert(
                 node_id,

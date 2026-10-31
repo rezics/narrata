@@ -45,29 +45,35 @@ pub use ids::{
 pub use json::{parse_json, parse_json_limited};
 pub use outline::ContentOutline;
 pub use plan::NameTable;
+pub use plan::{CharacterLayer, MediaKind, MediaRef, MusicAction, SceneTarget};
 pub use program::{ChunkPins, ChunkSource, Lookup, MemorySource, Owner, Program};
 pub use proposal::{
     ChoicePointProposal, MAX_OVERLAY_NODES, MAX_PROPOSED_NODES, MAX_PROPOSED_OPTIONS,
     MAX_REQUEST_BYTES, NodeProposal, OptionProposal, ProposalRequest,
 };
-pub use registry::{GAMEBOOK_REVISION, NodeCompiler, NodeRegistry, lower_builtin};
+pub use registry::{
+    GAMEBOOK_REVISION, NodeCompiler, NodeRegistry, VISUAL_NOVEL_REVISION, lower_builtin,
+};
 pub use session::{
     EXPORT_FORMAT_VERSION, MAX_COMMITS, MAX_EXPORT_BYTES, MAX_RETAINED_STATE_BYTES, Session,
     SessionExport,
 };
 pub use source::{
-    CompositionLock, PackageLock, PackageSource, ProjectManifest, ProjectSource, SourcePlan,
+    CompositionLock, DialogueSource, PackageLock, PackageSource, ProjectManifest, ProjectSource,
+    SceneSource, SourcePlan,
 };
 pub use state::{Commit, Finished, Frame, Input, Overlay, State, decode_input, decode_state};
 pub use value::{Scalar, ScalarType, ViewScalar};
-pub use view::{BookView, SessionView};
+pub use view::{BookView, GamebookInteraction, GamebookSessionView, SessionView};
 pub use wire::{
     KIND_CHUNK, KIND_COMMIT, KIND_INPUT, KIND_MANIFEST, KIND_NAMES, KIND_PACK, KIND_STATE,
-    KIND_TOMBSTONES, Pack, SCHEMA,
+    KIND_TOMBSTONES, Pack, SCHEMA, VISUAL_NOVEL_SCHEMA,
 };
 
 /// The source and composition format revision.
 pub const FORMAT_VERSION: u16 = 2;
+/// The explicit source/composition revision for first-party visual novels.
+pub const VISUAL_NOVEL_FORMAT_VERSION: u16 = 3;
 pub const MAX_SOURCE_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_MANIFEST_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_CHUNK_BYTES: usize = 4 * 1024 * 1024;
@@ -101,11 +107,13 @@ pub fn schemas() -> Vec<(&'static str, schemars::Schema)> {
         ("book-view.schema.json", schema_for!(BookView)),
         ("content-outline.schema.json", schema_for!(ContentOutline)),
         ("lock.schema.json", schema_for!(CompositionLock)),
+        ("media-reference.schema.json", schema_for!(MediaRef)),
         ("node-plan.schema.json", schema_for!(SourcePlan)),
         ("package.schema.json", schema_for!(PackageSource)),
         ("project.schema.json", schema_for!(ProjectManifest)),
         ("proposal-request.schema.json", schema_for!(ProposalRequest)),
         ("session-export.schema.json", schema_for!(SessionExport)),
+        ("scene-target.schema.json", schema_for!(SceneTarget)),
         ("view.schema.json", schema_for!(SessionView)),
     ]
 }

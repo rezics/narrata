@@ -17,9 +17,9 @@ use narrata_kernel::content::{AnchorId, Segment};
 use crate::{
     CommitId, Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, Program, Result, Scalar, Scope, ViewScalar,
     expr::{Values, expect},
-    plan::{GraphRef, NameTable, Outcome, Passage, Plan},
+    plan::{GraphRef, MusicAction, NameTable, Outcome, Passage, Plan, SceneTarget},
     proposal::apply_proposal,
-    state::{Finished, Frame, Input, Overlay, State, check_choice, check_size},
+    state::{Finished, Frame, Input, Overlay, State, check_advance, check_choice, check_size},
     view::{Interaction, OptionView, OutcomeKind, Presented, Role},
 };
 
@@ -37,6 +37,9 @@ pub(crate) struct Step {
     pub state: State,
     pub pins: crate::ChunkPins,
     pub presentation: Vec<Item>,
+    /// The effective music directive reached by this transition, if it crossed a scene node.
+    /// This is recomputed from the checked input and is not part of the persistent state.
+    pub music_action: Option<MusicAction>,
     /// Whether the passage the step stops in was entered during this step, rather than
     /// continued after a local choice.
     pub entered: bool,
@@ -48,6 +51,7 @@ struct Work {
     state: State,
     pins: crate::ChunkPins,
     items: Vec<Item>,
+    music_action: Option<MusicAction>,
     steps: u32,
     entered: bool,
     #[cfg(feature = "trace")]
@@ -207,6 +211,10 @@ impl Machine<'_> {
                         Ok(false)
                     }
                 }
+                Plan::Dialogue { .. } => Ok(false),
+                Plan::Scene { next, .. } => {
+                    walk(program, frame, graph_ref, *next, hops + 1, seen, graphs)
+                }
                 Plan::Return { .. } => Ok(true),
                 Plan::Mutate { next, .. } => {
                     walk(program, frame, graph_ref, *next, hops + 1, seen, graphs)
@@ -258,25 +266,33 @@ impl Machine<'_> {
             return Ok(Vec::new());
         };
         let graph = self.program.graph(&frame.graph)?;
-        let passage = frame
-            .overlay
-            .passage(&graph, &frame.node)
-            .ok_or_else(|| Error::new("state", "prefetch", "not a passage"))?;
-        let point = passage
-            .choice_points
-            .iter()
-            .find(|point| Some(point.id) == frame.at)
-            .ok_or_else(|| Error::new("state", "prefetch", "missing choice point"))?;
         let mut targets = BTreeSet::new();
-        for option in &point.options {
-            match &option.outcome {
-                Outcome::Branch { target } => {
-                    targets.insert(*target);
-                }
-                Outcome::Local { .. } => {
-                    targets.extend(passage.next);
+        let current = frame
+            .overlay
+            .plan(&graph, &frame.node)
+            .ok_or_else(|| Error::new("state", "prefetch", "unknown current node"))?;
+        match &*current {
+            Plan::Dialogue { next, .. } => {
+                targets.insert(*next);
+            }
+            Plan::Passage(passage) => {
+                let point = passage
+                    .choice_points
+                    .iter()
+                    .find(|point| Some(point.id) == frame.at)
+                    .ok_or_else(|| Error::new("state", "prefetch", "missing choice point"))?;
+                for option in &point.options {
+                    match &option.outcome {
+                        Outcome::Branch { target } => {
+                            targets.insert(*target);
+                        }
+                        Outcome::Local { .. } => {
+                            targets.extend(passage.next);
+                        }
+                    }
                 }
             }
+            _ => return Err(Error::new("state", "prefetch", "not at an interaction")),
         }
         let mut seen = BTreeSet::new();
         let mut graphs = BTreeMap::new();
@@ -344,11 +360,13 @@ impl Machine<'_> {
             }],
             next_instance: 2,
             finished: None,
+            scene: self.program.is_visual_novel().then(SceneTarget::default),
         };
         let mut work = Work {
             pins: self.program.pin_state(&state)?,
             state,
             items: Vec::new(),
+            music_action: None,
             steps: 0,
             entered: false,
             #[cfg(feature = "trace")]
@@ -360,6 +378,7 @@ impl Machine<'_> {
             state: work.state,
             pins: work.pins,
             presentation: work.items,
+            music_action: work.music_action,
             entered: work.entered,
             #[cfg(feature = "trace")]
             trace: work.trace,
@@ -379,12 +398,51 @@ impl Machine<'_> {
                     pins: self.program.pin_state(&state)?,
                     state,
                     presentation: Vec::new(),
+                    music_action: None,
                     entered: false,
                     #[cfg(feature = "trace")]
                     trace: Vec::new(),
                 })
             }
+            Input::Advance { dialogue } => self.advance_dialogue(parent, dialogue),
         }
+    }
+
+    fn advance_dialogue(&self, parent: &State, dialogue: &NodeId) -> Result<Step> {
+        check_advance(self.program, parent, dialogue)?;
+        let frame = parent
+            .frames
+            .last()
+            .ok_or_else(|| Error::new("finished", "input", "the story has ended"))?;
+        let graph = self.program.graph(&frame.graph)?;
+        let Some(Plan::Dialogue { next, .. }) = graph.nodes.get(dialogue) else {
+            return Err(Error::new("state", "input", "current dialogue is missing"));
+        };
+        let mut work = Work {
+            pins: self.program.pin_state(parent)?,
+            state: parent.clone(),
+            items: Vec::new(),
+            music_action: None,
+            steps: 0,
+            entered: false,
+            #[cfg(feature = "trace")]
+            trace: Vec::new(),
+        };
+        work.tick()?;
+        let top = work.top_mut()?;
+        top.node = *next;
+        top.at = None;
+        self.run(&mut work)?;
+        check_size(&work.state)?;
+        Ok(Step {
+            state: work.state,
+            pins: work.pins,
+            presentation: work.items,
+            music_action: work.music_action,
+            entered: work.entered,
+            #[cfg(feature = "trace")]
+            trace: work.trace,
+        })
     }
 
     /// Chooses options at the parent's interaction. Every chosen option is checked against
@@ -401,6 +459,7 @@ impl Machine<'_> {
             pins: self.program.pin_state(parent)?,
             state: parent.clone(),
             items: Vec::new(),
+            music_action: None,
             steps: 0,
             entered: false,
             #[cfg(feature = "trace")]
@@ -489,6 +548,7 @@ impl Machine<'_> {
             state: work.state,
             pins: work.pins,
             presentation: work.items,
+            music_action: work.music_action,
             entered: work.entered,
             #[cfg(feature = "trace")]
             trace: work.trace,
@@ -525,6 +585,44 @@ impl Machine<'_> {
             work.record(location.clone(), TraceAction::Visit);
             match &*plan {
                 Plan::Passage(passage) => self.enter(work, node, passage)?,
+                Plan::Dialogue { .. } => {
+                    work.entered = true;
+                    return Ok(());
+                }
+                Plan::Scene {
+                    background,
+                    layers,
+                    music,
+                    next,
+                } => {
+                    match music {
+                        MusicAction::Keep => {
+                            work.music_action.get_or_insert(MusicAction::Keep);
+                        }
+                        MusicAction::Play { .. } | MusicAction::Stop => {
+                            work.music_action = Some(music.clone());
+                        }
+                    }
+                    let current_music = work
+                        .state
+                        .scene
+                        .as_ref()
+                        .and_then(|scene| scene.music.clone());
+                    let music = match music {
+                        MusicAction::Keep => current_music,
+                        MusicAction::Play { track } => Some(track.clone()),
+                        MusicAction::Stop => None,
+                    };
+                    work.state.scene = Some(SceneTarget {
+                        background: background.clone(),
+                        layers: layers.clone(),
+                        music,
+                    });
+                    let top = work.top_mut()?;
+                    top.node = *next;
+                    top.at = None;
+                    check_size(&work.state)?;
+                }
                 Plan::Branch {
                     condition,
                     when_true,
@@ -780,6 +878,25 @@ impl Machine<'_> {
             .last()
             .ok_or_else(|| Error::new("state", "session", "no active graph instance"))?;
         let graph = self.program.graph(&frame.graph)?;
+        let current = frame
+            .overlay
+            .plan(&graph, &frame.node)
+            .ok_or_else(|| Error::new("state", "session", "unknown current node"))?;
+        if let Plan::Dialogue {
+            speaker,
+            line,
+            voice,
+            ..
+        } = &*current
+        {
+            return Ok(Interaction::Advance {
+                graph: frame.graph.clone(),
+                dialogue: frame.node,
+                speaker: speaker.clone(),
+                line: line.clone(),
+                voice: voice.clone(),
+            });
+        }
         let passage = frame
             .overlay
             .passage(&graph, &frame.node)
@@ -959,6 +1076,7 @@ pub(crate) fn migration_page(program: &Program, state: &State) -> Result<Step> {
         state: state.clone(),
         pins: program.pin_state(state)?,
         presentation,
+        music_action: None,
         entered: true,
         #[cfg(feature = "trace")]
         trace,

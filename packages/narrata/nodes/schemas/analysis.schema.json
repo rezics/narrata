@@ -256,6 +256,8 @@
       "type": "string",
       "enum": [
         "passage",
+        "dialogue",
+        "scene",
         "branch",
         "mutate",
         "call",

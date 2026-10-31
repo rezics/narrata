@@ -158,16 +158,20 @@ pub fn validate<D: Domain, B: StorageBackend, R: Registry>(
     view: &mut View<'_, B, R>,
 ) -> Result<Vec<Op<R::Tag>>, HistoryError> {
     let id = object.id();
-    let schema = |expected: u16| {
-        if object.schema() == expected {
+    let schema = |supported: bool| {
+        if supported {
             Ok(Vec::new())
         } else {
             Err(HistoryError::ObjectKind(id))
         }
     };
     match object.kind() {
-        kind if kind == D::STATE_KIND => return schema(D::STATE_SCHEMA),
-        kind if kind == D::INPUT_KIND => return schema(D::INPUT_SCHEMA),
+        kind if kind == D::STATE_KIND => {
+            return schema(D::supports_state_schema(object.schema()));
+        }
+        kind if kind == D::INPUT_KIND => {
+            return schema(D::supports_input_schema(object.schema()));
+        }
         kind if kind == D::COMMIT_KIND => {}
         _ => return Err(HistoryError::ObjectKind(id)),
     }
@@ -187,7 +191,9 @@ pub fn validate<D: Domain, B: StorageBackend, R: Registry>(
                 ));
             }
         } else {
-            if input_object.kind() != D::INPUT_KIND || input_object.schema() != D::INPUT_SCHEMA {
+            if input_object.kind() != D::INPUT_KIND
+                || !D::supports_input_schema(input_object.schema())
+            {
                 return Err(HistoryError::ObjectKind(input));
             }
             if parent.artifact != commit.artifact {
@@ -210,7 +216,7 @@ pub fn validate<D: Domain, B: StorageBackend, R: Registry>(
                     "migration input target differs from commit artifact",
                 ));
             }
-        } else if object.kind() != D::INPUT_KIND || object.schema() != D::INPUT_SCHEMA {
+        } else if object.kind() != D::INPUT_KIND || !D::supports_input_schema(object.schema()) {
             return Err(HistoryError::ObjectKind(input));
         }
     }

@@ -90,6 +90,7 @@ impl EvolutionDescriptorV1 {
             shared: state.shared.clone(),
             next_instance,
             finished: None,
+            scene: None,
             frames: vec![Frame {
                 graph: product.entry.clone(),
                 node: destination.node,

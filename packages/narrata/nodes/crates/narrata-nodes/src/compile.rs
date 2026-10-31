@@ -156,6 +156,8 @@ pub fn compile_objects(
 ) -> Result<ObjectCompilation> {
     let manifest_source = &source.manifest;
     check_source_header(source, &mut crate::check::Checks::first())?;
+    check_registry_dialect(manifest_source.format_version, registry)?;
+    let schema = source_schema(manifest_source.format_version);
     let product_source = &manifest_source.product;
     let lowered = lower(source, registry)?;
     let bindings = collect_bindings(product_source, &mut crate::check::Checks::first())?;
@@ -192,7 +194,11 @@ pub fn compile_objects(
                 },
             )]),
         };
-        let (id, envelope) = wire::seal(wire::KIND_CHUNK, &wire::encode_chunk(&chunk));
+        let (id, envelope) = wire::seal_schema(
+            wire::KIND_CHUNK,
+            schema,
+            &wire::encode_chunk_schema(&chunk, schema),
+        );
         check_chunk_size(envelope.len(), &key.label())?;
         chunks.push((chunk, id));
         chunk_envelopes.push(envelope);
@@ -202,6 +208,7 @@ pub fn compile_objects(
         &wire::encode_tombstones(&lowered.tombstones),
     );
     let manifest = Manifest {
+        source_format: manifest_source.format_version,
         product: product_header(product_source, bindings),
         packages,
         graphs,
@@ -224,8 +231,11 @@ pub fn compile_objects(
             Some(&provisional),
         )?;
     }
-    let (manifest_id, manifest_envelope) =
-        wire::seal(wire::KIND_MANIFEST, &wire::encode_manifest(&manifest));
+    let (manifest_id, manifest_envelope) = wire::seal_schema(
+        wire::KIND_MANIFEST,
+        schema,
+        &wire::encode_manifest_schema(&manifest, schema),
+    );
     check_manifest_size(manifest_envelope.len())?;
     let artifact_id = crate::ArtifactId::from_bytes(*manifest_id.as_bytes());
     let names = NameTable {
@@ -262,7 +272,7 @@ pub fn compile_objects(
     program.verify_artifact()?;
     let analysis = analyze(&program, Some(&names))?;
     let lock = CompositionLock {
-        format_version: FORMAT_VERSION,
+        format_version: manifest_source.format_version,
         artifact_id,
         packages: source
             .packages
@@ -460,6 +470,15 @@ fn lower_graph(
             checks.skip(&node_path, "node semantics require a valid payload")?;
             continue;
         };
+        if !registry.supports_visual_novel()
+            && matches!(&plan, SourcePlan::Dialogue(_) | SourcePlan::Scene(_))
+        {
+            checks.error(Error::new(
+                "version",
+                &node_path,
+                "VN node semantics require source format 3 and the VN registry",
+            ))?;
+        }
         node_types.insert(node.type_id.clone(), revision);
         let plan = match plan {
             SourcePlan::Passage(passage) => {
@@ -549,6 +568,22 @@ fn lower_graph(
                         .transpose()?,
                 })
             }
+            SourcePlan::Dialogue(dialogue) => Plan::Dialogue {
+                speaker: dialogue.speaker,
+                line: dialogue.line,
+                voice: dialogue.voice,
+                next: checks
+                    .check(resolve(&dialogue.next, &checks.path(&node_path, "next")))?
+                    .unwrap_or_else(|| NodeId::from_bytes([0; 16])),
+            },
+            SourcePlan::Scene(scene) => Plan::Scene {
+                background: scene.background,
+                layers: scene.layers,
+                music: scene.music,
+                next: checks
+                    .check(resolve(&scene.next, &checks.path(&node_path, "next")))?
+                    .unwrap_or_else(|| NodeId::from_bytes([0; 16])),
+            },
             SourcePlan::Branch {
                 condition,
                 when_true,
@@ -664,6 +699,11 @@ pub fn validate_source(
         checks: &mut crate::check::Checks,
     ) -> Result<()> {
         check_source_header(source, checks)?;
+        checks.check(check_registry_dialect(
+            source.manifest.format_version,
+            registry,
+        ))?;
+        let schema = source_schema(source.manifest.format_version);
         let lowered = lower_collect(source, registry, checks)?;
         let product = &source.manifest.product;
         checks.binding_paths = product
@@ -674,6 +714,7 @@ pub fn validate_source(
             .collect();
         let bindings = collect_bindings(product, checks)?;
         let manifest = Manifest {
+            source_format: source.manifest.format_version,
             product: product_header(product, bindings),
             packages: source
                 .packages
@@ -712,7 +753,9 @@ pub fn validate_source(
         };
         crate::check::collect_manifest(&manifest, checks)?;
         checks.check(check_manifest_size(
-            wire::encode_manifest(&manifest).len().saturating_add(56),
+            wire::encode_manifest_schema(&manifest, schema)
+                .len()
+                .saturating_add(56),
         ))?;
         let names = NameTable {
             artifact: crate::ArtifactId::from_bytes([0; 32]),
@@ -750,7 +793,9 @@ pub fn validate_source(
                 graphs: BTreeMap::from([(key.clone(), graph)]),
             };
             checks.check(check_chunk_size(
-                wire::encode_chunk(&chunk).len().saturating_add(56),
+                wire::encode_chunk_schema(&chunk, schema)
+                    .len()
+                    .saturating_add(56),
                 &key.label(),
             ))?;
         }
@@ -837,7 +882,7 @@ fn product_header(
 }
 
 fn check_source_version(version: u16, checks: &mut crate::check::Checks) -> Result<()> {
-    if version != FORMAT_VERSION {
+    if version != FORMAT_VERSION && version != crate::VISUAL_NOVEL_FORMAT_VERSION {
         checks.error(Error::new(
             "version",
             "format_version",
@@ -845,6 +890,26 @@ fn check_source_version(version: u16, checks: &mut crate::check::Checks) -> Resu
         ))?;
     }
     Ok(())
+}
+
+fn check_registry_dialect(version: u16, registry: &NodeRegistry) -> Result<()> {
+    let is_visual_novel = version == crate::VISUAL_NOVEL_FORMAT_VERSION;
+    if is_visual_novel != registry.supports_visual_novel() {
+        return Err(Error::new(
+            "version",
+            "format_version",
+            "source format 2 requires the Gamebook registry and source format 3 requires the VN registry",
+        ));
+    }
+    Ok(())
+}
+
+fn source_schema(version: u16) -> u16 {
+    if version == crate::VISUAL_NOVEL_FORMAT_VERSION {
+        wire::VISUAL_NOVEL_SCHEMA
+    } else {
+        wire::SCHEMA
+    }
 }
 
 fn check_chunk_size(bytes: usize, path: &str) -> Result<()> {

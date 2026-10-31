@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ArtifactId, ChoicePointId, CommitId, Diagnostic, ExecutionId, NodeId, OptionId, ViewScalar,
-    analysis::GraphAnalysis, plan::GraphRef,
+    analysis::{EdgeAnalysis, GraphAnalysis, NodeAnalysis, NodeKind},
+    plan::{GraphRef, MediaRef, MusicAction, SceneTarget},
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -20,6 +21,13 @@ pub struct SessionView {
     pub cursor: CommitId,
     pub depth: u64,
     pub product: ProductView,
+    /// Complete recoverable VN target; omitted for Gamebook artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene: Option<SceneTarget>,
+    /// The current commit's effective scene music directive, recomputed during replay. The full
+    /// target remains in `scene`; ordinary dialogue transitions omit this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music_action: Option<MusicAction>,
     /// What to show since the previous interaction, recomputed from the parent state and the
     /// input rather than stored.
     pub presentation: Vec<PresentationItem>,
@@ -27,6 +35,119 @@ pub struct SessionView {
     pub shared: Vec<VariableView>,
     pub frames: Vec<FrameView>,
     pub history: Vec<HistoryView>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[schemars(rename = "SessionView")]
+#[serde(deny_unknown_fields)]
+pub struct GamebookSessionView {
+    pub artifact_id: ArtifactId,
+    pub execution: ExecutionId,
+    pub cursor: CommitId,
+    pub depth: u64,
+    pub product: ProductView,
+    /// What to show since the previous interaction, recomputed from the parent state and the
+    /// input rather than stored.
+    pub presentation: Vec<PresentationItem>,
+    pub interaction: GamebookInteraction,
+    pub shared: Vec<VariableView>,
+    pub frames: Vec<FrameView>,
+    pub history: Vec<HistoryView>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[schemars(rename = "Interaction")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum GamebookInteraction {
+    Choose {
+        graph: GraphRef,
+        node: NodeId,
+        choice_point: ChoicePointId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
+        min: u16,
+        max: u16,
+        /// Whether the host may propose options and passages here.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        proposals: bool,
+        /// Arguments for option labels and disabled reasons.
+        args: BTreeMap<String, ViewScalar>,
+        /// Visible options in order, proposed ones after the choice point's own; hidden ones
+        /// are left out.
+        options: Vec<OptionView>,
+    },
+    Finished {
+        outcome: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<ContentRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        body: Option<Segment>,
+    },
+}
+
+impl TryFrom<SessionView> for GamebookSessionView {
+    type Error = crate::Error;
+
+    fn try_from(view: SessionView) -> Result<Self, Self::Error> {
+        if view.scene.is_some() || view.music_action.is_some() {
+            return Err(crate::Error::new(
+                "version",
+                "view",
+                "a VN view cannot be converted to a Gamebook view",
+            ));
+        }
+        let interaction = match view.interaction {
+            Interaction::Choose {
+                graph,
+                node,
+                choice_point,
+                key,
+                min,
+                max,
+                proposals,
+                args,
+                options,
+            } => GamebookInteraction::Choose {
+                graph,
+                node,
+                choice_point,
+                key,
+                min,
+                max,
+                proposals,
+                args,
+                options,
+            },
+            Interaction::Finished {
+                outcome,
+                title,
+                body,
+            } => GamebookInteraction::Finished {
+                outcome,
+                title,
+                body,
+            },
+            Interaction::Advance { .. } => {
+                return Err(crate::Error::new(
+                    "version",
+                    "view.interaction",
+                    "an Advance interaction cannot be represented by the Gamebook view",
+                ));
+            }
+        };
+        Ok(Self {
+            artifact_id: view.artifact_id,
+            execution: view.execution,
+            cursor: view.cursor,
+            depth: view.depth,
+            product: view.product,
+            presentation: view.presentation,
+            interaction,
+            shared: view.shared,
+            frames: view.frames,
+            history: view.history,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -72,6 +193,15 @@ pub enum Presented {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Interaction {
+    Advance {
+        graph: GraphRef,
+        dialogue: NodeId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        speaker: Option<ContentRef>,
+        line: Segment,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        voice: Option<MediaRef>,
+    },
     Choose {
         graph: GraphRef,
         node: NodeId,
@@ -163,16 +293,108 @@ pub struct HistoryView {
     pub current: bool,
 }
 
+// Keep the Gamebook BookView schema separate from the VN structural analysis.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[schemars(rename = "GraphAnalysis")]
+#[serde(deny_unknown_fields)]
+pub struct GamebookGraphAnalysis {
+    pub reference: GraphRef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<ContentRef>,
+    pub entry: NodeId,
+    pub exported: bool,
+    pub nodes: Vec<GamebookNodeAnalysis>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[schemars(rename = "NodeAnalysis")]
+#[serde(deny_unknown_fields)]
+pub struct GamebookNodeAnalysis {
+    pub id: NodeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    pub kind: GamebookNodeKind,
+    /// A passage's title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<ContentRef>,
+    /// The graph a call runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callee: Option<GraphRef>,
+    /// The outcome a return reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    pub edges: Vec<EdgeAnalysis>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[schemars(rename = "NodeKind")]
+#[serde(rename_all = "snake_case")]
+pub enum GamebookNodeKind {
+    Passage,
+    Branch,
+    Mutate,
+    Call,
+    Return,
+}
+
+impl TryFrom<GraphAnalysis> for GamebookGraphAnalysis {
+    type Error = crate::Error;
+
+    fn try_from(graph: GraphAnalysis) -> Result<Self, Self::Error> {
+        Ok(Self {
+            reference: graph.reference,
+            title: graph.title,
+            entry: graph.entry,
+            exported: graph.exported,
+            nodes: graph
+                .nodes
+                .into_iter()
+                .map(GamebookNodeAnalysis::try_from)
+                .collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+impl TryFrom<NodeAnalysis> for GamebookNodeAnalysis {
+    type Error = crate::Error;
+
+    fn try_from(node: NodeAnalysis) -> Result<Self, Self::Error> {
+        let kind = match node.kind {
+            NodeKind::Passage => GamebookNodeKind::Passage,
+            NodeKind::Branch => GamebookNodeKind::Branch,
+            NodeKind::Mutate => GamebookNodeKind::Mutate,
+            NodeKind::Call => GamebookNodeKind::Call,
+            NodeKind::Return => GamebookNodeKind::Return,
+            NodeKind::Dialogue | NodeKind::Scene => {
+                return Err(crate::Error::new(
+                    "version",
+                    "view.graphs",
+                    "VN graph nodes cannot be represented by the Gamebook BookView",
+                ));
+            }
+        };
+        Ok(Self {
+            id: node.id,
+            key: node.key,
+            kind,
+            title: node.title,
+            callee: node.callee,
+            outcome: node.outcome,
+            edges: node.edges,
+        })
+    }
+}
+
 /// What the browser reader receives: the session view, the reading page of the current
 /// passage, and the text-free graph analysis.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BookView {
-    pub view: SessionView,
+    pub view: GamebookSessionView,
     /// The presentation of the step that entered the current passage (or ended the story),
     /// followed by those of the local choices made in it since.
     pub page: Vec<PresentationItem>,
-    pub graphs: Vec<GraphAnalysis>,
+    pub graphs: Vec<GamebookGraphAnalysis>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -322,6 +544,11 @@ pub fn next_content_units(
                     None
                 }
             }
+            Plan::Dialogue { line, .. } => {
+                units.insert(line.unit.clone());
+                None
+            }
+            Plan::Scene { next, .. } => Some(*next),
             Plan::Mutate { next, .. } => Some(*next),
             Plan::Branch {
                 when_true,

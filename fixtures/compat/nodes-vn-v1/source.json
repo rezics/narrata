@@ -1,0 +1,114 @@
+{
+  "manifest": {
+    "format_version": 3,
+    "product": {
+      "id": "vn-demo",
+      "entry": {"package": "main", "graph": "start"}
+    },
+    "packages": {"main": "main.json"}
+  },
+  "package": {
+    "id": "vn-demo.main",
+    "version": "1.0.0",
+    "exports": ["start"],
+    "graphs": {
+      "start": {
+        "outcomes": ["done"],
+        "entry": "scene_one",
+        "nodes": {
+          "scene_one": {
+            "id": "node:00000000000000000000000000000001",
+            "type_id": "narrata.scene",
+            "data": {
+              "background": {"kind": "image", "provider": "demo", "key": "bg/room", "revision": "r1"},
+              "layers": [{"id": "hero", "order": 10, "asset": {"kind": "image", "provider": "demo", "key": "portrait/hero-neutral", "revision": "v4"}}],
+              "music": {"kind": "play", "track": {"kind": "audio", "provider": "demo", "key": "music/theme", "revision": "a7"}},
+              "next": "line_one"
+            }
+          },
+          "line_one": {
+            "id": "node:00000000000000000000000000000002",
+            "type_id": "narrata.dialogue",
+            "data": {
+              "speaker": {"provider": "host", "key": "speaker.hero"},
+              "line": {"unit": {"provider": "host", "key": "dialogue.one"}, "first": "line-start", "last": "line-end"},
+              "voice": {"kind": "audio", "provider": "demo", "key": "voice/one", "revision": "a1"},
+              "next": "line_two"
+            }
+          },
+          "line_two": {
+            "id": "node:00000000000000000000000000000003",
+            "type_id": "narrata.dialogue",
+            "data": {
+              "speaker": {"provider": "host", "key": "speaker.friend"},
+              "line": {"unit": {"provider": "host", "key": "dialogue.two"}, "first": "line-start", "last": "line-end"},
+              "next": "line_three"
+            }
+          },
+          "line_three": {
+            "id": "node:00000000000000000000000000000004",
+            "type_id": "narrata.dialogue",
+            "data": {
+              "speaker": {"provider": "host", "key": "speaker.hero"},
+              "line": {"unit": {"provider": "host", "key": "dialogue.three"}, "first": "line-start", "last": "line-end"},
+              "voice": {"kind": "audio", "provider": "demo", "key": "voice/three", "revision": "a3"},
+              "next": "route"
+            }
+          },
+          "route": {
+            "id": "node:00000000000000000000000000000005",
+            "type_id": "narrata.passage",
+            "data": {
+              "choice_points": [{
+                "id": "choice-point:00000000000000000000000000000001",
+                "key": "route",
+                "options": [
+                  {"id": "option:00000000000000000000000000000001", "key": "left", "label": {"provider": "host", "key": "option.left"}, "outcome": {"kind": "branch", "target": "left"}},
+                  {"id": "option:00000000000000000000000000000002", "key": "right", "label": {"provider": "host", "key": "option.right"}, "outcome": {"kind": "branch", "target": "right"}}
+                ]
+              }]
+            }
+          },
+          "left": {
+            "id": "node:00000000000000000000000000000006",
+            "type_id": "narrata.mutate",
+            "data": {"assignments": [], "next": "scene_two"}
+          },
+          "right": {
+            "id": "node:00000000000000000000000000000007",
+            "type_id": "narrata.mutate",
+            "data": {"assignments": [], "next": "scene_two"}
+          },
+          "scene_two": {
+            "id": "node:00000000000000000000000000000008",
+            "type_id": "narrata.scene",
+            "data": {
+              "background": {"kind": "image", "provider": "demo", "key": "bg/hall", "revision": "r2"},
+              "layers": [
+                {"id": "hero", "order": 10, "asset": {"kind": "image", "provider": "demo", "key": "portrait/hero-alert", "revision": "v5"}},
+                {"id": "friend", "order": 20, "asset": {"kind": "image", "provider": "demo", "key": "portrait/friend", "revision": "v2"}}
+              ],
+              "music": {"kind": "keep"},
+              "next": "line_four"
+            }
+          },
+          "line_four": {
+            "id": "node:00000000000000000000000000000009",
+            "type_id": "narrata.dialogue",
+            "data": {
+              "speaker": {"provider": "host", "key": "speaker.friend"},
+              "line": {"unit": {"provider": "host", "key": "dialogue.four"}, "first": "line-start", "last": "line-end"},
+              "voice": {"kind": "audio", "provider": "demo", "key": "voice/four", "revision": "a4"},
+              "next": "ending"
+            }
+          },
+          "ending": {
+            "id": "node:0000000000000000000000000000000a",
+            "type_id": "narrata.return",
+            "data": {"outcome": "done"}
+          }
+        }
+      }
+    }
+  }
+}

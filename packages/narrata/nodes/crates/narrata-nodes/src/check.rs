@@ -8,8 +8,9 @@ use crate::{
     MAX_VARIABLES, Result, ScalarType,
     expr::{Declarations, check_scalar, expect},
     plan::{
-        CallTarget, ChoicePoint, Chunk, Graph, GraphRef, ImportRef, Manifest, NameTable, Outcome,
-        Passage, Plan, Signature, TombstoneSet, node_path,
+        CallTarget, CharacterLayer, ChoicePoint, Chunk, Graph, GraphRef, ImportRef, Manifest,
+        MediaKind, MediaRef, MusicAction, NameTable, Outcome, Passage, Plan, Signature,
+        TombstoneSet, node_path,
     },
     registry::valid_type_id,
     valid_name,
@@ -202,6 +203,15 @@ pub(crate) fn check_manifest(manifest: &Manifest) -> Result<()> {
     collect_manifest(manifest, &mut Checks::first())
 }
 pub(crate) fn collect_manifest(manifest: &Manifest, checks: &mut Checks) -> Result<()> {
+    if manifest.source_format != crate::FORMAT_VERSION
+        && manifest.source_format != crate::VISUAL_NOVEL_FORMAT_VERSION
+    {
+        checks.error(Error::new(
+            "version",
+            "manifest.source_format",
+            "unsupported source format",
+        ))?;
+    }
     let product = &manifest.product;
     checks.check(name(&product.id, "product.id"))?;
     if manifest.packages.is_empty() {
@@ -550,6 +560,27 @@ pub(crate) fn collect_graph(
                     checks,
                 )?;
             }
+            Plan::Dialogue { voice, next, .. } => {
+                if let Some(voice) = voice {
+                    checks.check(validate_media_ref(voice, MediaKind::Audio, &path))?;
+                }
+                checks.check(target(next))?;
+            }
+            Plan::Scene {
+                background,
+                layers,
+                music,
+                next,
+            } => {
+                if let Some(background) = background {
+                    checks.check(validate_media_ref(background, MediaKind::Image, &path))?;
+                }
+                checks.check(validate_layers(layers, &path))?;
+                if let MusicAction::Play { track } = music {
+                    checks.check(validate_media_ref(track, MediaKind::Audio, &path))?;
+                }
+                checks.check(target(next))?;
+            }
             Plan::Branch {
                 condition,
                 when_true,
@@ -635,6 +666,68 @@ pub(crate) fn collect_graph(
                 }
             }
         }
+    }
+    Ok(())
+}
+
+/// Checks a media identity and its declared category before it enters an artifact or state.
+pub(crate) fn validate_media_ref(media: &MediaRef, expected: MediaKind, path: &str) -> Result<()> {
+    let valid_key = |value: &str, max: usize| {
+        !value.is_empty()
+            && value.len() <= max
+            && value.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'/')
+            })
+    };
+    if media.kind != expected {
+        return Err(Error::new(
+            "resource_kind",
+            path,
+            "media reference category does not match its scene role",
+        ));
+    }
+    if !valid_name(&media.provider)
+        || !valid_key(&media.key, 512)
+        || !valid_key(&media.revision, 128)
+        || media.revision.eq_ignore_ascii_case("latest")
+        || media.revision.eq_ignore_ascii_case("current")
+    {
+        return Err(Error::new(
+            "resource_reference",
+            path,
+            "media provider, key and immutable revision must be bounded identifiers",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_layers(layers: &[CharacterLayer], path: &str) -> Result<()> {
+    if layers.len() > 256 {
+        return Err(Error::new(
+            "limit",
+            path,
+            "a scene has at most 256 character layers",
+        ));
+    }
+    let mut ids = BTreeSet::new();
+    for (index, layer) in layers.iter().enumerate() {
+        let at = format!("{path}.layers[{index}]");
+        name(&layer.id, &at)?;
+        if !ids.insert(layer.id.as_str()) {
+            return Err(Error::new(
+                "duplicate",
+                at,
+                "scene layer identities must be unique",
+            ));
+        }
+        validate_media_ref(&layer.asset, MediaKind::Image, &at)?;
+    }
+    if layers.windows(2).any(|pair| pair[0].order >= pair[1].order) {
+        return Err(Error::new(
+            "scene_order",
+            path,
+            "scene layers must have unique, increasing order values",
+        ));
     }
     Ok(())
 }

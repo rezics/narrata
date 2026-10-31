@@ -4,6 +4,8 @@ use crate::{Error, Result, SourcePlan};
 
 /// The semantic revision of the built-in `narrata.*` node types (ADR 0013 §4).
 pub const GAMEBOOK_REVISION: &str = "2";
+/// The semantic revision of the first-party VN execution nodes.
+pub const VISUAL_NOVEL_REVISION: &str = "1";
 
 /// An authoring extension lowers to a plan that is subsequently checked in its graph context.
 /// Compilers are trusted build-time code, not callbacks executed by the story runtime.
@@ -18,6 +20,7 @@ struct Registration {
 #[derive(Clone, Default)]
 pub struct NodeRegistry {
     entries: BTreeMap<String, Registration>,
+    visual_novel: bool,
 }
 
 pub(crate) fn valid_type_id(id: &str) -> bool {
@@ -46,7 +49,33 @@ impl NodeRegistry {
                 },
             );
         }
-        Self { entries }
+        Self {
+            entries,
+            visual_novel: false,
+        }
+    }
+
+    /// The Gamebook node set plus the opt-in first-party VN line and scene nodes.
+    pub fn visual_novel() -> Self {
+        let mut registry = Self::gamebook();
+        for (name, compiler) in [
+            ("dialogue", dialogue as NodeCompiler),
+            ("scene", scene as NodeCompiler),
+        ] {
+            registry.entries.insert(
+                format!("narrata.{name}"),
+                Registration {
+                    revision: VISUAL_NOVEL_REVISION.into(),
+                    compiler,
+                },
+            );
+        }
+        registry.visual_novel = true;
+        registry
+    }
+
+    pub(crate) fn supports_visual_novel(&self) -> bool {
+        self.visual_novel
     }
 
     pub fn register(&mut self, id: &str, revision: &str, compiler: NodeCompiler) -> Result<()> {
@@ -125,4 +154,10 @@ fn call(v: &serde_json::Value) -> Result<SourcePlan> {
 }
 fn return_node(v: &serde_json::Value) -> Result<SourcePlan> {
     lower_builtin("return", v)
+}
+fn dialogue(v: &serde_json::Value) -> Result<SourcePlan> {
+    lower_builtin("dialogue", v)
+}
+fn scene(v: &serde_json::Value) -> Result<SourcePlan> {
+    lower_builtin("scene", v)
 }

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SceneTarget",
+  "description": "The entire recoverable visual/audio target for a VN scene safe point.",
+  "type": "object",
+  "properties": {
+    "background": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MediaRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CharacterLayer"
+      }
+    },
+    "music": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MediaRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "layers"
+  ],
+  "$defs": {
+    "CharacterLayer": {
+      "description": "A stable character layer in a complete visual scene target.",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/MediaRef"
+        },
+        "id": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "order",
+        "asset"
+      ]
+    },
+    "MediaKind": {
+      "type": "string",
+      "enum": [
+        "image",
+        "audio"
+      ]
+    },
+    "MediaRef": {
+      "description": "A content-owned media identity. Narrata stores the provider's immutable key and revision,\nnever a URL, credential, decoded byte buffer or player handle.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MediaKind"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "key",
+        "revision"
+      ]
+    }
+  }
+}
