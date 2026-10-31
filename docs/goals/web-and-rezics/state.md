@@ -25,7 +25,7 @@
 
 1. 地图增量和 CI 前置修复已验收：12d0736 给两个存储 Task 加 web:build 依赖并补服务器 Rust/Wasm，ec233fa 的[CI](https://github.com/rezics/narrata/actions/runs/41058220569)八项全绿。固定 SDK 代码/包未变，元数据 `.temp/delivery/reader-map-release.json`、CI 证据 `reader-map-ci.json` 已更新；M3 仍须最终全部能力对应证据。
 2. [存档维护/浅恢复](../../../archive/goals/web-and-rezics-2026-10-05/tasks/G-038.md)已 verified 归档、保留分支并推送 2a92cc5；[维护增量 CI](https://github.com/rezics/narrata/actions/runs/41083435285)八项全绿，复用 kernel，保留精确浅页上下文或拒绝，不实施 ADR 0021 推迟的在线原地压缩/shadow 切换。
-3. [阅读器跨构件/确认组合](tasks/G-039.md)从 2a92cc5 开始，attempt 1 因网络/TLS 故障退出（code 4），无正式交接或提交；20 份工作文件及全部证据保留。日志证明退出前 R1（26 浏览器）、Web 与 WebStorage（19 浏览器）已通过，仍不是任务验收。2026-10-31 已在同一工作区恢复 Codex/high attempt 2；补入独立评审确认的 native/legacy 旧构件恢复分派和迁移核实后陈旧错误提示两项修复，之后完成实际 A/B/C、地图/维护组合及全部可见结果矩阵。实时 PID/检查以 goalctl 为准。
+3. [阅读器跨构件/确认组合](tasks/G-039.md)从 2a92cc5 开始，attempt 1 因网络/TLS 故障退出（code 4），原成果保留。attempt 2 提交四项历史恢复/升级协调及回归修复，Web 包 gate 和四项桌面/390px 冷加载、地图、升级旅程通过；完整 R1 是 26 浏览器通过、2 失败，不能算全绿。manager 等重型检查结束后持锁停止，保留全部提交、10 份工作文件与证据，补入独立 UI 并发复审。2026-10-31 已依维护者最新偏好在同一工作区恢复 gpt-6-luna/max attempt 3，继续原完整范围；实时 PID/检查以 goalctl 为准。
 4. 按原 M1/M2/M3 全项审计、归位长期决定、归档任务后才关闭本 Goal；Web VN 仍待启动，不占用重叠路径。
 
 ## 维护评审检查点
@@ -43,10 +43,12 @@ M3 契约文档已在 f903f5d 按源码与 Accepted ADR0022 收敛：更新已�
 
 完整逐项证据清单在 `.temp/final-goal-evidence-audit.md`；历史三份固定 tarball 已重新计算 SHA-256，均匹配元数据，记录 `.temp/delivery/historical-package-recheck.json`。作者图公共 tarball 渲染补证已在维护固定包上通过：桌面/390px 三级导航、提供的精确节点标题、选择、读失败重试与清理；六张截图已查看。证据及 package-lock SHA512/图文件 SHA256 绑定在 `.temp/final-author-graph/baseline-evidence/`，基线的样例未提供 cluster 标题，不能要求它凭空出现。最终包仍须核对图资源字节/依赖对应，不重复未变的全套图回归或 SQL 规模测量。
 
-G039 attempt 2 已提交 f987c57 历史按需恢复及 04aa10a 在线升级协调；按顺序重跑构建、包类型和 17 项聚焦测试通过。固定提交的两个源码复审在 `.temp/review-reader-history-04aa10a.md` / `review-reader-upgrade-04aa10a.md`：原 native/legacy 未载入 A 恢复问题已修复、协调器未见新缺陷；旧 `evolution_import` 的错误码断言仍需跟随有意的 needs_artifact 更新并通过完整 Rust gate。参考 UI 及组合旅程仍在原 worker 完成，未提交 UI 不属于这次固定复审。缓存专项核查未见无界历史解码增长（有 65 构件及各自 LRU 上限），不宣称统一低堆内存字节预算。原陈旧提示还需最终 UI 提交/真实浏览器验收，修复前 gate 不替代修复后完整验收。
+G039 attempt 2 已提交 f987c57 历史按需恢复、04aa10a 在线升级协调、0de99cc 原生 root 分派回归及 b1ab159 有意 needs_artifact 错误的旧断言同步；构建、类型及 17 项聚焦测试通过。固定源码复审接受历史/协调器修复；原生 Rust 阶段现已通过。完整 R1 的两个浏览器失败是 reader.spec 仍期待 incompatible_save，以及桌面浅恢复后升级报告等待超时；日志、截图和 trace 已保存在 `.temp/goal/runs/G-039/manager-preserved/review-failures/r1-release-v1/`。原陈旧提示在 v2 已正确修复，但 `.temp/review-reader-reference-v2.md` 又确认 Reader 正文加载期间宿主迁移忽略 refresh(false)，可能显示旧 A 选项配已保存 B；当前变更未消除此问题。attempt 3 需协调两个方向、复现延迟回包并通过实际桌面/手机/安装包回归。缓存专项未见无界历史解码增长（65 构件及各自 LRU 上限），不宣称统一低堆内存字节预算。
+
+已保存 Web 候选包 SHA256 257f0c8e2ce0f6438a434afc969c86c189809636d5359d70dc32f3bfcd91aa04，元数据 `.temp/delivery/reader-composition-candidate.json`；它是临时候选，不是完整验收。其所有图资源 SHA256 与依赖版本已对应作者图浏览器基线，绑定 `.temp/final-author-graph/candidate-graph-binding.json`。脚本默认 5s 在四个真实 Git 提交测试中超时，main 227a2ff 仅将该测试改为 20s、断言未变；默认 task test:scripts 全 53 通过，worker 另以 --timeout15000 通过 53，后者不掩盖原失败。长期入链收敛及待启动 VN 接续检查在 4528fa3，VN 仍无认领或实现。
 
 ## 接续约束与主机
 
-子代理/worker 使用 high 或更低，默认 high；机械工作可 medium，不恢复 xhigh。地图 attempt 7 在原 worktree 用 fresh CLI 上下文清除了旧中断的 missing-tool-output 历史，所有成果保留；此前模型容量/认证故障不意味着重做任务或降低验收。等待以实际 PID/会话为准，不因观测超时重启。
+2026-10-31 维护者最新偏好：后续常规实现、审计和回归优先 Luna max，替代之前的 Sol/high 默认；仅确有必要再选更重模型。会话子代理显式指定 gpt-6-luna/max；goalctl 接续先设置 GOAL_CODEX_MODEL=gpt-6-luna 再 resume --effort max（只写 effort 会重新取仓库默认 Sol）。本地 CLI 目录与 goalctl 均支持 max，attempt 3 已验证实际启动。地图 attempt 7 的 fresh 历史修复仍是历史事实；所有成果保留。等待以实际 PID/会话为准，不因观测超时重启。
 
 PostgreSQL 官方 EDB portable 18.6 在 `.temp/postgresql/18.6-5/pgsql/bin`，来源/校验和在 `.temp/postgresql/download.json`；`.temp/manager-postgresql.ps1` 使用隔离 loopback cluster、fsync/synchronous_commit on 并最终停库。维护的新实库结果必须单独证明，不能沿用地图/旧存档测试。临时文件都在 `.temp/`。不修改 REZICS，能力请求只记入[集成文档](../../integrations/rezics.md)。
