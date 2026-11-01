@@ -36,11 +36,11 @@ fn content(key: &str) -> Value {
     json!({"provider": "host", "key": key})
 }
 
-fn image(key: &str, revision: &str) -> Value {
+pub fn image(key: &str, revision: &str) -> Value {
     json!({"kind": "image", "provider": "demo", "key": key, "revision": revision})
 }
 
-fn audio(key: &str, revision: &str) -> Value {
+pub fn audio(key: &str, revision: &str) -> Value {
     json!({"kind": "audio", "provider": "demo", "key": key, "revision": revision})
 }
 
@@ -52,7 +52,7 @@ fn segment(unit: &str, first: &str, last: &str) -> Value {
     json!({"unit": content(unit), "first": first, "last": last})
 }
 
-fn plan(id: u32, type_id: &str, data: Value) -> Value {
+pub fn plan(id: u32, type_id: &str, data: Value) -> Value {
     json!({"id": node(id), "type_id": type_id, "data": data})
 }
 

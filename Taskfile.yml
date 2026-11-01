@@ -34,7 +34,7 @@ tasks:
     deps: [web:build]
     cmds: [pwsh -NoProfile -File scripts/check-server-storage.ps1]
   web:build:
-    desc: Build the standalone @rezics/narrata ESM, declarations and Wasm package
+    desc: Build the standalone package, Gamebook reader, optional VN dependency reader and other Wasm assets
     dir: packages/narrata/web
     cmds:
       - npm ci

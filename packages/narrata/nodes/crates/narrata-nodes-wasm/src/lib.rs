@@ -625,8 +625,20 @@ impl NodeBook {
         bytes: &[u8],
     ) -> Result<(), JsError> {
         let artifact = parse(artifact, "artifact", "artifact:<64 hex digits>")?;
-        let context = self.artifact(artifact)?;
         let id: ObjectId = parse(id, "object", "object:<64 hex digits>")?;
+        self.insert_artifact_chunk(artifact, id, bytes, false, false)
+            .map(|_| ())
+    }
+
+    fn insert_artifact_chunk(
+        &self,
+        artifact: narrata_nodes::ArtifactId,
+        id: ObjectId,
+        bytes: &[u8],
+        skip_existing: bool,
+        verify_bytes: bool,
+    ) -> Result<bool, JsError> {
+        let context = self.artifact(artifact)?;
         if id != context.program.manifest().tombstones
             && !context.program.manifest().chunks.contains(&id)
         {
@@ -640,15 +652,27 @@ impl NodeBook {
             .chunks
             .as_ref()
             .ok_or_else(|| JsError::new("loadChunk requires fromManifest"))?;
-        let actual = MemorySource::default()
-            .insert(bytes.to_vec())
-            .map_err(js_error)?;
-        if id != actual {
-            return Err(js_error(Error::new(
-                "artifact",
-                id.to_string(),
-                "object content differs from its object ID",
-            )));
+        if skip_existing
+            && chunks
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .objects
+                .contains_key(&id)
+        {
+            return Ok(false);
+        }
+        if !verify_bytes {
+            let actual = MemorySource::default()
+                .insert(bytes.to_vec())
+                .map_err(js_error)?;
+            if id != actual {
+                return Err(js_error(Error::new(
+                    "artifact",
+                    id.to_string(),
+                    "object content differs from its object ID",
+                )));
+            }
         }
         let pending_bytes: usize = self
             .artifacts
@@ -678,7 +702,7 @@ impl NodeBook {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .objects
             .insert(id, bytes.to_vec());
-        Ok(())
+        Ok(true)
     }
 
     /// Optional aliases are checked against this artifact without loading graph bodies.
@@ -1209,6 +1233,160 @@ impl VnBook {
     /// no program request behind for the host to treat as mandatory.
     pub fn dependencies(&self, request: &str) -> Result<String, JsError> {
         self.dependency_result(request).map_err(js_error)
+    }
+
+    #[cfg(feature = "vn-dependencies")]
+    /// Runs the same checked projection with a bounded set of temporary manifest objects.
+    /// The JSON descriptor and concatenated bytes are an internal Wasm call boundary; the
+    /// public request and result remain the frozen dependency v1 exchange.
+    #[wasm_bindgen(js_name = dependenciesWithObjects)]
+    pub fn dependencies_with_objects(
+        &self,
+        request: &str,
+        descriptors: &str,
+        bytes: &[u8],
+    ) -> Result<String, JsError> {
+        const MAX_OBJECTS: usize = 16;
+        const MAX_OBJECT_BYTES: usize = 8 * 1024 * 1024;
+        const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+        const MAX_DESCRIPTOR_BYTES: usize = 16 * 1024;
+
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct ObjectSlice {
+            object: String,
+            offset: usize,
+            byte_length: usize,
+        }
+
+        if bytes.len() > MAX_TOTAL_BYTES || descriptors.len() > MAX_DESCRIPTOR_BYTES {
+            return Err(js_error(Error::new(
+                "limit",
+                "candidate_objects",
+                "temporary candidate objects exceed their byte budget",
+            )));
+        }
+        let objects: Vec<ObjectSlice> = serde_json::from_str(descriptors).map_err(|error| {
+            js_error(Error::new("json", "candidate_objects", error.to_string()))
+        })?;
+        if objects.len() > MAX_OBJECTS {
+            return Err(js_error(Error::new(
+                "limit",
+                "candidate_objects",
+                "at most 16 temporary candidate objects may be queried at once",
+            )));
+        }
+
+        let mut seen = std::collections::BTreeSet::new();
+        let mut slices = Vec::with_capacity(objects.len());
+        let mut expected_offset = 0usize;
+        for object in objects {
+            if object.offset != expected_offset
+                || object.byte_length == 0
+                || object.byte_length > MAX_OBJECT_BYTES
+            {
+                return Err(js_error(Error::new(
+                    "schema",
+                    "candidate_objects",
+                    "temporary object slices must be contiguous and within the per-object limit",
+                )));
+            }
+            let end = object
+                .offset
+                .checked_add(object.byte_length)
+                .ok_or_else(|| {
+                    js_error(Error::new(
+                        "limit",
+                        "candidate_objects",
+                        "temporary object slice offset overflowed",
+                    ))
+                })?;
+            let object_bytes = bytes.get(object.offset..end).ok_or_else(|| {
+                js_error(Error::new(
+                    "schema",
+                    "candidate_objects",
+                    "temporary object slice is outside the byte buffer",
+                ))
+            })?;
+            let id: ObjectId = parse(
+                &object.object,
+                "candidate_objects.object",
+                "object:<64 hex digits>",
+            )?;
+            if !seen.insert(id) {
+                return Err(js_error(Error::new(
+                    "schema",
+                    "candidate_objects",
+                    "temporary object IDs must be unique",
+                )));
+            }
+            let actual = MemorySource::default()
+                .insert(object_bytes.to_vec())
+                .map_err(js_error)?;
+            if id != actual {
+                return Err(js_error(Error::new(
+                    "artifact",
+                    id.to_string(),
+                    "candidate object content differs from its object ID",
+                )));
+            }
+            slices.push((id, object.offset, end));
+            expected_offset = end;
+        }
+        if expected_offset != bytes.len() {
+            return Err(js_error(Error::new(
+                "schema",
+                "candidate_objects",
+                "temporary object descriptors must cover the byte buffer exactly",
+            )));
+        }
+
+        use dependencies::DependencyRequestV1;
+        let (cursor, _) = DependencyRequestV1::decode(request).map_err(js_error)?;
+        let session =
+            self.inner.session.as_ref().ok_or_else(|| {
+                js_error(Error::new("state", "session", "open the session first"))
+            })?;
+        if session.cursor().map_err(js_error)? != cursor {
+            return Err(js_error(Error::new(
+                "stale_input",
+                "cursor",
+                "cursor changed before the dependency query",
+            )));
+        }
+
+        let artifact = self.inner.active().program.artifact_id();
+        let mut inserted = Vec::with_capacity(slices.len());
+        let result = (|| {
+            for (id, start, end) in &slices {
+                let object_bytes = bytes.get(*start..*end).ok_or_else(|| {
+                    js_error(Error::new(
+                        "schema",
+                        "candidate_objects",
+                        "temporary object slice is outside the byte buffer",
+                    ))
+                })?;
+                if self
+                    .inner
+                    .insert_artifact_chunk(artifact, *id, object_bytes, true, true)?
+                {
+                    inserted.push(*id);
+                }
+            }
+            self.dependency_result(request).map_err(js_error)
+        })();
+        if !inserted.is_empty()
+            && let Some(chunks) = self.inner.artifact(artifact)?.chunks.as_ref()
+        {
+            let mut pending = chunks
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for id in inserted {
+                pending.objects.remove(&id);
+            }
+        }
+        result
     }
 
     pub fn checkout(&mut self, commit: &str) -> Result<(), JsError> {

@@ -3,9 +3,9 @@ import { expect, test, vi } from "vitest";
 import { IndexedDbStore, StoreSuperseded, type CacheStore } from "@rezics/narrata/storage";
 import { checkedVnMediaResolution, createVnPlayer, VnMediaBoundaryError, VnTextUnavailableError, type VnMediaPresenter, type VnMediaRequest, type VnMediaResolution, type VnMediaResolver, type VnPlayerContext, type VnTextResolver } from "@rezics/narrata/vn/player";
 import { openVn } from "@rezics/narrata/vn";
-import type { MediaRef, VnReader, VnViewV1 } from "@rezics/narrata/vn";
+import type { MediaRef, VnCandidatePreparation, VnDependencyLimits, VnDependencyResult, VnReader, VnViewV1 } from "@rezics/narrata/vn";
 import type { VnPresentedMedia } from "@rezics/narrata/vn/player";
-import { execution, lazyVnPack, splitPack, vnPack } from "./fixture.js";
+import { execution, lazyVnPack, objectId, splitPack, vnDependencyPack, vnPack } from "./fixture.js";
 
 type TestContext = { readonly scope: string };
 
@@ -187,6 +187,133 @@ function mediaRequest(overrides: Partial<VnMediaRequest<TestContext>> = {}): VnM
   };
 }
 
+function candidateReader(base: VnReader, media: VnDependencyResult["media"], inspect: VnReader["inspect"]): VnReader {
+  return {
+    artifactId: base.artifactId, inspect,
+    historyArtifacts: cursor => base.historyArtifacts(cursor),
+    dependencies: (cursor, limits) => base.dependencies(cursor, limits),
+    prepareCandidates: async (cursor, limits, signal) => ({
+      status: signal.aborted ? "cancelled" : "complete",
+      dependencies: { version: 1, artifact_id: base.artifactId, cursor, limits, complete: true,
+        graphs: [], content: [], media, music_may_stop: false, truncations: [], unknowns: [],
+        work: { locations: 1, scans: 0, graphs: 0, candidates: 1 } },
+      objects: [],
+    }),
+    clearPreparedCandidates: () => base.clearPreparedCandidates(),
+    advance: (cursor, dialogue) => base.advance(cursor, dialogue),
+    choose: (cursor, point, options) => base.choose(cursor, point, options),
+    checkout: cursor => base.checkout(cursor), exportSave: () => base.exportSave(),
+    restore: save => base.restore(save), pack: () => base.pack(), reload: () => base.reload(),
+    retrySave: () => base.retrySave(), close: () => base.close(),
+  };
+}
+
+test.each(["invalid", "throw"])("a synchronous %s target selector releases an adopted warm lease", async mode => {
+  const reader = await openVn({ pack: vnPack, execution });
+  const harness = mediaHarness();
+  let failSelector = false;
+  const player = createVnPlayer({
+    ...playerOptions(reader, harness), maxCandidateRequests: 2,
+    selectVariant: slot => {
+      if (failSelector && slot.role === "character") {
+        if (mode === "throw") throw new Error("Host variant selection failed.");
+        return "";
+      }
+      return slot.role === "background" ? "desktop-cover" : "original";
+    },
+    selectCandidateVariant: item => item.role.kind === "background" ? "desktop-cover" : "original",
+    prepareCandidateMedia: async (resource, request) => harness.presentMedia(resource, request, await reader.inspect()),
+  });
+  try {
+    await player.start();
+    await player.advance(); await player.advance(); await player.advance();
+    await vi.waitFor(() => expect(player.getSnapshot().candidates?.status).not.toBe("preparing"));
+    const choice = await reader.inspect();
+    if (choice.view.interaction.kind !== "choose") throw new Error("Expected a branch choice.");
+    const route = choice.view.interaction.options.find(option => option.enabled);
+    const warm = harness.presentations.find(item => item.key === "bg/hall");
+    if (!route || !warm) throw new Error("Expected the warmed target background.");
+    failSelector = true;
+    await player.choose(route.id);
+    expect(player.getSnapshot().status).toBe("unavailable");
+    expect(harness.releasedPresentationIds.filter(id => id === warm.id)).toHaveLength(1);
+    failSelector = false;
+    await player.retryResources();
+    expect(player.getSnapshot().status).toBe("ready");
+    expect(harness.releasedPresentationIds.filter(id => id === warm.id)).toHaveLength(1);
+  } finally { await player.close(); await reader.close(); }
+});
+
+test("changing authorization context removes the earlier candidate projection synchronously", async () => {
+  const reader = await openVn({ pack: vnPack, execution });
+  const harness = mediaHarness();
+  const player = createVnPlayer({ ...playerOptions(reader, harness),
+    selectCandidateVariant: item => item.role.kind === "background" ? "desktop-cover" : "original",
+    prepareCandidateMedia: async (resource, request) => harness.presentMedia(resource, request, await reader.inspect()),
+  });
+  try {
+    await player.start();
+    await player.advance(); await player.advance(); await player.advance();
+    await vi.waitFor(() => expect(player.getSnapshot().candidates?.projection).toBeDefined());
+    const previous = player.getSnapshot().candidates?.projection;
+    const switching = player.setContext({ media: { scope: "reader-two" }, content: { languages: ["en"], viewer: "reader-two" } });
+    expect(player.getSnapshot().candidates?.projection).toBeUndefined();
+    await switching;
+    expect(player.getSnapshot().candidates?.projection).not.toBe(previous);
+  } finally { await player.close(); await reader.close(); }
+});
+
+test("candidate admission counts audio that becomes pending after candidate work starts", async () => {
+  const base = await openVn({ pack: vnPack, execution });
+  const voice: MediaRef = { kind: "audio", provider: "demo", key: "voice/three", revision: "a1" };
+  const background: MediaRef = { kind: "image", provider: "demo", key: "bg/candidate", revision: "r1" };
+  const reader = candidateReader(base, [{ role: { kind: "background" }, reference: background }], async () => {
+    const view = await base.inspect();
+    return view.view.depth === 1 && view.view.interaction.kind === "advance"
+      ? { ...view, view: { ...view.view, interaction: { ...view.view.interaction, voice } } } : view;
+  });
+  const harness = mediaHarness();
+  let enabled = false;
+  let started!: () => void;
+  let release!: () => void;
+  const candidateStarted = new Promise<void>(resolve => { started = resolve; });
+  const candidateGate = new Promise<void>(resolve => { release = resolve; });
+  const player = createVnPlayer({ ...playerOptions(reader, harness),
+    limits: { ...limits(), maxEncodedBytesRetained: 16, maxDecodedBytesRetained: 64_000 },
+    selectCandidateVariant: () => "candidate",
+    prepareCandidateMedia: async (resource, request) => {
+      if (!enabled) throw new DOMException("Candidate work is deferred.", "AbortError");
+      started();
+      await candidateGate;
+      return harness.presentMedia(resource, request, await reader.inspect());
+    },
+  });
+  try {
+    await player.start();
+    await vi.waitFor(() => expect(player.getSnapshot().audioLoading).toBe(false));
+    await player.setSoundEnabled(true);
+    harness.deferPresentationOnce("voice/three");
+    harness.deferPlayOnce("voice/three");
+    await player.advance();
+    await vi.waitFor(() => expect(harness.hasPendingPresentation()).toBe(true));
+    enabled = true;
+    const warming = player.retryCandidates();
+    await candidateStarted;
+    harness.resolveDeferredPresentation();
+    await vi.waitFor(() => expect(harness.hasPendingPlay()).toBe(true));
+    release();
+    await warming;
+    expect(player.getSnapshot().status).toBe("ready");
+    expect(player.getSnapshot().candidates?.status).toBe("partial");
+    expect(player.getSnapshot().candidates?.mediaPrepared).toBe(0);
+    expect(player.getSnapshot().candidates?.mediaUnavailable).toBe(1);
+  } finally {
+    release();
+    if (harness.hasPendingPlay()) harness.resolveDeferredPlay();
+    await player.close(); await base.close();
+  }
+});
+
 test("checked media responses reject kind, exact revision, selected variant and descriptor mismatches", () => {
   const request = mediaRequest();
   const valid = available(request, []);
@@ -210,6 +337,254 @@ test("checked media responses reject kind, exact revision, selected variant and 
   expect(() => checkedVnMediaResolution(request, invalidDescriptor, limits())).toThrowError(expect.objectContaining({ issue: "descriptor" }));
   const unapprovedAddress = { ...valid, signedUrl: "host-private-address" } as unknown;
   expect(() => checkedVnMediaResolution(request, unapprovedAddress, limits())).toThrowError(expect.objectContaining({ issue: "descriptor" }));
+});
+
+test("player prepares direct candidate media with host-selected variants and reuses matching leases", async () => {
+  const reader = await openVn({ pack: vnPack, execution });
+  const harness = mediaHarness();
+  let candidatePresentations = 0;
+  let candidateId = 1000;
+  const player = createVnPlayer({
+    ...playerOptions(reader, harness),
+    selectCandidateVariant: item => item.role.kind === "background" ? "desktop-cover" : "original",
+    prepareCandidateMedia: async (resource, request) => {
+      candidatePresentations++;
+      const id = ++candidateId;
+      if (resource.kind === "image") return { kind: "image", source: `candidate:${request.slot.media.key}:${id}`, release: () => undefined };
+      return { kind: "audio", playFromStart: async () => undefined, stop: () => undefined, release: () => undefined };
+    },
+  });
+  try {
+    await player.start();
+    await player.advance();
+    await player.advance();
+    await player.advance();
+    await vi.waitFor(() => expect(player.getSnapshot().candidates?.status).not.toBe("preparing"));
+    expect(player.getSnapshot().candidates?.mediaPrepared).toBeGreaterThan(0);
+    expect(candidatePresentations).toBe(player.getSnapshot().candidates?.mediaPrepared);
+
+    const before = await reader.inspect();
+    const projection = await reader.dependencies(before.view.cursor, { locations: 512, graphs: 32, candidates: 512, references: 2048, scans: 8192 });
+    const requestCountsBeforeTransition = new Map<string, number>();
+    for (const request of harness.requests) requestCountsBeforeTransition.set(request.slot.media.key, (requestCountsBeforeTransition.get(request.slot.media.key) ?? 0) + 1);
+    if (before.view.interaction.kind !== "choose") throw new Error("Expected the candidate branch choice.");
+    const left = before.view.interaction.options.find(option => option.key === "left");
+    if (!left) throw new Error("Expected the left candidate route.");
+    await player.choose(left.id);
+    const after = await reader.inspect();
+    const nextMediaKeys = [after.view.scene.background?.key, ...after.view.scene.layers.map(layer => layer.asset.key), after.view.scene.music?.key]
+      .filter((key): key is string => key !== undefined);
+    const warmedKeys = projection.media.map(item => item.reference.key);
+    expect(nextMediaKeys.some(key => warmedKeys.includes(key))).toBe(true);
+    for (const key of nextMediaKeys.filter(key => warmedKeys.includes(key))) {
+      expect(harness.requests.filter(request => request.slot.media.key === key).length,
+        `${key}: before ${requestCountsBeforeTransition.get(key) ?? 0}, after ${harness.requests.filter(request => request.slot.media.key === key).map(request => `${request.slot.role}/${request.variant}`).join(",")}`)
+        .toBe(requestCountsBeforeTransition.get(key) ?? 0);
+    }
+  } finally {
+    await player.close();
+    await reader.close();
+  }
+});
+
+test("the public player prepares cold helper media before entry and reuses the matching displayed resource", async () => {
+  const parts = splitPack(vnDependencyPack);
+  const chunkRequests: string[] = [];
+  const reader = await openVn({ manifest: parts.manifest, execution, fetchChunk: async id => {
+    chunkRequests.push(id);
+    const bytes = parts.objects.get(id);
+    if (!bytes) throw new Error(`Missing fixture object ${id}`);
+    return bytes;
+  } });
+  const harness = mediaHarness();
+  const player = createVnPlayer({
+    ...playerOptions(reader, harness),
+    selectCandidateVariant: item => item.role.kind === "background" ? "desktop-cover" : "original",
+    prepareCandidateMedia: async (resource, request) => harness.presentMedia(resource, request, await reader.inspect()),
+  });
+  try {
+    await player.start();
+    for (let step = 0; player.getSnapshot().screen?.view.view.interaction.kind === "advance" && step < 16; step++) await player.advance();
+    await vi.waitFor(() => expect(player.getSnapshot().candidates?.status).not.toBe("preparing"));
+    const candidate = player.getSnapshot().candidates;
+    if (!candidate?.projection) throw new Error("Expected a checked candidate projection.");
+    expect(candidate.projection.media.some(item => item.reference.key === "bg/helper")).toBe(true);
+    expect(candidate.projection.media.some(item => item.reference.key === "music/helper")).toBe(true);
+    expect(candidate.graphObjectsPrepared).toBeGreaterThan(0);
+    const helperId = parts.chunks.map(objectId).find(id => chunkRequests.indexOf(id) > 0);
+    if (!helperId) throw new Error("Expected the cold helper object to be checked.");
+    expect(chunkRequests.filter(id => id === helperId)).toHaveLength(1);
+
+    const choice = player.getSnapshot().screen?.view;
+    if (!choice || choice.view.interaction.kind !== "choose") throw new Error("Expected the candidate choice.");
+    const right = choice.view.interaction.options.filter(option => option.enabled)[1];
+    if (!right) throw new Error("Expected the cross-graph route.");
+    const bgRequestsBefore = harness.requests.filter(request => request.slot.media.key === "bg/hall").length;
+    await player.choose(right.id);
+    expect(player.getSnapshot().screen?.view.view.scene.background?.key).toBe("bg/hall");
+    expect(harness.requests.filter(request => request.slot.media.key === "bg/hall")).toHaveLength(bgRequestsBefore);
+    expect(chunkRequests.filter(id => id === helperId)).toHaveLength(1);
+  } finally {
+    await player.close();
+    await reader.close();
+  }
+});
+
+test("candidate cancellation releases earlier A before deferred B and releases late B once", async () => {
+  const parts = splitPack(vnDependencyPack);
+  const reader = await openVn({ manifest: parts.manifest, execution, fetchChunk: async id => {
+    const bytes = parts.objects.get(id);
+    if (!bytes) throw new Error(`Missing fixture object ${id}`);
+    return bytes;
+  } });
+  const harness = mediaHarness();
+  let currentView: VnViewV1 | undefined;
+  const player = createVnPlayer({
+    ...playerOptions(reader, harness),
+    maxCandidateRequests: 2,
+    selectCandidateVariant: item => item.role.kind === "background" ? "desktop-cover" : "original",
+    prepareCandidateMedia: async (resource, request) => harness.presentMedia(resource, request, await reader.inspect()),
+  });
+  try {
+    await player.start();
+    harness.deferPresentationOnce("bg/helper");
+    for (let step = 0; player.getSnapshot().screen?.view.view.interaction.kind === "advance" && step < 16; step++) await player.advance();
+    currentView = player.getSnapshot().screen?.view;
+    if (!currentView || currentView.view.interaction.kind !== "choose") throw new Error("Expected the fixture choice.");
+    const start = harness.presentations.length;
+    await vi.waitFor(() => expect(harness.hasPendingPresentation()).toBe(true));
+    const candidates = harness.presentations.slice(start);
+    const first = candidates.find(item => item.key !== "bg/helper");
+    const deferred = candidates.find(item => item.key === "bg/helper");
+    if (!first || !deferred) throw new Error("Expected a completed candidate A and deferred candidate B.");
+
+    const left = currentView.view.interaction.options.find(option => option.enabled);
+    if (!left) throw new Error("Expected an enabled route.");
+    await player.choose(left.id);
+    expect(harness.releasedPresentationIds.filter(id => id === first.id)).toHaveLength(1);
+    expect(harness.releasedPresentationIds).not.toContain(deferred.id);
+
+    harness.resolveDeferredPresentation();
+    await vi.waitFor(() => expect(harness.releasedPresentationIds.filter(id => id === deferred.id)).toHaveLength(1));
+  } finally {
+    await player.close();
+    await reader.close();
+  }
+});
+
+test("a failed required target releases adopted warm assets and retries without a poisoned cache", async () => {
+  const reader = await openVn({ pack: vnPack, execution });
+  const harness = mediaHarness();
+  const player = createVnPlayer({
+    ...playerOptions(reader, harness),
+    maxCandidateRequests: 2,
+    selectCandidateVariant: item => item.role.kind === "background" ? "desktop-cover" : "original",
+    prepareCandidateMedia: async (resource, request) => {
+      const shown = await reader.inspect();
+      return harness.presentMedia(resource, request, shown);
+    },
+  });
+  try {
+    await player.start();
+    await player.advance();
+    await player.advance();
+    await player.advance();
+    await vi.waitFor(() => expect(player.getSnapshot().candidates?.status).not.toBe("preparing"));
+    expect(player.getSnapshot().candidates?.mediaPrepared).toBeGreaterThan(0);
+    const choice = await reader.inspect();
+    if (choice.view.interaction.kind !== "choose") throw new Error("Expected the fixture choice.");
+    const left = choice.view.interaction.options.find(option => option.enabled);
+    if (!left) throw new Error("Expected the ready left route.");
+    const warmBackground = harness.presentations.find(item => item.key === "bg/hall");
+    if (!warmBackground) throw new Error("Expected the target background to be warmed.");
+    const before = harness.requests.filter(request => request.slot.media.key === "bg/hall").length;
+    harness.failOnce("portrait/hero-alert");
+    await player.choose(left.id);
+    expect(player.getSnapshot().status).toBe("unavailable");
+    expect(harness.releasedPresentationIds.filter(id => id === warmBackground.id)).toHaveLength(1);
+
+    await player.retryResources();
+    expect(player.getSnapshot().status).toBe("ready");
+    expect(harness.requests.filter(request => request.slot.media.key === "bg/hall")).toHaveLength(before + 1);
+    expect(harness.releasedPresentationIds.filter(id => id === warmBackground.id)).toHaveLength(1);
+  } finally {
+    await player.close();
+    await reader.close();
+  }
+});
+
+test("candidate media budgets include audio leases pending during current playback", async () => {
+  const baseReader = await openVn({ pack: vnPack, execution });
+  const candidateVoice: MediaRef = { kind: "audio", provider: "demo", key: "voice/three", revision: "a1" };
+  const candidateBackground: MediaRef = { kind: "image", provider: "demo", key: "bg/candidate", revision: "r1" };
+  let candidateEnabled = false;
+  const reader: VnReader = {
+    artifactId: baseReader.artifactId,
+    inspect: async () => {
+      const view = await baseReader.inspect();
+      return view.view.depth === 1 && view.view.interaction.kind === "advance"
+        ? { ...view, view: { ...view.view, interaction: { ...view.view.interaction, voice: candidateVoice } } }
+        : view;
+    },
+    historyArtifacts: expected => baseReader.historyArtifacts(expected),
+    dependencies: (cursor, limits) => baseReader.dependencies(cursor, limits),
+    prepareCandidates: async (cursor, limits: VnDependencyLimits, signal): Promise<VnCandidatePreparation> => {
+      const view = await baseReader.inspect();
+      const dependencies: VnDependencyResult = {
+        version: 1, artifact_id: view.view.artifact_id, cursor,
+        limits, complete: true, graphs: [], content: [],
+        media: [{ role: { kind: "background" }, reference: candidateBackground }],
+        music_may_stop: false, truncations: [], unknowns: [],
+        work: { locations: 1, scans: 0, graphs: 0, candidates: 1 },
+      };
+      return { status: signal.aborted ? "cancelled" : "complete", dependencies, objects: [] };
+    },
+    clearPreparedCandidates: () => baseReader.clearPreparedCandidates(),
+    advance: (expected, dialogue) => baseReader.advance(expected, dialogue),
+    choose: (expected, point, options) => baseReader.choose(expected, point, options),
+    checkout: commit => baseReader.checkout(commit),
+    exportSave: () => baseReader.exportSave(),
+    restore: save => baseReader.restore(save),
+    pack: () => baseReader.pack(),
+    reload: () => baseReader.reload(),
+    retrySave: () => baseReader.retrySave(),
+    close: () => baseReader.close(),
+  };
+  const harness = mediaHarness();
+  harness.deferPlayOnce("voice/three");
+  const player = createVnPlayer({
+    ...playerOptions(reader, harness),
+    limits: { ...limits(), maxEncodedBytesRetained: 16, maxDecodedBytesRetained: 64_000 },
+    selectCandidateVariant: () => "candidate",
+    prepareCandidateMedia: async (resource, request) => {
+      if (!candidateEnabled) throw new DOMException("Candidate preparation is deferred by the fixture.", "AbortError");
+      return harness.presentMedia(resource, request, await reader.inspect());
+    },
+  });
+  try {
+    await player.start();
+    await vi.waitFor(() => expect(player.getSnapshot().audioLoading).toBe(false));
+    await player.setSoundEnabled(true);
+    expect(player.getSnapshot().soundStatus).toBe("on");
+    harness.deferPlayOnce("voice/three");
+    await player.advance();
+    const screenInteraction = player.getSnapshot().screen?.view.view.interaction;
+    if (screenInteraction?.kind !== "advance") throw new Error("Expected the voice-bearing line.");
+    expect(screenInteraction.voice?.key).toBe("voice/three");
+    expect(harness.requests.some(request => request.slot.media.key === "voice/three")).toBe(true);
+    await vi.waitFor(() => expect(harness.hasPendingPlay()).toBe(true));
+    expect(player.getSnapshot().audioLoading).toBe(true);
+    candidateEnabled = true;
+    await player.retryCandidates();
+    await vi.waitFor(() => expect(player.getSnapshot().candidates?.status).not.toBe("preparing"));
+    expect(player.getSnapshot().status).toBe("ready");
+    expect(player.getSnapshot().candidates?.status).toBe("partial");
+    expect(player.getSnapshot().candidates?.mediaUnavailable).toBeGreaterThan(0);
+    harness.resolveDeferredPlay();
+  } finally {
+    await player.close();
+    await baseReader.close();
+  }
 });
 
 test("a pre-commit missing graph chunk retries the original expected dialogue input", async () => {

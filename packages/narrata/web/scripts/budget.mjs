@@ -22,7 +22,7 @@ const isSharedAuthoring = path => modulePath(path) === "authoring/shared.js";
 const isAuthoring = path => !isSharedAuthoring(path) && (["authoring", "maintenance", "server", "authoring-wasm"].includes(group(path)) || ["generated/authoring.js", "testing/authoring.js"].includes(modulePath(path)));
 // The versioned VN entry and its generated validator are optional; root/reader keep their
 // Gamebook runtime budget while the complete VN route is measured separately below.
-const isVn = path => group(path) === "vn" || modulePath(path) === "generated/validate-vn-view.js";
+const isVn = path => group(path) === "vn" || group(path) === "vn-reader-wasm" || modulePath(path) === "generated/validate-vn-view.js" || modulePath(path) === "generated/validate-vn-dependencies.js";
 const isVnAuthoring = path => modulePath(path).startsWith("vn/authoring.") || modulePath(path).startsWith("vn/server.");
 const isVnPlayer = path => modulePath(path).startsWith("vn/player/");
 const isVnReader = path => isVn(path) && !isVnPlayer(path) && !isVnAuthoring(path);
@@ -50,12 +50,17 @@ const ordinary = measure(javascript.filter(path => group(path) !== "graph"));
 const budget = JSON.parse(readFileSync(resolve(here, "size-budget.json")));
 export const sizes = {
   readerWasm: wasm("reader-wasm/narrata_nodes_wasm_bg.wasm"),
-  // This reader Wasm is shared by Gamebook and VN; compare it with the frozen Gamebook size
-  // to keep the new facade's compiled cost visible without changing the old reader ceiling.
+  // Preserve the original VN0 increment over the frozen Gamebook baseline. The new
+  // optional dependency module has its own increment over today's shared base reader.
   vnWasmIncrement: {
     raw: Math.max(0, wasm("reader-wasm/narrata_nodes_wasm_bg.wasm").raw - budget.baseline.readerWasm.raw),
     gzip: Math.max(0, wasm("reader-wasm/narrata_nodes_wasm_bg.wasm").gzip - budget.baseline.readerWasm.gzip),
   },
+  vnDependencyWasmIncrement: {
+    raw: wasm("vn-reader-wasm/narrata_nodes_wasm_bg.wasm").raw - wasm("reader-wasm/narrata_nodes_wasm_bg.wasm").raw,
+    gzip: wasm("vn-reader-wasm/narrata_nodes_wasm_bg.wasm").gzip - wasm("reader-wasm/narrata_nodes_wasm_bg.wasm").gzip,
+  },
+  vnReaderWasm: wasm("vn-reader-wasm/narrata_nodes_wasm_bg.wasm"),
   compatWasm: wasm("wasm/narrata_nodes_wasm_bg.wasm"),
   authoringWasm: wasm("authoring-wasm/narrata_authoring_wasm_bg.wasm"),
   javascript: { raw: ordinary.raw + graph.raw + readerMap.raw, gzip: ordinary.gzip + graph.gzip + readerMap.gzip },

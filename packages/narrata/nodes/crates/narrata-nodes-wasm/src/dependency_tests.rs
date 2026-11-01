@@ -18,7 +18,7 @@ use crate::{
         TruncationV1, UnknownV1,
     },
 };
-use corpus::{EXECUTION, chunk_of, compile_pack, source};
+use corpus::{EXECUTION, audio, chunk_of, compile_pack, image, plan, source};
 
 fn pack() -> Vec<u8> {
     compile_pack(&source())
@@ -624,6 +624,204 @@ fn the_committed_schema_is_the_one_derived_from_the_rust_definitions() {
     assert_eq!(limits["graphs"]["maximum"], DependencyLimits::MAX_GRAPHS);
     assert_eq!(limits["locations"]["minimum"], 1);
     assert_eq!(limits["scans"]["maximum"], DependencyLimits::MAX_SCANS);
+}
+
+#[test]
+fn optional_cold_graph_bytes_are_checked_for_projection_then_released_without_stealing_host_input()
+{
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../../fixtures/compat/vn-dependencies-v1");
+    let manifest = std::fs::read(root.join("story.manifest")).unwrap();
+    let objects: Value =
+        serde_json::from_slice(&std::fs::read(root.join("objects.json")).unwrap()).unwrap();
+    let start_id = objects["main.start"]["id"].as_str().unwrap();
+    let start_file = objects["main.start"]["file"].as_str().unwrap();
+    let helper_id = objects["main.helper"]["id"].as_str().unwrap();
+    let helper_file = objects["main.helper"]["file"].as_str().unwrap();
+    let start = std::fs::read(root.join(start_file)).unwrap();
+    let helper = std::fs::read(root.join(helper_file)).unwrap();
+    let mut book = VnBook::from_manifest(&manifest, EXECUTION).unwrap();
+    book.load_chunk(start_id, &start).unwrap();
+    book.memory().unwrap();
+    advance(&mut book);
+    advance(&mut book);
+    let current = view(&book);
+    assert_eq!(current["view"]["interaction"]["kind"], "choose");
+    let cursor = book.cursor().unwrap();
+    let artifact = book.artifact_id();
+    let limits = DependencyLimits::new(256, 8, 2048, 512, 1024).unwrap();
+
+    let chunks = book.inner.active().chunks.as_ref().unwrap();
+    let start_object: ObjectId = start_id.parse().unwrap();
+    {
+        let mut pending = chunks.0.lock().unwrap();
+        pending.objects.insert(start_object, start.clone());
+        pending.request = Some(start_object);
+    }
+
+    let cold =
+        DependencyResultV1::decode(&book.dependency_result(&request(&book, limits)).unwrap())
+            .unwrap();
+    assert!(cold.truncations.iter().any(|item| matches!(item, TruncationV1::Unavailable { chunk, .. } if chunk.to_string() == helper_id)));
+    let expanded = DependencyResultV1::decode(
+        &book
+            .dependencies_with_objects(
+                &request(&book, limits),
+                &serde_json::to_string(
+                    &json!([{"object": helper_id, "offset": 0, "byte_length": helper.len()}]),
+                )
+                .unwrap(),
+                &helper,
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        expanded
+            .media
+            .iter()
+            .any(|item| item.reference.key == "bg/helper")
+    );
+    assert!(
+        expanded
+            .media
+            .iter()
+            .any(|item| item.reference.key == "music/helper")
+    );
+    let pending = chunks.0.lock().unwrap();
+    assert_eq!(
+        pending.request,
+        Some(start_object),
+        "the optional walk must preserve another operation's request"
+    );
+    assert_eq!(
+        pending.objects.get(&start_object),
+        Some(&start),
+        "the optional walk must preserve bytes already supplied by the host"
+    );
+    assert!(
+        !pending.objects.contains_key(&helper_id.parse().unwrap()),
+        "the temporary candidate object must be released"
+    );
+    drop(pending);
+    assert_eq!(
+        book.cursor().unwrap(),
+        cursor,
+        "candidate discovery does not write a narrative transition"
+    );
+    assert_eq!(book.artifact_id(), artifact);
+}
+
+#[test]
+fn multiple_temporary_objects_expand_nested_cold_graphs_and_are_all_released() {
+    let mut source = source();
+    source["packages"]["main"]["graphs"]["helper"]["nodes"]["leave"] = plan(
+        22,
+        "narrata.call",
+        json!({
+            "target": {"kind": "local", "graph": "nested"},
+            "on_return": {"done": "back"}
+        }),
+    );
+    source["packages"]["main"]["graphs"]["helper"]["nodes"]["back"] =
+        plan(23, "narrata.return", json!({"outcome": "back"}));
+    source["packages"]["main"]["graphs"]["nested"] = json!({
+        "outcomes": ["done"],
+        "entry": "enter",
+        "nodes": {
+            "enter": plan(24, "narrata.scene", json!({
+                "background": image("bg/nested", "r1"),
+                "layers": [],
+                "music": {"kind": "play", "track": audio("music/nested", "a1")},
+                "next": "leave"
+            })),
+            "leave": plan(25, "narrata.return", json!({"outcome": "done"}))
+        }
+    });
+    let pack = compile_pack(&source);
+    let book = cold_at_ask(&pack);
+    let limits = DependencyLimits::default();
+    let cold = query(&book, limits);
+    assert!(cold.truncations.iter().any(|item| matches!(item,
+        TruncationV1::Unavailable { graph, .. } if graph.graph == "helper"
+    )));
+
+    let (helper_id, helper) = chunk_of(&pack, "main.helper");
+    let (nested_id, nested) = chunk_of(&pack, "main.nested");
+    let helper_object: ObjectId = helper_id.parse().unwrap();
+    let nested_object: ObjectId = nested_id.parse().unwrap();
+    let chunks = book.inner.active().chunks.as_ref().unwrap();
+    let original_objects = chunks.0.lock().unwrap().objects.clone();
+    chunks.0.lock().unwrap().request = Some(helper_object);
+
+    let helper_only = book
+        .dependencies_with_objects(
+            &request(&book, limits),
+            &serde_json::to_string(&json!([{
+                "object": helper_id,
+                "offset": 0,
+                "byte_length": helper.len()
+            }]))
+            .unwrap(),
+            &helper,
+        )
+        .unwrap();
+    let helper_only = DependencyResultV1::decode(&helper_only).unwrap();
+    assert!(!helper_only.complete);
+    assert!(
+        helper_only
+            .media
+            .iter()
+            .any(|item| item.reference.key == "bg/helper")
+    );
+    assert!(helper_only.truncations.iter().any(|item| matches!(item,
+        TruncationV1::Unavailable { graph, .. } if graph.graph == "nested"
+    )));
+
+    let mut bytes = helper.clone();
+    let nested_offset = bytes.len();
+    bytes.extend_from_slice(&nested);
+    let descriptors = serde_json::to_string(&json!([
+        {"object": helper_id, "offset": 0, "byte_length": helper.len()},
+        {"object": nested_id, "offset": nested_offset, "byte_length": nested.len()}
+    ]))
+    .unwrap();
+    let expanded = book
+        .dependencies_with_objects(&request(&book, limits), &descriptors, &bytes)
+        .unwrap();
+    let expanded = DependencyResultV1::decode(&expanded).unwrap();
+    assert!(expanded.complete, "{expanded:?}");
+    assert!(
+        expanded
+            .media
+            .iter()
+            .any(|item| item.reference.key == "bg/helper")
+    );
+    assert!(
+        expanded
+            .media
+            .iter()
+            .any(|item| item.reference.key == "bg/nested")
+    );
+    assert!(
+        expanded
+            .media
+            .iter()
+            .any(|item| item.reference.key == "music/nested")
+    );
+
+    let pending = chunks.0.lock().unwrap();
+    assert_eq!(
+        pending.request,
+        Some(helper_object),
+        "the host's request survives the optional query"
+    );
+    assert_eq!(
+        pending.objects, original_objects,
+        "host-supplied objects remain unchanged"
+    );
+    assert!(!pending.objects.contains_key(&helper_object));
+    assert!(!pending.objects.contains_key(&nested_object));
 }
 
 /// The generator: `NARRATA_CORPUS_OUT=.temp/<new directory> cargo test -p narrata-nodes-wasm

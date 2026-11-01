@@ -1,5 +1,5 @@
 {
-  "measurement": "Wasm and dist/**/*.js; gzip level 9 per module. Web Wasm uses the size-optimized Cargo `wasm` profile without a name section. readerWasm is the shared runtime asset used by root, ./reader and ./vn (no legacy publishGraph, compiler, layout or trace); vnWasmIncrement reports its added bytes over the frozen Gamebook baseline. compatWasm is the raw dist/wasm module that keeps publishGraph and no entry imports; authoringWasm serves ./authoring and ./server. runtime counts root/reader modules including shared storage transport but excludes optional VN entries and the VN validator. authoring counts the authoring and server entries, their Wasm glue, generated authoring types and the testing short story; authoringShared separately counts the one module shared by Gamebook and VN authoring, so it enters capability totals once. compat counts the raw module's glue. nativeContent counts content/native.js and testing/native-document.js separately. Graph is a separate minified Vite ESM library build of both graph entry points, including lazy Sigma/graphology and transitive dependencies with the optional React peer external. Reader map is a separate bundle from both reader-map subpaths with the same settings and external React peer; it includes the complete standalone validator. VN reader counts only ./vn and its generated validator; vnAuthoring separately counts ./vn/authoring and ./vn/server; VN player counts only ./vn/player modules. Common transport, storage and reader Wasm glue remain in their shared totals. javascript aggregates ordinary dist modules plus graph and readerMap bundles once each, so VN reader, VN authoring and player each enter that total once. Root/reader first-screen imports do not load any optional VN entry or its validator. The aggregate JavaScript maximum is the measured new total plus its previous raw/gzip headroom; the unchanged Gamebook runtime, reader Wasm and other capability maximums retain their prior values. All graph-directory source modules are excluded from ordinary-module sums; graph and readerMap bundles are each added once to aggregate JavaScript.",
+  "measurement": "Wasm and dist/**/*.js; gzip level 9 per module. Web Wasm uses the size-optimized Cargo `wasm` profile without a name section. readerWasm is the no-default-features runtime asset used by root and ./reader (no VN dependency walk, legacy publishGraph, compiler, layout or trace); vnReaderWasm is separate and used only by ./vn, built from the same native crates with the vn-dependencies feature. vnWasmIncrement retains the base reader's increment over the frozen Gamebook baseline; vnDependencyWasmIncrement reports the optional vnReaderWasm increment over readerWasm. compatWasm is the raw dist/wasm module that keeps publishGraph and no entry imports; authoringWasm serves ./authoring and ./server. runtime counts root/reader modules including shared storage transport but excludes optional VN entries and validators. authoring counts the authoring and server entries, their Wasm glue, generated authoring types and the testing short story; authoringShared separately counts the one module shared by Gamebook and VN authoring, so it enters capability totals once. compat counts the raw module's glue. nativeContent counts content/native.js and testing/native-document.js separately. Graph is a separate minified Vite ESM library build of both graph entry points, including lazy Sigma/graphology and transitive dependencies with the optional React peer external. Reader map is a separate bundle from both reader-map subpaths with the same settings and external React peer; it includes the complete standalone validator. VN reader counts ./vn, its generated view/dependency validators and vn-reader-wasm glue; vnAuthoring separately counts ./vn/authoring and ./vn/server; VN player counts only ./vn/player modules. Common transport, storage and reader Wasm glue remain in their shared totals. javascript aggregates ordinary dist modules plus graph and readerMap bundles once each, so VN reader, VN authoring and player each enter that total once. Root/reader first-screen imports do not load the optional VN entry. The aggregate JavaScript maximum preserves the prior raw/gzip headroom. All graph-directory source modules are excluded from ordinary-module sums; graph and readerMap bundles are each added once to aggregate JavaScript.",
   "baseline": {
     "readerWasm": { "raw": 1399144, "gzip": 392434 },
     "compatWasm": { "raw": 1667319, "gzip": 452168 },
@@ -17,13 +17,15 @@
     "vnWasmIncrement": { "raw": 48788, "gzip": 15099 },
     "vn": { "raw": 78997, "gzip": 10381 },
     "vnAuthoring": { "raw": 4342, "gzip": 1526 },
-    "vnPlayer": { "raw": 0, "gzip": 0 }
+    "vnPlayer": { "raw": 0, "gzip": 0 },
+    "vnReaderWasm": { "raw": 1525331, "gzip": 428400 },
+    "vnDependencyWasmIncrement": { "raw": 77464, "gzip": 20807 }
   },
   "maximum": {
     "readerWasm": { "raw": 1730000, "gzip": 445000 },
     "compatWasm": { "raw": 2075000, "gzip": 523000 },
     "authoringWasm": { "raw": 3300000, "gzip": 810000 },
-    "javascript": { "raw": 820213, "gzip": 162554 },
+    "javascript": { "raw": 978020, "gzip": 183737 },
     "runtime": { "raw": 250000, "gzip": 45500 },
     "authoring": { "raw": 91000, "gzip": 20000 },
     "authoringShared": { "raw": 2500, "gzip": 1100 },
@@ -34,8 +36,10 @@
     "graph": { "raw": 260000, "gzip": 70000 },
     "readerMap": { "raw": 59000, "gzip": 8400 },
     "vnWasmIncrement": { "raw": 65000, "gzip": 18000 },
-    "vn": { "raw": 95000, "gzip": 12500 },
+    "vn": { "raw": 239377, "gzip": 31455 },
     "vnAuthoring": { "raw": 8000, "gzip": 3000 },
-    "vnPlayer": { "raw": 90000, "gzip": 17000 }
+    "vnPlayer": { "raw": 90000, "gzip": 17000 },
+    "vnDependencyWasmIncrement": { "raw": 90000, "gzip": 25000 },
+    "vnReaderWasm": { "raw": 1807446, "gzip": 465825 }
   }
 }

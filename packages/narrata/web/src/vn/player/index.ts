@@ -4,6 +4,7 @@ export type {
   VnPlayerContext,
   VnPlayerFailure,
   VnPlayerOptions,
+  VnPlayerCandidateStatus,
   VnPlayerSnapshot,
   VnPlayerStatus,
   VnPresentedView,

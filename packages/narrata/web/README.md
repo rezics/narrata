@@ -14,8 +14,8 @@ peer and is not shipped inside the package; `@rezics/narrata/graph/react` follow
 import { openBook } from "@rezics/narrata";
 import { IndexedDbStore } from "@rezics/narrata/storage";
 
-async function bytes(url: string): Promise<Uint8Array> {
-  const response = await fetch(url);
+async function bytes(url: string, signal?: AbortSignal): Promise<Uint8Array> {
+  const response = await fetch(url, signal ? { signal } : {});
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -26,7 +26,7 @@ const store = await IndexedDbStore.open(`my-gamebook-${execution}`);
 const book = await openBook({
   execution,
   manifest: await bytes("/story/manifest.cbor"),
-  fetchChunk: id => bytes(`/story/objects/${id.slice(7)}.cbor`),
+  fetchChunk: (id, signal) => bytes(`/story/objects/${id.slice(7)}.cbor`, signal),
   storage: store,
 });
 try {
@@ -93,8 +93,33 @@ try {
 checked before the pending operation is retried. With durable storage, `advance`, `choose`,
 `checkout` and `restore` resolve after the host confirms their writes. If a write outcome is
 unknown, `retrySave()` sends the same pending bytes; `reload()` reopens the confirmed cursor.
-The VN entry shares the reader Wasm and storage host, and is not imported by the Gamebook root
-or reader entry.
+The VN entry uses a separate reader Wasm built from the same native crates with dependency
+queries enabled. The Gamebook root and reader keep their no-default-features Wasm and never load
+the optional VN module. Wasm initializes once in a JavaScript realm, so every `openVn` call there
+must use the same module source. A custom `wasm` source must be built from the same native stack
+with the `vn-dependencies` feature; the reader checks that module before opening the session.
+
+The checked `reader.dependencies(cursor, limits)` query returns ADR 0025 version 1 for that exact
+cursor and artifact. Limits are explicit; `complete`, `truncations` and `unknowns` describe what the
+bounded walk did and did not establish. The result contains references, not bodies or bytes.
+`reader.prepareCandidates(cursor, limits, signal)` fetches bounded graph objects outside the input
+queue, temporarily supplies a bounded set of objects together to the same Wasm dependency walker,
+and repeats the checked query to discover references inside nested cold graphs. The public request
+and result remain dependency v1. It removes only objects injected for that query and stages verified
+immutable bytes for the ordinary reader operation, so optional fetching cannot install bytes into a
+freed reader or delay an available route. Objects are reported as `fetched` until the Wasm query
+verifies them as `checked`; missing, corrupt or over-budget objects keep the result `partial`.
+Object, query and byte limits accumulate for the lifetime of the reader. The `fetchChunk` callback
+receives an optional `AbortSignal`; pass it to the host request so stale candidate loads can stop at
+the transport as well.
+
+The player can prepare direct-candidate media when the host supplies both `selectCandidateVariant`
+(based on the role/ref hint) and `prepareCandidateMedia` (which accepts the actual current View's
+provenance but no future View). Matching immutable media leases are reused if the eventual View
+selects the same variant. The snapshot exposes partial/complete preparation and the typed
+dependency projection, including future content references without fabricated dynamic arguments.
+If the candidate snapshot is partial, `player.retryCandidates()` retries within the reader's
+cumulative object/request bounds; a resource failure never changes the story cursor.
 
 ### Visual novel authoring
 

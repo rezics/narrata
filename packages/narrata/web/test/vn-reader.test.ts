@@ -4,8 +4,9 @@ import { checkedVnView, openVn } from "@rezics/narrata/vn";
 import type { VnViewV1 } from "@rezics/narrata/vn";
 import { IndexedDbStore, StoreSuperseded, type CacheStore } from "@rezics/narrata/storage";
 import { openBook } from "@rezics/narrata";
-import { NodeBook, VnBook } from "../dist/reader-wasm/narrata_nodes_wasm.js";
-import { demoPack, execution, lazyVnPack, objectId, splitPack, vnPack } from "./fixture.js";
+import { NodeBook } from "../dist/reader-wasm/narrata_nodes_wasm.js";
+import { VnBook } from "../dist/vn-reader-wasm/narrata_nodes_wasm.js";
+import { demoPack, execution, lazyVnPack, objectId, splitPack, vnDependencyPack, vnPack } from "./fixture.js";
 
 function advance(view: VnViewV1) {
   const interaction = view.view.interaction;
@@ -101,6 +102,234 @@ test("VN entry keeps dialogue and choice distinct, restores scene and history, a
     await reader.close();
     store.close();
   }
+});
+
+test("dependency query returns checked exact cursor and artifact provenance without moving the reader", async () => {
+  const reader = await openVn({ pack: vnPack, execution });
+  try {
+    const first = await reader.inspect();
+    const limits = { locations: 128, graphs: 32, candidates: 64, references: 128, scans: 2048 };
+    const result = await reader.dependencies(first.view.cursor, limits);
+    expect(result.version).toBe(1);
+    expect(result.artifact_id).toBe(first.view.artifact_id);
+    expect(result.cursor).toBe(first.view.cursor);
+    expect(result.limits).toEqual(limits);
+    expect(result.complete).toBe(true);
+    expect(Array.isArray(result.content)).toBe(true);
+    expect((await reader.inspect()).view.cursor).toBe(first.view.cursor);
+
+    await reader.advance(first.view.cursor, advance(first).dialogue);
+    await expect(reader.dependencies(first.view.cursor, limits)).rejects.toThrow(/stale/i);
+  } finally {
+    await reader.close();
+  }
+});
+
+test("candidate graph objects are fetched off the input path and reused when Advance needs them", async () => {
+  const parts = splitPack(lazyVnPack);
+  const requests: string[] = [];
+  const reader = await openVn({
+    manifest: parts.manifest,
+    execution,
+    fetchChunk: async id => {
+      requests.push(id);
+      const bytes = parts.objects.get(id);
+      if (!bytes) throw new Error(`Missing fixture object ${id}`);
+      return bytes;
+    },
+  });
+  try {
+    const before = await reader.inspect();
+    const limits = { locations: 128, graphs: 32, candidates: 64, references: 128, scans: 2048 };
+    const controller = new AbortController();
+    const prepared = await reader.prepareCandidates(before.view.cursor, limits, controller.signal);
+    expect(prepared.dependencies.cursor).toBe(before.view.cursor);
+    expect(prepared.dependencies.artifact_id).toBe(before.view.artifact_id);
+    expect(prepared.objects.length).toBe(prepared.dependencies.graphs.length);
+    expect(prepared.objects.every(item => item.status === "checked")).toBe(true);
+    const preparedRequests = requests.length;
+
+    await reader.advance(before.view.cursor, advance(before).dialogue);
+    expect((await reader.inspect()).view.depth).toBe(1);
+    expect(requests).toHaveLength(preparedRequests);
+  } finally {
+    await reader.close();
+  }
+});
+
+test("a delayed optional graph cannot block an available-route Advance and cancellation ignores late bytes", async () => {
+  const parts = splitPack(vnDependencyPack);
+  let delayOptional = false;
+  let resolveLate: ((bytes: Uint8Array) => void) | undefined;
+  let started!: () => void;
+  const loadStarted = new Promise<void>(resolve => { started = resolve; });
+  const requests: string[] = [];
+  const reader = await openVn({
+    manifest: parts.manifest,
+    execution,
+    fetchChunk: async id => {
+      requests.push(id);
+      const bytes = parts.objects.get(id);
+      if (!bytes) throw new Error(`Missing fixture object ${id}`);
+      if (delayOptional) {
+        delayOptional = false;
+        started();
+        return new Promise<Uint8Array>(resolve => { resolveLate = resolve; });
+      }
+      return bytes;
+    },
+  });
+  try {
+    let candidatePoint = await reader.inspect();
+    for (let step = 0; candidatePoint.view.interaction.kind === "advance" && step < 16; step++) {
+      await reader.advance(candidatePoint.view.cursor, advance(candidatePoint).dialogue);
+      candidatePoint = await reader.inspect();
+    }
+    if (candidatePoint.view.interaction.kind !== "choose") throw new Error("Expected the dependency fixture choice point.");
+    const limits = { locations: 128, graphs: 32, candidates: 64, references: 128, scans: 2048 };
+    const projection = await reader.dependencies(candidatePoint.view.cursor, limits);
+    expect(projection.graphs.length).toBeGreaterThan(0);
+    const readyRoute = candidatePoint.view.interaction.options.find(option => option.enabled);
+    if (!readyRoute) throw new Error("Expected the same-graph direct route.");
+    const controller = new AbortController();
+    delayOptional = true;
+    const preparation = reader.prepareCandidates(candidatePoint.view.cursor, limits, controller.signal);
+    await loadStarted;
+
+    await reader.choose(candidatePoint.view.cursor, candidatePoint.view.interaction.choice_point, [readyRoute.id]);
+    const routeView = await reader.inspect();
+    expect(routeView.view.interaction.kind).toBe("advance");
+    if (routeView.view.interaction.kind !== "advance") throw new Error("Expected the selected route dialogue.");
+    await reader.advance(routeView.view.cursor, routeView.view.interaction.dialogue);
+    expect((await reader.inspect()).view.depth).toBe(candidatePoint.view.depth + 2);
+    controller.abort();
+    const cancelled = await preparation;
+    expect(cancelled.status).toBe("cancelled");
+    const lateObject = cancelled.objects[0]?.object;
+    const lateBytes = lateObject ? parts.objects.get(lateObject) : undefined;
+    if (!lateBytes || !resolveLate) throw new Error("Expected a deferred optional graph response.");
+    resolveLate(lateBytes);
+    expect(requests).toContain(lateObject);
+  } finally {
+    await reader.close();
+  }
+});
+
+test("a cold helper graph is rechecked for media and its checked bytes are reused at route entry", async () => {
+  const parts = splitPack(vnDependencyPack);
+  const requests: string[] = [];
+  const reader = await openVn({ manifest: parts.manifest, execution, fetchChunk: async id => {
+    requests.push(id);
+    const bytes = parts.objects.get(id);
+    if (!bytes) throw new Error(`Missing fixture object ${id}`);
+    return bytes;
+  } });
+  try {
+    let current = await reader.inspect();
+    for (let step = 0; current.view.interaction.kind === "advance" && step < 16; step++) {
+      await reader.advance(current.view.cursor, advance(current).dialogue);
+      current = await reader.inspect();
+    }
+    if (current.view.interaction.kind !== "choose") throw new Error("Expected the dependency fixture choice.");
+    const limits = { locations: 256, graphs: 8, candidates: 2048, references: 512, scans: 1024 };
+    const cold = await reader.dependencies(current.view.cursor, limits);
+    const helperId = parts.chunks.map(objectId).find(id => cold.truncations.some(item => item.kind === "unavailable" && item.chunk === id));
+    if (!helperId) throw new Error("Expected the candidate helper graph to be cold.");
+    const prepared = await reader.prepareCandidates(current.view.cursor, limits, new AbortController().signal);
+    expect(prepared.status).toBe("complete");
+    expect(prepared.dependencies.media.some(item => item.reference.key === "bg/helper")).toBe(true);
+    expect(prepared.dependencies.media.some(item => item.reference.key === "music/helper")).toBe(true);
+    expect(prepared.objects).toContainEqual({ object: helperId, status: "checked" });
+    expect(requests.filter(id => id === helperId)).toHaveLength(1);
+    expect(requests.filter(id => id === requests[0])).toHaveLength(1);
+
+    const rightRoute = current.view.interaction.options.filter(option => option.enabled)[1];
+    if (!rightRoute) throw new Error("Expected the cross-graph route.");
+    await reader.choose(current.view.cursor, current.view.interaction.choice_point, [rightRoute.id]);
+    expect((await reader.inspect()).view.scene.background?.key).toBe("bg/hall");
+    expect(requests.filter(id => id === helperId)).toHaveLength(1);
+  } finally {
+    await reader.close();
+  }
+});
+
+test("corrupt optional graph bytes remain partial and retry cleanly without a narrative write", async () => {
+  const parts = splitPack(vnDependencyPack);
+  let helperId: string | undefined;
+  let helperLoads = 0;
+  const reader = await openVn({ manifest: parts.manifest, execution, fetchChunk: async id => {
+    const bytes = parts.objects.get(id);
+    if (!bytes) throw new Error(`Missing fixture object ${id}`);
+    if (id === helperId && ++helperLoads === 1) {
+      const corrupt = bytes.slice();
+      corrupt[corrupt.length - 1] = (corrupt.at(-1) ?? 0) ^ 1;
+      return corrupt;
+    }
+    return bytes;
+  } });
+  try {
+    let current = await reader.inspect();
+    for (let step = 0; current.view.interaction.kind === "advance" && step < 16; step++) {
+      await reader.advance(current.view.cursor, advance(current).dialogue);
+      current = await reader.inspect();
+    }
+    if (current.view.interaction.kind !== "choose") throw new Error("Expected the dependency fixture choice.");
+    const limits = { locations: 256, graphs: 8, candidates: 2048, references: 512, scans: 1024 };
+    const cold = await reader.dependencies(current.view.cursor, limits);
+    helperId = cold.truncations.find(item => item.kind === "unavailable")?.chunk;
+    if (!helperId) throw new Error("Expected the dependency fixture's unavailable helper object.");
+    const save = await reader.exportSave();
+    const corruptResult = await reader.prepareCandidates(current.view.cursor, limits, new AbortController().signal);
+    expect(corruptResult.status).toBe("partial");
+    expect(corruptResult.dependencies.complete).toBe(false);
+    expect(corruptResult.objects).toContainEqual({ object: helperId, status: "corrupt" });
+    expect((await reader.inspect()).view.cursor).toBe(current.view.cursor);
+    expect(await reader.exportSave()).toBe(save);
+
+    const recovered = await reader.prepareCandidates(current.view.cursor, limits, new AbortController().signal);
+    expect(recovered.status).toBe("complete");
+    expect(recovered.objects).toContainEqual({ object: helperId, status: "checked" });
+    expect(helperLoads).toBe(2);
+    expect((await reader.inspect()).view.cursor).toBe(current.view.cursor);
+    expect(await reader.exportSave()).toBe(save);
+  } finally {
+    await reader.close();
+  }
+});
+
+test("dependency queries reject after close without calling freed Wasm", async () => {
+  const reader = await openVn({ pack: vnPack, execution });
+  const current = await reader.inspect();
+  await reader.close();
+  await expect(reader.dependencies(current.view.cursor,
+    { locations: 1, graphs: 0, candidates: 1, references: 1, scans: 1 })).rejects.toThrow("closed");
+});
+
+test("valid optional bytes report query budget exhaustion without being called corrupt", async () => {
+  const parts = splitPack(vnDependencyPack);
+  const reader = await openVn({ manifest: parts.manifest, execution, fetchChunk: async id => {
+    const bytes = parts.objects.get(id);
+    if (!bytes) throw new Error(`Missing fixture object ${id}`);
+    return bytes;
+  } });
+  try {
+    let current = await reader.inspect();
+    for (let step = 0; current.view.interaction.kind === "advance" && step < 16; step++) {
+      await reader.advance(current.view.cursor, advance(current).dialogue);
+      current = await reader.inspect();
+    }
+    const limits = { locations: 256, graphs: 8, candidates: 2048, references: 512, scans: 1024 };
+    const cold = await reader.dependencies(current.view.cursor, limits);
+    expect(cold.truncations.some(item => item.kind === "unavailable")).toBe(true);
+    for (let query = 0; query < 509; query++) await reader.dependencies(current.view.cursor, limits);
+    const saved = await reader.exportSave();
+    const prepared = await reader.prepareCandidates(current.view.cursor, limits, new AbortController().signal);
+    expect(prepared.status).toBe("partial");
+    expect(prepared.objects.some(item => item.status === "budget")).toBe(true);
+    expect(prepared.objects.some(item => item.status === "corrupt")).toBe(false);
+    expect((await reader.inspect()).view.cursor).toBe(current.view.cursor);
+    expect(await reader.exportSave()).toBe(saved);
+  } finally { await reader.close(); }
 });
 
 test("Advance retries its exact missing graph chunk without changing the confirmed dialogue", async () => {

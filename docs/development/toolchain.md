@@ -36,9 +36,9 @@
 | `task check:r1` | 节点栈与 Web Gamebook：节点默认/全部 feature、authoring 与 authoring Wasm 绑定的 Rust 测试和 clippy（含无 `legacy-publish` 的 reader 配置）、运行时/reader/authoring Wasm 目标检查、浏览器回归、生成文件漂移（含 authoring 接口 schema 与 Web 生成类型） | 改动 `packages/narrata/**`、`products/**`、`examples/gamebook-web/**` |
 | `task check:web-storage` | 先运行 `web:build` 生成服务器测试导入的 Web 包；再检查 IndexedDB 存储适配器：类型检查、Vitest、计数器 Wasm 模块上的 Chromium 回归（端口 4183） | 改动 `packages/narrata/kernel/js/**` 或 `narrata-storage-host` |
 | `task check:server-storage` | 先运行 `web:build` 生成服务器测试导入的 Web 包（CI 安装同版本 Rust 与 `wasm32-unknown-unknown`）；再检查 PostgreSQL 参考宿主：类型检查、PGlite 一致性/DDL/回滚/配额/重开、关系完整行比对与稀疏受检读取；公共维护入口的冷导入/浅恢复、用量/配额回滚、根删除/GC/重试；可选实库相同套件、冷装载双连接锁竞争、GC 与新根导入的竞争、仅 SELECT/INSERT 权限与 A/B 隔离 | 改动 `packages/narrata/kernel/js/server/**` 或服务器测试；实库用 `NARRATA_POSTGRES_URL` 指向可建临时 schema 的测试库，未配置明确跳过、不算上线通过；CI 必跑 |
-| `task web:build` | 构建 `@rezics/narrata` 的 ESM、声明与三个独立 Wasm：reader（`narrata-nodes-wasm --no-default-features`）、保留 `publishGraph` 的原始 `dist/wasm`（默认 feature）与 authoring（`narrata-authoring-wasm`），分别调用 cargo 以免 feature 合并，用 Cargo `wasm` profile（三个 Wasm 构建单次调用覆盖 `CARGO_PROFILE_WASM_OPT_LEVEL=z`；均 LTO）并去掉 name section；从 Rust schema 生成 BookView、authoring 接口类型及按需 reader-map 校验器（沿用 Ajv standalone 与 Rolldown ESM 压缩）；复制现有 IndexedDB 宿主及原样的服务器关系驱动/权威 SQL DDL 资产 | 准备宿主安装的包；产物为 `packages/narrata/web/dist/` |
+| `task web:build` | 构建 `@rezics/narrata` 的 ESM、声明与四个独立 Wasm：Gamebook reader（`narrata-nodes-wasm --no-default-features`）、VN-only reader（同 crate 显式 `--features vn-dependencies`）、保留 `publishGraph` 的原始 `dist/wasm`（默认 feature）与 authoring（`narrata-authoring-wasm`），分别调用 cargo 以免 feature 合并，用 Cargo `wasm` profile（单次调用覆盖 `CARGO_PROFILE_WASM_OPT_LEVEL=z`；均 LTO）并去掉 name section；从 Rust schema 生成 BookView、VN View、VN dependency、authoring 接口类型及按需 reader-map 校验器（沿用 Ajv standalone 与 Rolldown ESM 压缩）；复制现有 IndexedDB 宿主及原样的服务器关系驱动/权威 SQL DDL 资产 | 准备宿主安装的包；产物为 `packages/narrata/web/dist/` |
 | `task web:pack` | 构建后 `npm pack`，tarball 在 `.temp/web-pack/`，打印 sha256 与 sha512 | 安装与发布前审查产物 |
-| `task check:web` | 类型/生成类型漂移、Vitest（含 authoring 与 CLI、旧 publishGraph 的字节一致及在线未知写入/原字节重试/同 execution 保留证明与维护句柄的关闭/账号代次/迟到读取拒绝）、reader/兼容/authoring Wasm 与 JS 分别的原始与 gzip 预算、仓库外 tarball 安装；Node/Bun 的 reader 加载与 authoring 发布 A/B；Node/Bun/Chromium 从独立 tarball 完成冷库导入、完整/浅导出、页面/参数/后续选择、根 CAS、只读 dry-run、GC 与配额清理重试；Vite 生产构建的 Chromium 首屏只取 reader Wasm、内容失败重试、Worker 创作发布与冻结地图比对、选择、保存重开；实际 `/?reference` 页面按需请求受检读者地图并保留桌面/390px 请求和截图；公共短篇的真实宿主正文、在线保存核实、A/B 精确恢复、配额回滚、账号切换迟到回包和删除后旧重试（端口 4193） | 改动 Web npm 包；需空闲 4193；CI 的 `gamebook-r1` 在 `check:r1` 后运行；安装包、请求与桌面/移动/未知保存截图保留在系统临时目录 `.temp/narrata-web-install-*` |
+| `task check:web` | 类型/生成类型漂移、Vitest（含 VN checked dependencies、候选对象复用、延迟可选请求期间 Advance 与播放器媒体 lease 复用，以及 authoring 与 CLI、旧 publishGraph 字节一致和维护恢复）、reader/VN-only reader/兼容/authoring Wasm 与 JS 分别的原始与 gzip 预算、仓库外 tarball 安装；Node/Bun 的 reader 加载与 authoring 发布 A/B；Node/Bun/Chromium 从独立 tarball 完成冷库导入、完整/浅导出、页面/参数/后续选择、根 CAS、只读 dry-run、GC 与配额清理重试；Vite 生产构建的 Chromium 首屏只取 Gamebook reader Wasm、打开 VN 后才取 VN-only reader，冷跨图候选对象只在准备时请求、公共播放器复用预备场景媒体且不提前播放音频，拒绝不含 `vn-dependencies` 的自定义 Wasm，再测内容失败重试、Worker 创作发布与冻结地图比对、保存重开；实际 `/?reference` 页面按需请求受检读者地图并保留桌面/390px 请求和截图；公共短篇的真实宿主正文、在线保存核实、A/B 精确恢复、配额回滚、账号切换迟到回包和删除后旧重试（端口 4193） | 改动 Web npm 包；需空闲 4193；CI 的 `gamebook-r1` 在 `check:r1` 后运行；安装包、请求与桌面/移动/未知保存截图保留在系统临时目录 `.temp/narrata-web-install-*` |
 | `task check:vn` | 构建并类型检查公共 Web 包后，检查视觉小说宿主示例，再用 Chromium 运行 1586×992 桌面与 390×844 触屏 journey；包含真实媒体解码、保存/重开、checkout、context 切换、失败重试和实际逻辑/媒体字节计量（端口 4175） | 改动 VN player、播放器示例或 host fixture；需空闲 4175；CI 在 `check:web` 后运行；PNG 与脱敏测量 JSON 留在 `.temp/goal/runs/vn-player/` |
 | `task bench:g2` | 持久化与内核基准 | 改动存储或快照路径时对比 |
 | `task bench:nodes` | 合成 10 万选择点作品、首屏按块加载、选择耗时与有界缓存分配计数 | 改动节点运行时或程序块加载时对比；结果与边界见[节点规模基准](benchmarks/nodes-scale.md) |
@@ -97,7 +97,18 @@ Exact、不可迁移、缺对象、CAS 与配额。raw compatibility glue 沿用
 分别提供 schema/版本/来源受检的 HTTP 解码与可滚动 React 呈现，不导入作者图 controller、Sigma、
 graphology 或 Wasm。`check:web` 用与作者图相同的打包方法单独计量 `readerMap`（React peer 外置），
 含生成校验器及全部传递 JS；普通模块排除已打包的图目录，JS 总量只加一次此能力。新增基线为
-53,937 / 7,662 字节（raw / gzip），上限 59,000 / 8,400，约 9% 余量；既有 reader、作者图及
-JS 总量上限均不变。首次加入时总量为 370,418 普通 JS + 221,680 作者图 + 53,937 读者地图 =
+53,937 / 7,662 字节（raw / gzip），上限 59,000 / 8,400，约 9% 余量。首次加入时总量为
+370,418 普通 JS + 221,680 作者图 + 53,937 读者地图 =
 646,035 字节；gzip 为 79,775 + 50,240 + 7,662 = 137,677，仍在既有总量预算内。
 服务器入口的 `referenceRelationsSql` URL 指向包内原样 `relations-v1.sql`，由宿主显式安装。
+
+VN 依赖查询由独立的 `vn-reader-wasm` 提供，使用相同原生 crate，显式启用
+`vn-dependencies`；Gamebook root/reader 继续加载 no-default-features 的原 reader。可选对象缓存
+也留在 VN 导入内，Gamebook 原有预算上限不变。新增 VN reader 与聚合 JS 预算按新增能力计量，
+保留原有绝对余量；基线与上限见 [size-budget.json](../../packages/narrata/web/size-budget.json)，
+实际 raw/gzip 值由 `task check:web` 输出，避免在此重复一份会漂移的测量表。
+
+`web:build` 在生成 raw compatibility 与 VN-only Wasm 后，分别用 Node/Bun 回放
+`vn-dependencies-v1` 的 8 组冻结请求/结果，并检查已驻留对象也不能接受不匹配的新字节；旧单参数
+`dependencies(request)` 调用继续有效。独立安装旅程核对 Gamebook 首屏只请求原 reader 模块，
+打开 VN 后才取 VN-only 模块；冷跨图候选块在准备时才请求，播放器复用预备媒体并释放呈现 lease。

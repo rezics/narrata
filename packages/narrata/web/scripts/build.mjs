@@ -32,13 +32,24 @@ if (!check) {
     execFileSync(executable, [resolve(root, `target/wasm32-unknown-unknown/wasm/${crate.replaceAll("-", "_")}.wasm`), "--target", "web", "--remove-name-section", "--out-dir", resolve(dist, directory)], { cwd: root, stdio: "inherit" });
   };
   bindgen("narrata-nodes-wasm", ["--no-default-features"], "reader-wasm");
+  // VN gets the same native stack plus the optional dependency query. Keep that
+  // code out of the Gamebook module loaded by the root and reader entry points.
+  bindgen("narrata-nodes-wasm", ["--no-default-features", "--features", "vn-dependencies"], "vn-reader-wasm");
   bindgen("narrata-nodes-wasm", [], "wasm");
   bindgen("narrata-authoring-wasm", [], "authoring-wasm");
+  const dependencyReplay = resolve(root, "packages/narrata/nodes/crates/narrata-nodes-wasm/tests/dependencies-wasm.mjs");
+  for (const directory of ["wasm", "vn-reader-wasm"]) {
+    for (const runtime of [process.execPath, "bun"]) {
+      execFileSync(runtime, [dependencyReplay, resolve(dist, directory)], { cwd: root, stdio: "inherit" });
+    }
+  }
   cargo("run", "--quiet", "--locked", "-p", "narrata-node-tools", "--", "schemas", "--out", resolve(stage, "schemas"));
   cargo("run", "--quiet", "--locked", "-p", "narrata-authoring-wasm", "--example", "interface_schema", "--", resolve(root, interfaceSchema));
 }
 const schemaPath = resolve(check ? root : stage, check ? "packages/narrata/nodes/schemas/book-view.schema.json" : "schemas/book-view.schema.json");
 const vnSchemaPath = resolve(check ? root : stage, check ? "packages/narrata/nodes/schemas/vn-view.schema.json" : "schemas/vn-view.schema.json");
+// This schema is emitted and drift-checked by the Rust Wasm crate's native tests.
+const dependencySchemaPath = resolve(root, "packages/narrata/nodes/schemas/vn-dependencies-v1.schema.json");
 mkdirSync(resolve(here, "src/generated"), { recursive: true });
 // Declarations are generated from Rust schemas; check mode compares them with the committed ones.
 for (const [schema, name, title] of [
@@ -52,6 +63,11 @@ for (const [schema, name, title] of [
     if (readFileSync(typePath, "utf8") !== types) throw new Error(`${title} declarations drifted; run task web:build`);
   } else writeFileSync(typePath, types);
 }
+const dependencyTypes = await compileFromFile(dependencySchemaPath, { bannerComment: "/* Generated from Rust VN dependencies v1 JSON Schema. Run task web:build. */", additionalProperties: false });
+const dependencyTypePath = resolve(here, "src/generated/vn-dependencies.ts");
+if (check) {
+  if (readFileSync(dependencyTypePath, "utf8") !== dependencyTypes) throw new Error("VN dependency declarations drifted; run task web:build");
+} else writeFileSync(dependencyTypePath, dependencyTypes);
 mkdirSync(resolve(stage, "src"), { recursive: true });
 // Resolve optional peer types from this package while compiling the copied source tree.
 symlinkSync(resolve(here, "node_modules"), resolve(stage, "node_modules"), "junction");
@@ -67,7 +83,7 @@ for (const name of readdirSync(resolve(stage, "src/storage"))) {
   const path = resolve(stage, "src/storage", name);
   writeFileSync(path, readFileSync(path, "utf8").replace(/from "(\.\/[^"]+)"/g, (_, path) => `from "${path}.js"`));
 }
-for (const directory of ["wasm", "reader-wasm", "authoring-wasm"]) cpSync(resolve(dist, directory), resolve(stage, "src", directory), { recursive: true });
+for (const directory of ["wasm", "reader-wasm", "vn-reader-wasm", "authoring-wasm"]) cpSync(resolve(dist, directory), resolve(stage, "src", directory), { recursive: true });
 const ajv = new Ajv2020({ strict: true, validateFormats: false, code: { source: true, esm: true } });
 const validator = ajv.compile(JSON.parse(readFileSync(schemaPath, "utf8")));
 // Ajv's Unicode length helper would introduce a runtime dependency; inline the equivalent
@@ -81,6 +97,13 @@ const compactVnValidator = await minify("validate-vn-view.js", vnCode, { module:
 if (compactVnValidator.errors.length) throw new Error(JSON.stringify(compactVnValidator.errors));
 writeFileSync(resolve(stage, "src/generated/validate-vn-view.js"), compactVnValidator.code);
 writeFileSync(resolve(stage, "src/generated/validate-vn-view.d.ts"), 'import type { VnViewV1 } from "./vn-view.js";\ndeclare const validate: (value: unknown) => value is VnViewV1;\nexport default validate;\n');
+const dependencySchema = JSON.parse(readFileSync(dependencySchemaPath, "utf8"));
+const dependencyValidator = ajv.compile(dependencySchema);
+const dependencyCode = standalone(ajv, dependencyValidator).replace(/require\("ajv\/dist\/runtime\/ucs2length"\)\.default/g, '(value => Array.from(value).length)');
+const compactDependencyValidator = await minify("validate-vn-dependencies.js", dependencyCode, { module: true });
+if (compactDependencyValidator.errors.length) throw new Error(JSON.stringify(compactDependencyValidator.errors));
+writeFileSync(resolve(stage, "src/generated/validate-vn-dependencies.js"), compactDependencyValidator.code);
+writeFileSync(resolve(stage, "src/generated/validate-vn-dependencies.d.ts"), 'import type { VnDependenciesV1 } from "./vn-dependencies.js";\ndeclare const validate: (value: unknown) => value is VnDependenciesV1;\nexport default validate;\n');
 const mapSchemaPath = resolve(check ? root : stage, check ? "packages/narrata/nodes/schemas/reader-map.schema.json" : "schemas/reader-map.schema.json");
 const mapValidator = ajv.compile(JSON.parse(readFileSync(mapSchemaPath, "utf8")));
 const mapCode = standalone(ajv, mapValidator).replace(/require\("ajv\/dist\/runtime\/ucs2length"\)\.default/g, '(value => Array.from(value).length)');
@@ -119,4 +142,7 @@ if (!check) {
   cpSync(resolve(stage, "src/generated/validate-vn-view.js"), resolve(dist, "generated/validate-vn-view.js"));
   cpSync(resolve(stage, "src/generated/validate-vn-view.d.ts"), resolve(dist, "generated/validate-vn-view.d.ts"));
   cpSync(vnSchemaPath, resolve(dist, "generated/vn-view.schema.json"));
+  cpSync(resolve(stage, "src/generated/validate-vn-dependencies.js"), resolve(dist, "generated/validate-vn-dependencies.js"));
+  cpSync(resolve(stage, "src/generated/validate-vn-dependencies.d.ts"), resolve(dist, "generated/validate-vn-dependencies.d.ts"));
+  cpSync(dependencySchemaPath, resolve(dist, "generated/vn-dependencies-v1.schema.json"));
 }

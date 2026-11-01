@@ -74,19 +74,32 @@ JSON schema `packages/narrata/nodes/schemas/vn-dependencies-v1.schema.json` 由�
 `finish`，因此宿主为其他操作提供的块字节不被清除。宿主可以依据结果里的块标识自行决定是否
 取块，再重新查询；块字节仍按既有的 `loadChunk` 约定在下一次普通操作成功后释放。
 
+Web VN reader 为了递归发现冷跨图调用中的依赖，会在同一 artifact/cursor 上做有界后续查询。它把
+宿主取回的有界对象集合临时注入当前 Wasm 查询源，借用既有对象信封、ID、manifest 成员关系与图块语义
+校验，因此一条冷调用链上的多个图都能在同一查询中展开；查询结束后只移除本次临时注入的对象，保留
+其他操作的请求位和已供应字节。集合描述只属于 Wasm 内部调用，依赖请求/结果 v1 不增加字段，游标、
+存档和叙事输入都不改变。临时对象在后续查询未能检验前只算 fetched，缺失或坏对象仍以 partial 状态
+和确切对象 ID 暴露，只有受检后才可报告为准备完成。
+
 ### 6. 构建选择与体积
 
-方法由 `narrata-nodes-wasm` 的 Cargo feature `vn-dependencies` 提供，默认开启，因此保留
-`publishGraph` 的原始 Wasm 带有它；读者构建使用 `--no-default-features`，其字节与此前相同，
-需要时显式加 `--features vn-dependencies`。原生遍历首次被 Wasm 引用，增加约 62 KB 原始、
-约 16 KB gzip（读者构建 1,447,885 → 1,510,218 字节；原始模块 1,712,011 → 1,773,923 字节，
-均为 wasm-opt `z`、去除 name section 后的测量）。读者构建启用它会超过现有 `vnWasmIncrement`
-预算，所以预算由真正接入公开桥接的 Web 变更与该变更一起决定，而不是在这里放宽。
+方法由 `narrata-nodes-wasm` 的 Cargo feature `vn-dependencies` 提供。Web 包继续保留
+Gamebook `reader-wasm` 的 `--no-default-features` 构建，并额外构建一个 VN-only reader 模块，
+使用相同原生 crate 与 `--features vn-dependencies`。两份 glue 各自初始化，避免一个 VN Wasm
+实例挤入 Gamebook 首屏，也避免把可选方法伪装成旧 reader 模块的能力。`openVn` 的自定义
+`wasm` 必须来自匹配的依赖功能模块；Gamebook reader 保持原来的模块与尺寸上限。
+
+Web 包分别计量完整 VN-only Wasm、差量与对应 JS glue，聚合 JS 仅计一次；基线和上限由
+[`size-budget.json`](../../packages/narrata/web/size-budget.json) 与[构建检查](../development/toolchain.md)记录。
+VN reader 的固定安装与首屏
+测试必须证明 Gamebook 页面只请求原 reader Wasm；VN 入口拒绝未启用 `vn-dependencies` 的自定义 Wasm。
 
 ## 后果与未验证项
 
-- 结果是针对当前游标的快照；游标移动后需重新查询。公开的 TypeScript 读者方法、非阻塞候选
-  准备、媒体缓存生命周期与最终 A/B 浏览器验收仍在 Web VN Goal 中，不属于本 ADR。
+- 结果是针对当前游标的快照；游标移动后需重新查询。公开的 TypeScript reader 通过版本化
+  schema 检查结果；有界逻辑对象准备把下载字节暂存在宿主，只有普通读者操作请求该对象时才装入
+  Wasm。玩家的媒体预备需要宿主显式选择 hint 变体，并且只按不可变引用、角色、版本与当前上下文复用。
+- 完整的桌面/触屏 A/B 浏览器旅程、真实账户上下文切换和参考宿主验收仍由 Web VN Goal 后续集成。
 - 保守并集可能列出读者永远不会到达的引用；宿主应按角色分级预取，并遵守 ADR 0024 的授权与
   代次约定。
 - 大型作品的 `truncations` 与引用数量由请求界限限制；上限变化需要新版本或新 ADR。

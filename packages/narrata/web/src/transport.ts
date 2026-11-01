@@ -15,21 +15,28 @@ export interface ReaderEngine extends CacheHandle {
   loadArtifactChunk(artifact: string, id: string, bytes: Uint8Array): void;
 }
 
+/** Optional object ownership seam; Gamebook supplies no preparation cache. */
+export interface PreparedProgramSource {
+  take(artifact: string, object: string): Uint8Array | undefined;
+  close(): void;
+}
+
 /** Serializes logical chunk retry, storage confirmation and Wasm lifetime for either reader. */
 export class RuntimeTransport {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly host: StorageHost | undefined;
   private closed = false;
   private closing: Promise<void> | undefined;
-  private readonly loaders = new Map<string, (id: string) => Promise<Uint8Array>>();
+  private readonly loaders = new Map<string, (id: string, signal?: AbortSignal) => Promise<Uint8Array>>();
   private readonly closedMessage: string;
 
   constructor(
     private readonly raw: ReaderEngine,
     storage?: CacheStore,
-    fetchChunk?: (id: string) => Promise<Uint8Array>,
+    fetchChunk?: (id: string, signal?: AbortSignal) => Promise<Uint8Array>,
     private readonly loadArtifact?: ArtifactLoader,
     closedMessage = "The book is closed.",
+    private readonly prepared?: PreparedProgramSource,
   ) {
     this.host = storage ? new StorageHost(storage, raw, 100_000) : undefined;
     if (fetchChunk) this.loaders.set(raw.artifact_id, fetchChunk);
@@ -37,6 +44,10 @@ export class RuntimeTransport {
   }
 
   get durable(): boolean { return this.host !== undefined; }
+
+  programLoader(artifact: string): ((id: string, signal?: AbortSignal) => Promise<Uint8Array>) | undefined {
+    return this.loaders.get(artifact);
+  }
 
   assertOpen(): void {
     if (this.closed) throw new Error(this.closedMessage);
@@ -79,7 +90,7 @@ export class RuntimeTransport {
           const [artifact, id] = value;
           const loader = this.loaders.get(artifact);
           if (!loader) throw error;
-          const bytes = await loader(id).catch(cause => { throw new ArtifactUnavailable(artifact, id, { cause }); });
+          const bytes = this.prepared?.take(artifact, id) ?? await loader(id).catch(cause => { throw new ArtifactUnavailable(artifact, id, { cause }); });
           this.assertOpen();
           this.raw.loadArtifactChunk(artifact, id, bytes);
         }
@@ -113,7 +124,8 @@ export class RuntimeTransport {
   close(): Promise<void> {
     if (this.closing) return this.closing;
     this.closed = true;
-    const result = this.queue.then(() => { this.raw.free(); });
+    this.prepared?.close();
+    const result = this.queue.then(() => { this.prepared?.close(); this.raw.free(); });
     this.queue = result.catch(() => undefined);
     this.closing = result;
     return result;

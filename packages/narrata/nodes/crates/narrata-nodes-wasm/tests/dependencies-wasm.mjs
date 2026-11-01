@@ -84,4 +84,20 @@ assert.match(failure(() => book.dependencies(JSON.stringify(good))), /^stale_inp
 book.reload();
 assert.match(failure(() => book.dependencies(JSON.stringify(good))), /^state at/);
 book.free();
+
+// Already supplied host bytes never make a later mismatched response acceptable.
+const resident = VnBook.fromManifest(bytes("story.manifest"), execution);
+const start = objects["main.start"];
+const helper = objects["main.helper"];
+resident.loadChunk(start.id, bytes(start.file));
+resident.memory();
+resident.loadChunk(start.id, bytes(start.file));
+const saved = resident.export();
+assert.match(failure(() => resident.loadChunk(start.id, bytes(helper.file))), /^artifact at/);
+const request = JSON.stringify({ ...good, cursor: resident.cursor() });
+const wrongObject = bytes(helper.file);
+const descriptor = JSON.stringify([{ object: start.id, offset: 0, byte_length: wrongObject.byteLength }]);
+assert.match(failure(() => resident.dependenciesWithObjects(request, descriptor, wrongObject)), /^artifact at/);
+assert.equal(resident.export(), saved);
+resident.free();
 console.log(`vn-dependencies-v1: ${queries} queries byte-identical through the generated Wasm module`);

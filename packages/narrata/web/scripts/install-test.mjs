@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { verifyReferenceJourney, verifyUpdateScenarios } from "../../../../examples/gamebook-web/scripts/reference-journey.ts";
 import { verifyMapJourney } from "./install/map-journey.mjs";
-import { demoPack, execution, splitPack, objectId, vnPack } from "../test/fixture.ts";
+import { demoPack, execution, splitPack, objectId, vnDependencyPack, vnPack } from "../test/fixture.ts";
 import { npmCli, tarball } from "./pack.mjs";
 
 const here = resolve(import.meta.dirname, "..");
@@ -19,6 +19,7 @@ mkdirSync(temporaryRoot, { recursive: true });
 const directory = mkdtempSync(join(temporaryRoot, "narrata-web-install-"));
 const parts = splitPack(demoPack);
 const vnParts = splitPack(vnPack);
+const vnCandidateParts = splitPack(vnDependencyPack);
 const npm = (...args) => execFileSync(process.execPath, [npmCli, ...args], { cwd: directory, stdio: "inherit" });
 writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "narrata-install-test", private: true, type: "module" }));
 npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarball, `vite@${packageMetadata.devDependencies.vite}`, "typescript@~5.9.3", "@types/node@^24.0.0");
@@ -35,9 +36,9 @@ assert.ok(existsSync(join(installed, "dist/generated/validate-vn-view.js")), "Th
 const installedPlayer = await import(pathToFileURL(join(installed, "dist/vn/player/index.js")).href);
 assert.equal(typeof installedPlayer.createVnPlayer, "function", "The optional VN player entry must be importable from the installed package");
 assert.equal(typeof installedPlayer.checkedVnMediaResolution, "function", "The installed VN player must expose its checked media boundary");
-// Served Wasm is identified by content: reader, raw compatibility module or authoring.
+// Served Wasm is identified by content, including the separately initialized VN reader.
 const wasmKinds = new Map();
-for (const [kind, path] of [["reader", "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"], ["compat", "dist/wasm/narrata_nodes_wasm_bg.wasm"], ["authoring", "dist/authoring-wasm/narrata_authoring_wasm_bg.wasm"]]) {
+for (const [kind, path] of [["reader", "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"], ["vn-reader", "dist/vn-reader-wasm/narrata_nodes_wasm_bg.wasm"], ["compat", "dist/wasm/narrata_nodes_wasm_bg.wasm"], ["authoring", "dist/authoring-wasm/narrata_authoring_wasm_bg.wasm"]]) {
   const hash = sha256(readFileSync(join(installed, path)));
   assert.equal(hash, sha256(readFileSync(join(here, path))), `${kind} Wasm differs from the build`);
   wasmKinds.set(hash, kind);
@@ -50,6 +51,9 @@ writeFileSync(join(publicDirectory, "vn-manifest.cbor"), vnParts.manifest);
 writeFileSync(join(publicDirectory, "vn-story.narpack"), vnPack);
 mkdirSync(join(publicDirectory, "vn-objects"), { recursive: true });
 for (const [id, bytes] of vnParts.objects) writeFileSync(join(publicDirectory, "vn-objects", `${id.slice(7)}.cbor`), bytes);
+writeFileSync(join(publicDirectory, "vn-candidate-manifest.cbor"), vnCandidateParts.manifest);
+mkdirSync(join(publicDirectory, "vn-candidate-objects"), { recursive: true });
+for (const [id, bytes] of vnCandidateParts.objects) writeFileSync(join(publicDirectory, "vn-candidate-objects", `${id.slice(7)}.cbor`), bytes);
 for (const name of ["unseen-rule","republished-after-migration","proposal-retained","shallow-history"]) {
   cpSync(resolve(here,"../../../fixtures/compat/nodes-evolution-v1",name),join(publicDirectory,"maintenance-fixtures",name),{recursive:true});
 }
@@ -350,9 +354,12 @@ cpSync(resolve(here, "test/maintenance.test.ts"), join(directory, "maintenance.t
 writeFileSync(join(directory, "story.narpack"), demoPack);
 writeFileSync(join(directory, "fixture.ts"), readFileSync(resolve(here, "test/fixture.ts"), "utf8")
   .replace("../../../../products/gamebook-demo/story.narpack", "story.narpack")
-  .replace("../../../../fixtures/compat/nodes-vn-v1/story.narpack", "fixtures/compat/nodes-vn-v1/story.narpack"));
+  .replace("../../../../fixtures/compat/nodes-vn-v1/story.narpack", "fixtures/compat/nodes-vn-v1/story.narpack")
+  .replace("../../../../fixtures/compat/vn-dependencies-v1/story.narpack", "fixtures/compat/vn-dependencies-v1/story.narpack"));
 mkdirSync(join(directory, "fixtures/compat/nodes-vn-v1"), { recursive: true });
 writeFileSync(join(directory, "fixtures/compat/nodes-vn-v1/story.narpack"), readFileSync(resolve(here, "../../../fixtures/compat/nodes-vn-v1/story.narpack")));
+mkdirSync(join(directory, "fixtures/compat/vn-dependencies-v1"), { recursive: true });
+writeFileSync(join(directory, "fixtures/compat/vn-dependencies-v1/story.narpack"), readFileSync(resolve(here, "../../../fixtures/compat/vn-dependencies-v1/story.narpack")));
 mkdirSync(join(directory, "fixtures/lazy-vn"), { recursive: true });
 writeFileSync(join(directory, "fixtures/lazy-vn/story.narpack"), readFileSync(resolve(here, "test/fixtures/lazy-vn/story.narpack")));
 execFileSync(process.execPath, [join(directory, "node_modules/vitest/vitest.mjs"), "run", "online.test.ts", "maintenance.test.ts"], { cwd: directory, stdio: "inherit" });
@@ -399,6 +406,29 @@ self.onmessage = async () => {
     await verifyMaps(api, async name => new Uint8Array(await (await fetch("/reader-map-fixtures/" + name)).arrayBuffer()));
     self.postMessage({ ok: true, published: await author(api, testing), vnPreview: await previewVn() });
   } catch (error) { self.postMessage({ ok: false, error: String(error?.stack ?? error) }); }
+};
+`);
+writeFileSync(join(directory, "vn-module-worker.js"), `
+import { openVn } from "@rezics/narrata/vn";
+self.onmessage = async ({ data }) => {
+  const pack = new Uint8Array(await (await fetch(data.packUrl)).arrayBuffer());
+  const incompatible = new Uint8Array(await (await fetch(data.incompatibleWasmUrl)).arrayBuffer());
+  const compatibleUrl = new URL(data.compatibleWasmUrl, self.location.href);
+  let featureError = "";
+  try {
+    const reader = await openVn({ pack, execution: data.execution, wasm: incompatible });
+    await reader.close();
+    self.postMessage({ accepted: true, error: "" });
+    return;
+  } catch (error) { featureError = String(error?.message ?? error); }
+  let sourceError = "";
+  try {
+    const reader = await openVn({ pack, execution: data.execution, wasm: compatibleUrl });
+    await reader.close();
+    self.postMessage({ accepted: true, error: "", featureError });
+    return;
+  } catch (error) { sourceError = String(error?.message ?? error); }
+  self.postMessage({ accepted: false, featureError, sourceError });
 };
 `);
 writeFileSync(join(directory, "index.html"), '<!doctype html><html><head><title>Narrata install test</title></head><body><p id="status">loading</p><div id="reader"></div><script type="module" src="/main.tsx"></script></body></html>');
@@ -462,6 +492,125 @@ window.ready = new URLSearchParams(location.search).has("reference") ? (async ()
           line: reopened.view.interaction.kind === "advance" ? reopened.view.interaction.line.unit.key : "wrong-interaction", requested: requested.length };
       } finally { await cold.close(); }
     },
+    vnCandidates: async () => {
+      const { openVn } = await import("@rezics/narrata/vn");
+      const { createVnPlayer } = await import("@rezics/narrata/vn/player");
+      const requested = [];
+      const logicalRequests = [];
+      const mediaRequests = [];
+      const mediaBytes = [];
+      const candidatePresentations = [];
+      let releases = 0;
+      let plays = 0;
+      const novel = await openVn({ manifest: await bytes("/vn-candidate-manifest.cbor"), execution: ${JSON.stringify(execution)},
+        fetchChunk: async id => {
+          requested.push(id);
+          const body = await bytes("/vn-candidate-objects/" + id.slice(7) + ".cbor");
+          logicalRequests.push({ id, byteLength: body.byteLength });
+          return body;
+        } });
+      const present = async (resource, request) => {
+        const key = JSON.stringify([request.slot.role, resource.media.provider, resource.media.key, resource.media.revision, request.variant]);
+        if (request.slot.role === "background" || request.slot.role === "character") {
+          return { kind: "image", source: "installed:" + key, release: () => { releases++; } };
+        }
+        return { kind: "audio", playFromStart: async () => { plays++; }, stop: () => {}, release: () => { releases++; } };
+      };
+      const player = createVnPlayer({
+        reader: novel,
+        text: { resolve: async request => request.items.map(() => ({ status: "ok", revision: "host-r1", payload: { text: "Installed browser VN text" } })) },
+        resolveMedia: async request => {
+          const media = request.slot.media;
+          const key = JSON.stringify([request.slot.role, media.provider, media.key, media.revision, request.variant]);
+          mediaRequests.push(key);
+          const bytes = new Uint8Array([0x52, 0x45, 0x5a, 0x31]);
+          const descriptor = request.kind === "image"
+            ? { kind: "image", mimeType: "image/png", byteLength: bytes.byteLength, width: 1, height: 1 }
+            : { kind: "audio", mimeType: "audio/wav", byteLength: bytes.byteLength, durationMs: 10, sampleRate: 8000, channels: 1 };
+          mediaBytes.push({ key, encodedBytes: bytes.byteLength, decodedBytes: request.kind === "image" ? 4 : 320 });
+          return { status: "available", kind: request.kind, role: request.slot.role, media, revision: media.revision,
+            variant: request.variant, descriptor, bytes, release: () => {} };
+        },
+        presentMedia: present,
+        prepareCandidateMedia: async (resource, request) => {
+          candidatePresentations.push({ key: JSON.stringify([request.slot.role, resource.media.provider, resource.media.key, resource.media.revision, request.variant]), encodedBytes: resource.bytes.byteLength });
+          return present(resource, request);
+        },
+        context: { media: { account: "reader-one" }, content: { languages: ["en"] } },
+        selectVariant: () => "browser",
+        selectCandidateVariant: () => "browser",
+        maxCandidateRequests: 32,
+      });
+      const waitForCandidates = async () => {
+        for (let attempt = 0; attempt < 400; attempt++) {
+          const status = player.getSnapshot().candidates?.status;
+          if (status && status !== "preparing") return status;
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+        throw new Error("The installed VN player did not settle candidate preparation.");
+      };
+      try {
+        const firstScreen = await novel.inspect();
+        const firstScreenRequests = requested.length;
+        await player.start();
+        const initialCandidateStatus = await waitForCandidates();
+        let current = player.getSnapshot().screen?.view;
+        for (let step = 0; current?.view.interaction.kind === "advance" && step < 16; step++) {
+          await player.advance();
+          current = player.getSnapshot().screen?.view;
+        }
+        if (!current || current.view.interaction.kind !== "choose") throw new Error("The installed candidate story did not reach its route choice.");
+        const choiceCandidateStatus = await waitForCandidates();
+        const candidateAtChoice = player.getSnapshot().candidates;
+        const helperHallKey = JSON.stringify(["background", "demo", "bg/hall", "r2", "browser"]);
+        const hallRequestsBefore = mediaRequests.filter(key => key === helperHallKey).length;
+        const beforeChoice = mediaRequests.length;
+        const option = current.view.interaction.options.find(item => item.enabled && item.label.key === "label.right");
+        if (!option) throw new Error("The installed candidate story has no enabled helper route: " + JSON.stringify({ status: player.getSnapshot().status, interaction: current.view.interaction }));
+        await player.choose(option.id);
+        const target = player.getSnapshot().screen?.view;
+        if (target?.view.scene.background?.key !== "bg/hall") throw new Error("The helper route did not load its exact scene.");
+        const hallRequestsAfter = mediaRequests.filter(key => key === helperHallKey).length;
+        if (hallRequestsAfter !== hallRequestsBefore) throw new Error("The helper route fetched its prepared hall background again.");
+        await waitForCandidates();
+        const save = await novel.exportSave();
+        const evidence = {
+          artifact: firstScreen.view.artifact_id,
+          firstScreenObjects: requested.slice(0, firstScreenRequests),
+          allObjects: requested,
+          optionalObjectCount: requested.length - firstScreenRequests,
+          firstScreenCursor: firstScreen.view.cursor,
+          currentCursor: target.view.cursor,
+          initialCandidateStatus,
+          choiceCandidateStatus,
+          checkedObjects: candidateAtChoice?.objects?.filter(item => item.status === "checked").map(item => item.object) ?? [],
+          logicalRequests,
+          optionalObjectBytes: logicalRequests.slice(firstScreenRequests).reduce((total, item) => total + item.byteLength, 0),
+          candidateMedia: candidatePresentations,
+          mediaFetches: mediaRequests,
+          mediaBytes,
+          targetMediaRequestedAgain: hallRequestsAfter - hallRequestsBefore,
+          speculativeMediaFetchesAfterChoice: mediaRequests.length - beforeChoice,
+          soundStatus: player.getSnapshot().soundStatus,
+          playCount: plays,
+          saveBytes: new TextEncoder().encode(save).byteLength,
+        };
+        await player.close();
+        await novel.close();
+        if (releases !== mediaRequests.length) throw new Error("Installed VN media leases were not released exactly once.");
+        return { ...evidence, releases };
+      } catch (error) {
+        await player.close();
+        await novel.close();
+        throw error;
+      }
+    },
+    vnModuleCompatibility: (incompatibleWasmUrl, compatibleWasmUrl) => new Promise((resolve, reject) => {
+      const worker = new Worker(new URL("./vn-module-worker.js", import.meta.url), { type: "module" });
+      worker.onerror = event => { worker.terminate(); reject(new Error(event.message)); };
+      worker.onmessage = ({ data }) => { worker.terminate(); resolve(data); };
+      worker.postMessage({ incompatibleWasmUrl, compatibleWasmUrl, packUrl: "/vn-story.narpack", execution: ${JSON.stringify(execution)} });
+    }),
     author: () => new Promise((done, fail) => {
       const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
       worker.onerror = event => { worker.terminate(); fail(new Error(event.message)); };
@@ -496,7 +645,15 @@ window.ready = new URLSearchParams(location.search).has("reference") ? (async ()
 // Build with the consumer's own Vite, then serve only its production output.
 execFileSync(process.execPath, [join(directory, "node_modules/vite/bin/vite.js"), "build"], { cwd: directory, stdio: "inherit" });
 const emitted = (await import("node:fs/promises")).readdir;
-assert.ok((await emitted(join(directory, "dist/assets"))).some(name => name.endsWith(".wasm")), "Wasm must remain a separate request");
+const wasmAssets = (await emitted(join(directory, "dist/assets"))).filter(name => name.endsWith(".wasm"));
+assert.ok(wasmAssets.length > 0, "Wasm must remain a separate request");
+const wasmAssetUrl = kind => {
+  const name = wasmAssets.find(file => wasmKinds.get(sha256(readFileSync(join(directory, "dist/assets", file)))) === kind);
+  assert.ok(name, `The installed production app must emit its ${kind} Wasm asset`);
+  return `/assets/${name}`;
+};
+const readerWasmUrl = wasmAssetUrl("reader");
+const vnReaderWasmUrl = wasmAssetUrl("vn-reader");
 const port = 4193;
 const served = [];
 // Loaded from the unpacked consumer, this Node host publishes through its installed server API.
@@ -537,7 +694,27 @@ try {
   assert.equal(vnEvidence.version, 1); assert.equal(vnEvidence.depth, 1); assert.equal(vnEvidence.line, "dialogue.two");
   assert.equal(vnEvidence.artifact, "artifact:e4833208cb0e335d55cdfbc27cee38568bc916f05c60337f14c028f0a4b72b06");
   assert.equal(vnEvidence.requested, 1);
-  assert.deepEqual(served, ["reader"], "The VN entry reuses the package reader Wasm and adds no authoring or compatibility module request");
+  assert.deepEqual(served, ["reader", "vn-reader"], "The VN entry loads its optional reader module only when that entry is opened");
+  const vnCandidateEvidence = await page.evaluate(() => window.installed.vnCandidates());
+  assert.equal(vnCandidateEvidence.firstScreenObjects.length, 1, "The installed VN first screen fetches only its required entry graph");
+  assert.equal(vnCandidateEvidence.optionalObjectCount, 1, "The helper graph loads only during candidate preparation");
+  assert.ok(vnCandidateEvidence.optionalObjectBytes > 0);
+  assert.equal(vnCandidateEvidence.initialCandidateStatus, "complete");
+  assert.equal(vnCandidateEvidence.choiceCandidateStatus, "complete");
+  assert.ok(vnCandidateEvidence.checkedObjects.length > 0, "The cross-graph object was checked before use");
+  assert.ok(vnCandidateEvidence.candidateMedia.some(item => item.key.includes("bg/hall")), "The route scene was prepared through the public player");
+  assert.equal(vnCandidateEvidence.targetMediaRequestedAgain, 0, "The public player reuses the prepared route background");
+  assert.equal(vnCandidateEvidence.soundStatus, "off");
+  assert.equal(vnCandidateEvidence.playCount, 0, "Candidate preparation never starts future audio");
+  assert.equal(vnCandidateEvidence.releases, vnCandidateEvidence.mediaFetches.length, "Every installed media lease is released once");
+  writeFileSync(join(directory, "vn-candidate-evidence.json"), JSON.stringify(vnCandidateEvidence, null, 2));
+  const vnModuleCompatibility = await page.evaluate(({ incompatible, compatible }) => window.installed.vnModuleCompatibility(incompatible, compatible), {
+    incompatible: readerWasmUrl,
+    compatible: vnReaderWasmUrl,
+  });
+  assert.equal(vnModuleCompatibility.accepted, false);
+  assert.match(vnModuleCompatibility.featureError, /must include the `vn-dependencies` feature/);
+  assert.match(vnModuleCompatibility.sourceError, /one Wasm module/);
   assert.deepEqual(requests.filter(path => /sigma|graphology|renderer|graph/i.test(path)), [], "The first screen loads no graph code or tiles");
   assert.deepEqual(await page.evaluate(() => window.installed.native()), { status: "ok", ids: ["arrival", "map"], image: "image", marker: "choice-point:" + "1".repeat(32) });
   const beforePrefetch = await page.evaluate(() => window.installed.save());
@@ -594,7 +771,7 @@ try {
   writeFileSync(join(directory, "provided-history-names.json"), JSON.stringify(historical, null, 2));
   writeFileSync(join(directory,"maintenance-browser.json"),JSON.stringify(maintenance,null,2));
   assert.deepEqual(errors, []);
-  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored, vn: vnEvidence }, null, 2));
+  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored, vn: vnEvidence, vnCandidates: vnCandidateEvidence, vnModuleCompatibility }, null, 2));
   await page.screenshot({ path: join(directory, "desktop-reader.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: join(directory, "mobile-reader.png"), fullPage: true });

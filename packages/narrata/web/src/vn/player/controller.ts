@@ -1,7 +1,8 @@
 import { contentItemKey } from "../../content/index.js";
 import type { Content, ResolveContext } from "../../content/index.js";
-import type { CommitId, MediaKind, VnInteractionV1, VnViewV1, ViewScalar } from "../../generated/vn-view.js";
-import type { VnReader } from "../runtime.js";
+import type { CommitId, MediaKind, MediaRef, VnInteractionV1, VnViewV1, ViewScalar } from "../../generated/vn-view.js";
+import type { DependencyMediaV1 } from "../../generated/vn-dependencies.js";
+import type { VnCandidatePreparation, VnDependencyLimits, VnDependencyResult, VnReader } from "../runtime.js";
 import { resolveVnText, VnTextUnavailableError, type VnTextResolver } from "./content.js";
 import {
   checkedVnMediaResolution,
@@ -11,18 +12,20 @@ import {
   mediaSlotKey,
   releaseVnMediaResolution,
   sameMedia,
+  mediaReuseKey,
   variantId,
   VnMediaBoundaryError,
   VnMediaUnavailableError,
   type VnMediaLimits,
   type VnMediaPresenter,
-  type VnMediaRequest,
   type VnMediaResolution,
   type VnMediaResolver,
   type VnMediaRole,
+  type VnMediaRequest,
   type VnMediaSlot,
   type VnPreparedAsset,
   type VnPresentedMedia,
+  type VnResolvedMedia,
 } from "./media.js";
 
 export type VnEntryReason = "open" | "forward" | "checkout" | "restore" | "context" | "audio-retry" | "refresh";
@@ -57,7 +60,19 @@ export interface VnPlayerSnapshot {
   readonly screen?: VnPresentedView;
   /** Current logical target, which may be ahead of `screen` while resources are preparing. */
   readonly target?: VnViewV1;
+  readonly candidates?: VnPlayerCandidateStatus;
   readonly failure?: VnPlayerFailure;
+}
+
+export interface VnPlayerCandidateStatus {
+  readonly status: "preparing" | "complete" | "partial" | "cancelled";
+  readonly graphObjectsPrepared: number;
+  readonly mediaPrepared: number;
+  readonly mediaUnavailable: number;
+  readonly completeProjection: boolean;
+  /** Host-owned content refs and conservative role hints, never fabricated future arguments. */
+  readonly projection?: VnDependencyResult;
+  readonly objects?: VnCandidatePreparation["objects"];
 }
 
 export interface VnPlayerOptions<HostContext> {
@@ -68,6 +83,16 @@ export interface VnPlayerOptions<HostContext> {
   readonly context: VnPlayerContext<HostContext>;
   /** The host chooses a presentation variant; the VN format never stores it. */
   readonly selectVariant: (slot: VnMediaSlot, view: VnViewV1) => string;
+  /** Candidate variants are selected from typed role/ref hints, without a future View. */
+  readonly selectCandidateVariant?: (item: DependencyMediaV1) => string;
+  /** Prepares a candidate for later display without asking the host to invent a future View. */
+  readonly prepareCandidateMedia?: (
+    resource: VnResolvedMedia,
+    request: Pick<VnMediaRequest<unknown>, "slot" | "variant" | "signal">,
+  ) => Promise<VnPresentedMedia>;
+  readonly dependencyLimits?: Partial<VnDependencyLimits>;
+  /** Per-snapshot media work cap, independent of the current scene's required target budget. */
+  readonly maxCandidateRequests?: number;
   readonly onLateDiscard?: (request: VnMediaRequest<HostContext>) => void;
   readonly limits?: Partial<VnMediaLimits>;
 }
@@ -90,6 +115,8 @@ interface WorkResult {
  */
 export class VnPlayerController<HostContext> {
   private readonly limits: VnMediaLimits;
+  private readonly dependencyLimits: VnDependencyLimits;
+  private readonly maxCandidateRequests: number;
   private readonly listeners = new Set<() => void>();
   private snapshot: VnPlayerSnapshot = { status: "loading", saveStatus: "saved", soundStatus: "off", audioLoading: false };
   private context: VnPlayerContext<HostContext>;
@@ -98,6 +125,12 @@ export class VnPlayerController<HostContext> {
   private operation: AbortController | undefined;
   private logicalWork: Promise<void> | undefined;
   private pendingAssets = new Set<VnPreparedAsset>();
+  private readonly candidateAssets = new Map<string, VnPreparedAsset>();
+  private readonly candidatePendingAssets = new Set<VnPreparedAsset>();
+  private candidateOperation: AbortController | undefined;
+  private candidateStatus: VnPlayerCandidateStatus | undefined;
+  private candidateRequestCount = 0;
+  private candidateEncodedBytesFetched = 0;
   private audioLifecycle = new AbortController();
   private presentationGeneration = 0;
   private audioLoading = false;
@@ -114,6 +147,9 @@ export class VnPlayerController<HostContext> {
   constructor(private readonly options: VnPlayerOptions<HostContext>) {
     this.context = options.context;
     this.limits = Object.freeze({ ...defaultVnMediaLimits, ...options.limits });
+    this.dependencyLimits = Object.freeze({ locations: 512, graphs: 32, candidates: 512, references: 2048, scans: 8192, ...options.dependencyLimits });
+    this.maxCandidateRequests = options.maxCandidateRequests ?? this.limits.maxRequests;
+    if (!positiveLimit(this.maxCandidateRequests)) throw new RangeError("VN candidate request limit must be a positive safe integer.");
     if (!positiveLimit(this.limits.maxRequests) || !positiveLimit(this.limits.maxConcurrent)
       || !positiveLimit(this.limits.maxEncodedBytesPerTarget) || !positiveLimit(this.limits.maxEncodedBytesRetained)
       || !positiveLimit(this.limits.maxDecodedBytesRetained) || !positiveLimit(this.limits.maxImageDimension)
@@ -196,13 +232,24 @@ export class VnPlayerController<HostContext> {
     await this.prepare(this.target, this.pendingEntry);
   }
 
+  /** Retry the optional direct-candidate query and resources for the current confirmed screen. */
+  async retryCandidates(): Promise<void> {
+    const screen = this.requireInteractiveScreen();
+    await this.warmCandidates(screen.view, this.generation);
+  }
+
   /** Re-resolves only a changed host presentation variant without changing the reader cursor. */
   async refreshPresentation(): Promise<void> {
     if (this.closed || this.snapshot.status !== "ready" || this.snapshot.saveStatus !== "saved" || !this.screen) return;
     const view = this.screen.view;
+    this.cancelCandidatePreparation(true);
+    this.options.reader.clearPreparedCandidates();
     const slots = mediaSlots(view);
-    if (!slots.some(slot => !hasAsset(this.screen?.assets ?? [], slot, this.options.selectVariant(slot, view)))) return;
-    await this.prepare(view, "refresh");
+    if (slots.some(slot => !hasAsset(this.screen?.assets ?? [], slot, this.options.selectVariant(slot, view)))) {
+      await this.prepare(view, "refresh");
+    } else if (this.options.selectCandidateVariant && this.options.prepareCandidateMedia) {
+      await this.warmCandidates(view, this.generation);
+    }
   }
 
   /** Retries current audio only; it never advances or changes the narrative cursor. */
@@ -275,6 +322,7 @@ export class VnPlayerController<HostContext> {
     if (this.snapshot.status !== "ready") return;
     this.presentationGeneration++;
     this.audioLifecycle.abort();
+    this.cancelCandidatePreparation(true);
     this.audioLifecycle = new AbortController();
     const generation = this.presentationGeneration;
     this.soundStatus = "on";
@@ -394,6 +442,8 @@ export class VnPlayerController<HostContext> {
     const logicalWork = this.logicalWork;
     this.generation++;
     this.presentationGeneration++;
+    this.cancelCandidatePreparation(true);
+    this.options.reader.clearPreparedCandidates();
     this.context = context;
     this.audioLifecycle.abort();
     this.audioLifecycle = new AbortController();
@@ -446,6 +496,8 @@ export class VnPlayerController<HostContext> {
     this.closed = true;
     this.generation++;
     this.presentationGeneration++;
+    this.cancelCandidatePreparation(true);
+    this.options.reader.clearPreparedCandidates();
     this.audioLifecycle.abort();
     this.abortOperation();
     const finalSaveStatus = this.snapshot.saveStatus === "saving" ? "unknown" : this.snapshot.saveStatus;
@@ -567,6 +619,10 @@ export class VnPlayerController<HostContext> {
 
   private async prepare(view: VnViewV1, entry: VnEntryReason): Promise<void> {
     this.assertOpen();
+    if (entry === "refresh") {
+      this.cancelCandidatePreparation(true);
+      this.options.reader.clearPreparedCandidates();
+    } else this.cancelCandidatePreparation(false);
     this.abortOperation();
     this.releasePendingAssets(this.screen?.assets ?? []);
     this.presentationGeneration++;
@@ -663,6 +719,7 @@ export class VnPlayerController<HostContext> {
       if (this.soundStatus === "on" && !hasPlayableAudio(next) && !missingAudio && next.audioIssues.length > 0) this.soundStatus = "unavailable";
       this.publish("ready", next, undefined, undefined, "saved");
       if (missingAudio) void this.prepareAudio(next, audioSlots, entry, generation, controller);
+      if (this.options.selectCandidateVariant && this.options.prepareCandidateMedia) void this.warmCandidates(view, generation);
     } catch (error) {
       this.releasePendingAssets(prior?.assets ?? []);
       if (!this.isOperationCurrent(generation, controller)) return;
@@ -726,6 +783,121 @@ export class VnPlayerController<HostContext> {
     }
   }
 
+  private async warmCandidates(view: VnViewV1, generation: number): Promise<void> {
+    if (!this.options.selectCandidateVariant || !this.options.prepareCandidateMedia || this.closed) return;
+    this.cancelCandidatePreparation(false);
+    const controller = new AbortController();
+    this.candidateOperation = controller;
+    this.candidateStatus = { status: "preparing", graphObjectsPrepared: 0, mediaPrepared: 0, mediaUnavailable: 0, completeProjection: false };
+    this.publish(this.snapshot.status, this.screen, this.target, this.snapshot.failure, this.snapshot.saveStatus);
+    const prepared: VnPreparedAsset[] = [];
+    const ownedPending = new Set<VnPreparedAsset>();
+    let mediaUnavailable = 0;
+    try {
+      const result = await this.options.reader.prepareCandidates(view.view.cursor, this.dependencyLimits, controller.signal);
+      if (!this.isCandidateCurrent(generation, controller, view)) return;
+      const liveAssets = uniqueAssets([...(this.screen?.assets ?? []), ...this.pendingAssets, ...this.candidatePendingAssets, ...this.candidateAssets.values()]);
+      const occupied = new Set(liveAssets.map(asset => mediaReuseKey(asset.slot, asset.media, asset.variant)));
+      const work = result.dependencies.media.flatMap(item => {
+        const slot = candidateSlot(item);
+        if (!slot) return [];
+        const variant = this.options.selectCandidateVariant!(item);
+        if (!variantId(variant)) throw new VnMediaBoundaryError("variant");
+        const key = mediaReuseKey(slot, slot.media, variant);
+        if (occupied.has(key)) return [];
+        occupied.add(key);
+        return [{ item, slot, variant, key }];
+      });
+      const requestAllowance = Math.max(0, Math.min(this.maxCandidateRequests, 128 - this.candidateRequestCount));
+      const selectedWork = work.slice(0, requestAllowance);
+      for (const item of selectedWork) {
+        if (controller.signal.aborted) break;
+        if (this.options.selectCandidateVariant!(item.item) !== item.variant) {
+          controller.abort();
+          releaseAssets(prepared);
+          prepared.length = 0;
+          this.candidateStatus = { status: "cancelled", graphObjectsPrepared: result.objects.filter(object => object.status === "checked").length,
+            mediaPrepared: 0, mediaUnavailable, completeProjection: result.dependencies.complete, projection: result.dependencies, objects: result.objects };
+          this.publish(this.snapshot.status, this.screen, this.target, this.snapshot.failure, this.snapshot.saveStatus);
+          return;
+        }
+        this.candidateRequestCount++;
+        const asset = await this.resolveOne(item.slot, item.variant, view, controller.signal, true);
+        if (asset) {
+          const pending = { ...asset, slot: item.slot };
+          prepared.push(pending);
+          ownedPending.add(pending);
+          this.candidatePendingAssets.add(pending);
+        }
+        if (!this.isCandidateCurrent(generation, controller, view)) {
+          releaseAssets(prepared);
+          prepared.length = 0;
+          return;
+        }
+        if (!asset) { mediaUnavailable++; continue; }
+        const targetOver = encodedBytes(prepared) > this.limits.maxEncodedBytesPerTarget;
+        const retained = uniqueAssets([...(this.screen?.assets ?? []), ...this.pendingAssets,
+          ...this.candidatePendingAssets, ...this.candidateAssets.values()]);
+        const retainedOver = encodedBytes(retained) > this.limits.maxEncodedBytesRetained
+          || decodedBytes(retained) > this.limits.maxDecodedBytesRetained;
+        if (targetOver || retainedOver) {
+          const removed = prepared.pop();
+          if (removed) this.candidatePendingAssets.delete(removed);
+          releaseAssets([asset]);
+          mediaUnavailable++;
+          continue;
+        }
+      }
+      if (!this.isCandidateCurrent(generation, controller, view)) {
+        releaseAssets(prepared);
+        prepared.length = 0;
+        return;
+      }
+      if (work.some(item => this.options.selectCandidateVariant!(item.item) !== item.variant)) {
+        releaseAssets(prepared);
+        prepared.length = 0;
+        this.candidateStatus = { status: "cancelled", graphObjectsPrepared: result.objects.filter(object => object.status === "checked").length,
+          mediaPrepared: 0, mediaUnavailable, completeProjection: result.dependencies.complete, projection: result.dependencies, objects: result.objects };
+        this.publish(this.snapshot.status, this.screen, this.target, this.snapshot.failure, this.snapshot.saveStatus);
+        return;
+      }
+      let cacheSlots = Math.max(0, 32 - this.candidateAssets.size);
+      while (prepared.length > cacheSlots) {
+        const removed = prepared.pop();
+        if (!removed) break;
+        releaseAssets([removed]);
+        mediaUnavailable++;
+      }
+      for (const asset of prepared) this.candidateAssets.set(mediaReuseKey(asset.slot, asset.media, asset.variant), asset);
+      const candidateStatus: VnPlayerCandidateStatus = {
+        status: result.status === "complete" && mediaUnavailable === 0 && work.length <= requestAllowance ? "complete" : "partial",
+        graphObjectsPrepared: result.objects.filter(object => object.status === "checked").length,
+        mediaPrepared: prepared.length,
+        mediaUnavailable: mediaUnavailable + Math.max(0, work.length - requestAllowance),
+        completeProjection: result.dependencies.complete,
+        projection: result.dependencies,
+        objects: result.objects,
+      };
+      this.candidateStatus = candidateStatus;
+      this.publish(this.snapshot.status, this.screen, this.target, this.snapshot.failure, this.snapshot.saveStatus);
+    } catch {
+      releaseAssets(prepared);
+      prepared.length = 0;
+      if (this.isCandidateCurrent(generation, controller, view)) {
+        this.candidateStatus = { status: controller.signal.aborted ? "cancelled" : "partial", graphObjectsPrepared: 0, mediaPrepared: 0, mediaUnavailable, completeProjection: false };
+        this.publish(this.snapshot.status, this.screen, this.target, this.snapshot.failure, this.snapshot.saveStatus);
+      }
+    } finally {
+      for (const asset of ownedPending) this.candidatePendingAssets.delete(asset);
+      if (this.candidateOperation === controller) this.candidateOperation = undefined;
+    }
+  }
+
+  private isCandidateCurrent(generation: number, operation: AbortController, view: VnViewV1): boolean {
+    return this.isCurrent(generation) && this.candidateOperation === operation && !operation.signal.aborted
+      && this.screen?.view.view.cursor === view.view.cursor && this.screen.view.view.artifact_id === view.view.artifact_id;
+  }
+
   private async resolveAssets(
     slots: readonly VnMediaSlot[],
     view: VnViewV1,
@@ -735,108 +907,132 @@ export class VnPlayerController<HostContext> {
   ): Promise<WorkResult> {
     if (slots.length > this.limits.maxRequests) throw new VnMediaBoundaryError("budget");
     const controller = new AbortController();
-    const abortChild = () => controller.abort();
     const oldAssets = prior?.assets ?? [];
     const work: Array<{ slot: VnMediaSlot; variant: string }> = [];
     let assets: VnPreparedAsset[] = [];
+    const adopted: VnPreparedAsset[] = [];
     const issues = new Set<VnMediaRole>();
-    for (const slot of slots) {
-      const variant = this.options.selectVariant(slot, view);
-      if (!variantId(variant)) throw new VnMediaBoundaryError("variant");
-      const reusable = oldAssets.find(asset => asset.variant === variant && asset.slot.role === slot.role && sameMedia(asset.media, slot.media));
-      if (reusable) assets.push({ ...reusable, slot });
-      else work.push({ slot, variant });
-    }
-    if (work.length > this.limits.maxRequests) throw new VnMediaBoundaryError("budget");
-    const overTarget = (candidate: readonly VnPreparedAsset[]) =>
-      encodedBytes([...targetBase, ...candidate]) > this.limits.maxEncodedBytesPerTarget
-      || decodedBytes([...targetBase, ...candidate]) > this.limits.maxDecodedBytesRetained;
-    if (overTarget(assets)) {
-      const removable = assets.filter(asset => asset.slot.role === "music" || asset.slot.role === "voice");
-      assets = assets.filter(asset => asset.slot.role !== "music" && asset.slot.role !== "voice");
-      for (const asset of removable) issues.add(asset.slot.role);
-      if (prior && removable.length > 0) this.dropOldAudio(prior, removable.map(asset => asset.slot.role));
-      if (overTarget(assets)) throw new VnMediaBoundaryError("budget");
-    }
-    let retainedOld = uniqueAssets(oldAssets);
-    const abortParent = () => controller.abort();
-    if (parentSignal.aborted) controller.abort();
-    else parentSignal.addEventListener("abort", abortParent, { once: true });
     const prepared: VnPreparedAsset[] = [];
-    let next = 0;
-    let failure: unknown;
-    const worker = async () => {
-      while (!controller.signal.aborted) {
-        const index = next++;
-        if (index >= work.length) return;
-        const item = work[index];
-        if (!item) return;
-        try {
-          const asset = await this.resolveOne(item.slot, item.variant, view, controller.signal);
-          if (controller.signal.aborted) {
-            if (asset) releaseAssets([asset]);
-            return;
-          }
-          if (asset) {
-            const targetCandidate = [...assets, ...prepared, asset];
-            const retainedCandidate = [...retainedOld, ...prepared, asset];
-            const targetOver = overTarget(targetCandidate);
-            const retainedOver = encodedBytes(retainedCandidate) > this.limits.maxEncodedBytesRetained
-              || decodedBytes(retainedCandidate) > this.limits.maxDecodedBytesRetained;
-            if (targetOver || retainedOver) {
-              releaseAssets([asset]);
-              if (item.slot.role === "music" || item.slot.role === "voice") {
-                issues.add(item.slot.role);
-                continue;
-              }
-              if (retainedOver) {
-                const oldAudio = retainedOld.filter(candidate => candidate.slot.role === "music" || candidate.slot.role === "voice");
-                if (prior && oldAudio.length > 0) {
-                  this.dropOldAudio(prior, oldAudio.map(candidate => candidate.slot.role));
-                  retainedOld = retainedOld.filter(candidate => candidate.slot.role !== "music" && candidate.slot.role !== "voice");
-                  assets = assets.filter(candidate => candidate.slot.role !== "music" && candidate.slot.role !== "voice");
-                  for (const old of oldAudio) issues.add(old.slot.role);
-                  if (!overTarget([...assets, ...prepared, asset])
-                    && encodedBytes([...retainedOld, ...prepared, asset]) <= this.limits.maxEncodedBytesRetained
-                    && decodedBytes([...retainedOld, ...prepared, asset]) <= this.limits.maxDecodedBytesRetained) {
-                    prepared.push(asset);
-                    continue;
-                  }
-                }
-              }
-              throw new VnMediaBoundaryError("budget");
-            }
-            prepared.push(asset);
-          } else if (item.slot.role === "music" || item.slot.role === "voice") issues.add(item.slot.role);
-          else throw new VnMediaUnavailableError(item.slot.role);
-        } catch (error) {
-          if (controller.signal.aborted && parentSignal.aborted) return;
-          if (item.slot.role === "music" || item.slot.role === "voice") {
-            issues.add(item.slot.role);
-            continue;
-          }
-          failure ??= error;
-          controller.abort();
-          return;
+    const abortParent = () => controller.abort();
+    try {
+      for (const slot of slots) {
+        const variant = this.options.selectVariant(slot, view);
+        if (!variantId(variant)) throw new VnMediaBoundaryError("variant");
+        const reusable = oldAssets.find(asset => asset.variant === variant && mediaSlotKey(asset.slot) === mediaSlotKey(slot) && sameMedia(asset.media, slot.media));
+        if (reusable) assets.push({ ...reusable, slot });
+        else {
+          const key = mediaReuseKey(slot, slot.media, variant);
+          const candidate = this.candidateAssets.get(key);
+          if (candidate) {
+            assets.push({ ...candidate, slot });
+            adopted.push(candidate);
+            this.candidateAssets.delete(key);
+          } else work.push({ slot, variant });
         }
       }
-    };
-    try {
+      if (work.length > this.limits.maxRequests) throw new VnMediaBoundaryError("budget");
+      const overTarget = (candidate: readonly VnPreparedAsset[]) =>
+        encodedBytes([...targetBase, ...candidate]) > this.limits.maxEncodedBytesPerTarget
+        || decodedBytes([...targetBase, ...candidate]) > this.limits.maxDecodedBytesRetained;
+      if (overTarget(assets)) {
+        const removable = assets.filter(asset => asset.slot.role === "music" || asset.slot.role === "voice");
+        assets = assets.filter(asset => asset.slot.role !== "music" && asset.slot.role !== "voice");
+        const adoptedAudio = adopted.filter(asset => removable.some(removed => removed.presentation === asset.presentation));
+        releaseAssets(adoptedAudio, oldAssets);
+        for (const asset of adoptedAudio) adopted.splice(adopted.indexOf(asset), 1);
+        for (const asset of removable) issues.add(asset.slot.role);
+        if (prior && removable.length > 0) this.dropOldAudio(prior, removable.map(asset => asset.slot.role));
+        if (overTarget(assets)) {
+          throw new VnMediaBoundaryError("budget");
+        }
+      }
+      let retainedOld = uniqueAssets([...oldAssets, ...this.pendingAssets, ...this.candidatePendingAssets, ...this.candidateAssets.values(), ...assets]);
+      const retained = (extra: readonly VnPreparedAsset[] = []) => uniqueAssets([
+        ...retainedOld, ...this.pendingAssets, ...this.candidatePendingAssets,
+        ...this.candidateAssets.values(), ...prepared, ...extra,
+      ]);
+      if (parentSignal.aborted) controller.abort();
+      else parentSignal.addEventListener("abort", abortParent, { once: true });
+      let next = 0;
+      let failure: unknown;
+      const worker = async () => {
+        while (!controller.signal.aborted) {
+          const index = next++;
+          if (index >= work.length) return;
+          const item = work[index];
+          if (!item) return;
+          try {
+            const asset = await this.resolveOne(item.slot, item.variant, view, controller.signal);
+            if (controller.signal.aborted) {
+              if (asset) releaseAssets([asset]);
+              return;
+            }
+            if (asset) {
+              const targetCandidate = [...assets, ...prepared, asset];
+              const retainedCandidate = retained([asset]);
+              const targetOver = overTarget(targetCandidate);
+              const retainedOver = encodedBytes(retainedCandidate) > this.limits.maxEncodedBytesRetained
+                || decodedBytes(retainedCandidate) > this.limits.maxDecodedBytesRetained;
+              if (targetOver || retainedOver) {
+                if (item.slot.role === "music" || item.slot.role === "voice") {
+                  releaseAssets([asset]);
+                  issues.add(item.slot.role);
+                  continue;
+                }
+                if (retainedOver) {
+                  const oldAudio = retainedOld.filter(candidate => candidate.slot.role === "music" || candidate.slot.role === "voice");
+                  if (prior && oldAudio.length > 0) {
+                    this.dropOldAudio(prior, oldAudio.map(candidate => candidate.slot.role));
+                    retainedOld = retainedOld.filter(candidate => candidate.slot.role !== "music" && candidate.slot.role !== "voice");
+                    assets = assets.filter(candidate => candidate.slot.role !== "music" && candidate.slot.role !== "voice");
+                    for (const old of oldAudio) issues.add(old.slot.role);
+                    if (!overTarget([...assets, ...prepared, asset])
+                      && encodedBytes(retained([asset])) <= this.limits.maxEncodedBytesRetained
+                      && decodedBytes(retained([asset])) <= this.limits.maxDecodedBytesRetained) {
+                      prepared.push(asset);
+                      continue;
+                    }
+                  }
+                }
+                releaseAssets([asset]);
+                throw new VnMediaBoundaryError("budget");
+              }
+              prepared.push(asset);
+            } else if (item.slot.role === "music" || item.slot.role === "voice") issues.add(item.slot.role);
+            else throw new VnMediaUnavailableError(item.slot.role);
+          } catch (error) {
+            if (controller.signal.aborted && parentSignal.aborted) return;
+            if (item.slot.role === "music" || item.slot.role === "voice") {
+              issues.add(item.slot.role);
+              continue;
+            }
+            failure ??= error;
+            controller.abort();
+            return;
+          }
+        }
+      };
       await Promise.all(Array.from({ length: Math.min(this.limits.maxConcurrent, work.length) }, () => worker()));
       if (parentSignal.aborted) throw abortError();
       if (failure !== undefined) throw failure;
-      if (overTarget([...assets, ...prepared]) || encodedBytes([...retainedOld, ...prepared]) > this.limits.maxEncodedBytesRetained
-        || decodedBytes([...retainedOld, ...prepared]) > this.limits.maxDecodedBytesRetained) throw new VnMediaBoundaryError("budget");
+      if (overTarget([...assets, ...prepared]) || encodedBytes(retained()) > this.limits.maxEncodedBytesRetained
+        || decodedBytes(retained()) > this.limits.maxDecodedBytesRetained) throw new VnMediaBoundaryError("budget");
       return { assets: [...assets, ...prepared], audioIssues: [...issues] };
     } catch (error) {
-      releaseAssets(prepared, oldAssets);
+      releaseAssets([...prepared, ...adopted], oldAssets);
       throw error;
     } finally {
       parentSignal.removeEventListener("abort", abortParent);
     }
   }
 
-  private async resolveOne(slot: VnMediaSlot, variant: string, view: VnViewV1, signal: AbortSignal): Promise<VnPreparedAsset | undefined> {
+  private async resolveOne(
+    slot: VnMediaSlot,
+    variant: string,
+    view: VnViewV1,
+    signal: AbortSignal,
+    candidate = false,
+  ): Promise<VnPreparedAsset | undefined> {
     const expected = expectedKind(slot.role);
     if (slot.media.kind !== expected) throw new VnMediaBoundaryError("kind");
     if (slot.media.provider.length === 0 || slot.media.key.length === 0 || slot.media.revision.length === 0) throw new VnMediaBoundaryError("media");
@@ -854,10 +1050,20 @@ export class VnPlayerController<HostContext> {
       signal,
     });
     if (signal.aborted) throw abortError();
+    let accountedCandidateBytes = false;
+    const accountCandidateBytes = (value: unknown) => {
+      if (!candidate || accountedCandidateBytes) return;
+      accountedCandidateBytes = true;
+      if (typeof value === "object" && value !== null && "bytes" in value && value.bytes instanceof Uint8Array) {
+        this.candidateEncodedBytesFetched = Math.min(Number.MAX_SAFE_INTEGER, this.candidateEncodedBytesFetched + value.bytes.byteLength);
+      }
+    };
     const raw = await awaitAbortable(this.options.resolveMedia(request), signal, value => {
+      accountCandidateBytes(value);
       try { this.options.onLateDiscard?.(request); } catch { /* Telemetry must not block resource cleanup. */ }
       releaseVnMediaResolution(value);
     });
+    accountCandidateBytes(raw);
     if (signal.aborted) {
       try { this.options.onLateDiscard?.(request); } catch { /* Telemetry must not block resource cleanup. */ }
       releaseVnMediaResolution(raw);
@@ -870,6 +1076,10 @@ export class VnPlayerController<HostContext> {
       throw error;
     }
     if (result.status === "unavailable") return undefined;
+    if (candidate && (this.candidateRequestCount > 128 || this.candidateEncodedBytesFetched > 128 * 1024 * 1024)) {
+      releaseVnMediaResolution(result);
+      throw new VnMediaBoundaryError("budget");
+    }
     let resourceReleased = false;
     const releaseResource = () => {
       if (resourceReleased) return;
@@ -891,7 +1101,9 @@ export class VnPlayerController<HostContext> {
     let presentation: VnPresentedMedia | undefined;
     try {
       const presented = await awaitAbortable(
-        this.options.presentMedia(safeResource, { slot: frozenSlot, variant, signal }, view),
+        candidate
+          ? this.options.prepareCandidateMedia!(safeResource, { slot: frozenSlot, variant, signal })
+          : this.options.presentMedia(safeResource, { slot: frozenSlot, variant, signal }, view),
         signal,
         value => {
           try { this.options.onLateDiscard?.(request); } catch { /* Telemetry must not block resource cleanup. */ }
@@ -990,12 +1202,23 @@ export class VnPlayerController<HostContext> {
 
   private invalidatePendingPresentation(): void {
     this.presentationGeneration++;
+    this.cancelCandidatePreparation(false);
     this.abortOperation();
     this.releasePendingAssets(this.screen?.assets ?? []);
     this.target = undefined;
     this.audioLoading = false;
     // Installed audio still belongs to the visible line until the write is confirmed.
     // Invalidating its publishers does not restart or stop a Keep track.
+  }
+
+  private cancelCandidatePreparation(clearAssets: boolean): void {
+    this.candidateOperation?.abort();
+    this.candidateOperation = undefined;
+    this.candidateStatus = undefined;
+    if (clearAssets) {
+      releaseAssets([...this.candidateAssets.values()], this.screen?.assets ?? []);
+      this.candidateAssets.clear();
+    }
   }
 
   private abortOperation(): void {
@@ -1067,6 +1290,7 @@ export class VnPlayerController<HostContext> {
       audioLoading: this.audioLoading,
       ...(screen ? { screen } : {}),
       ...(target ? { target } : {}),
+      ...(this.candidateStatus ? { candidates: this.candidateStatus } : {}),
       ...(failure ? { failure } : {}),
     };
     for (const listener of this.listeners) listener();
@@ -1101,6 +1325,17 @@ function mediaSlots(view: VnViewV1): VnMediaSlot[] {
   const interaction = view.view.interaction;
   if (interaction.kind === "advance" && interaction.voice) slots.push({ role: "voice", id: "voice", media: interaction.voice });
   return slots;
+}
+
+function candidateSlot(item: DependencyMediaV1): VnMediaSlot | undefined {
+  const media = item.reference as Readonly<MediaRef>;
+  switch (item.role.kind) {
+    case "background": return { role: "background", id: "background", media };
+    case "character_layer": return { role: "character", id: item.role.id, order: 0, media };
+    case "music_play":
+    case "music_keep": return { role: "music", id: "music", media };
+    case "voice": return { role: "voice", id: "voice", media };
+  }
 }
 
 function readDialogue(interaction: VnInteractionV1): string {
