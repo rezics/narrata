@@ -10,7 +10,7 @@
 | Rust | 1.98.0，组件 clippy、rustfmt，目标 `wasm32-wasip1`；Web 构建、`check:g2`、`check:web-storage` 与 `check:server-storage` 另需 `wasm32-unknown-unknown` | 引擎、CLI、绑定 | `rust-toolchain.toml` |
 | PowerShell | 7.x | 现有 gate 脚本 `scripts/check-*.ps1` | 本页 |
 | Node.js / npm | CI 用 24，本机 26 | Web npm 包、参考阅读器、TypeScript 绑定、IndexedDB 存储适配器 | `.github/workflows/ci.yml` |
-| Playwright | 1.63.0 | Web 包 tarball 安装、阅读器与 IndexedDB 存储适配器的浏览器回归 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json`、`packages/narrata/kernel/js/package.json` |
+| Playwright | 1.63.0 | Web 包 tarball 安装、阅读器与 IndexedDB 存储适配器，以及 VN 桌面/触屏播放器旅程；VN gate 使用 4175 端口 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json`、`examples/visual-novel-web/package.json`、`packages/narrata/kernel/js/package.json` |
 | Vite | 8.2.4（各 Web/存储包及协议绑定测试统一固定） | Web 包安装测试的生产构建、阅读器构建、存储适配器浏览器测试页及协议测试运行器 | 同上；`bindings/typescript/package.json`、`bindings/typescript/package-lock.json` |
 | Rolldown | 1.2.12（与 Vite 的锁定依赖相同） | 按 ESM 模块压缩 authoring/maintenance/server/shared storage JS、authoring 与 raw compatibility Wasm glue、可选地图校验器，保留独立加载边界与包内 URL；既有预算不变 | `packages/narrata/web/package-lock.json` |
 | React | 19.2.8（`@rezics/narrata/react` 的可选 peer，接受 React 18 与 19） | Web 包的 React 阅读器组件、参考阅读器 | `packages/narrata/web/package.json`、`examples/gamebook-web/package.json` |
@@ -23,6 +23,7 @@
 | wasm-bindgen CLI | 与 `Cargo.lock` 中的 `wasm-bindgen` 相同 | 为 Web 生成 Wasm 的 JS 绑定；构建脚本按需装进 `.temp/wasm-tools` | `Cargo.lock` |
 | Bun | 1.4.0 | `goalctl`、文档检查及其测试；`check:web` 的 tarball 安装测试 | 本页、`.github/workflows/ci.yml` |
 | Windows Terminal | 本机安装 | `task goal:manager` 为每个 manager 开一个标签页 | [manager 章程](../goals/manager.md#启动-manager) |
+| Windows System.Speech | Windows 本机离线语音合成，无网络服务或凭据 | 生成视觉小说产品的短对白 WAV；脚本默认选择 `Microsoft Zira Desktop`，并接受文本、声音和输出文件名参数 | `products/visual-novel-demo/scripts/generate-voice.ps1` |
 | Task（go-task） | 3.52.0 | 统一命令入口；CI 的 `gamebook-r1` 用 `arduino/setup-task` 安装同一版本 | `Taskfile.yml`、`.github/workflows/ci.yml` |
 | cargo-deny、wasmtime | CI 安装 | 依赖审计、Wasm 一致性 | `.github/workflows/ci.yml` |
 | Claude Code CLI、Codex CLI、grok | 本机安装（2026-10-05：2.1.283、0.160.0、1.0.46）；Codex 默认模型 `gpt-6.1-sol` | Goal worker 引擎，各自需要已登录 | [Goal 程序](../goals/README.md) |
@@ -38,6 +39,7 @@
 | `task web:build` | 构建 `@rezics/narrata` 的 ESM、声明与三个独立 Wasm：reader（`narrata-nodes-wasm --no-default-features`）、保留 `publishGraph` 的原始 `dist/wasm`（默认 feature）与 authoring（`narrata-authoring-wasm`），分别调用 cargo 以免 feature 合并，用 Cargo `wasm` profile（三个 Wasm 构建单次调用覆盖 `CARGO_PROFILE_WASM_OPT_LEVEL=z`；均 LTO）并去掉 name section；从 Rust schema 生成 BookView、authoring 接口类型及按需 reader-map 校验器（沿用 Ajv standalone 与 Rolldown ESM 压缩）；复制现有 IndexedDB 宿主及原样的服务器关系驱动/权威 SQL DDL 资产 | 准备宿主安装的包；产物为 `packages/narrata/web/dist/` |
 | `task web:pack` | 构建后 `npm pack`，tarball 在 `.temp/web-pack/`，打印 sha256 与 sha512 | 安装与发布前审查产物 |
 | `task check:web` | 类型/生成类型漂移、Vitest（含 authoring 与 CLI、旧 publishGraph 的字节一致及在线未知写入/原字节重试/同 execution 保留证明与维护句柄的关闭/账号代次/迟到读取拒绝）、reader/兼容/authoring Wasm 与 JS 分别的原始与 gzip 预算、仓库外 tarball 安装；Node/Bun 的 reader 加载与 authoring 发布 A/B；Node/Bun/Chromium 从独立 tarball 完成冷库导入、完整/浅导出、页面/参数/后续选择、根 CAS、只读 dry-run、GC 与配额清理重试；Vite 生产构建的 Chromium 首屏只取 reader Wasm、内容失败重试、Worker 创作发布与冻结地图比对、选择、保存重开；实际 `/?reference` 页面按需请求受检读者地图并保留桌面/390px 请求和截图；公共短篇的真实宿主正文、在线保存核实、A/B 精确恢复、配额回滚、账号切换迟到回包和删除后旧重试（端口 4193） | 改动 Web npm 包；需空闲 4193；CI 的 `gamebook-r1` 在 `check:r1` 后运行；安装包、请求与桌面/移动/未知保存截图保留在系统临时目录 `.temp/narrata-web-install-*` |
+| `task check:vn` | 构建并类型检查公共 Web 包后，检查视觉小说宿主示例，再用 Chromium 运行 1586×992 桌面与 390×844 触屏 journey；包含真实媒体解码、保存/重开、checkout、context 切换、失败重试和实际逻辑/媒体字节计量（端口 4175） | 改动 VN player、播放器示例或 host fixture；需空闲 4175；CI 在 `check:web` 后运行；PNG 与脱敏测量 JSON 留在 `.temp/goal/runs/vn-player/` |
 | `task bench:g2` | 持久化与内核基准 | 改动存储或快照路径时对比 |
 | `task bench:nodes` | 合成 10 万选择点作品、首屏按块加载、选择耗时与有界缓存分配计数 | 改动节点运行时或程序块加载时对比；结果与边界见[节点规模基准](benchmarks/nodes-scale.md) |
 | `task docs:check` | Markdown 相对链接与标题锚点 | 任何文档改动 |
@@ -51,7 +53,9 @@ Goal worker 通过 `task goal -- slot [--heavy] -- <命令>` 运行检查，以�
 同一输入分别用 Node 与 Bun 运行并逐字节比较；生成器只接受尚不存在的 `.temp/` 输出目录。
 首次审阅后加入新的版本化 corpus，现有 `fixtures/compat/` 文件不覆盖；`check:web` 经公共 reader 与
 `decodeVnView` 验证冻结样例。构建生成 VN v1 的声明与校验器，预算单列其可选 JS 和共享 Wasm 增量，
-完整 JS 总量包含该能力；Gamebook reader 的既有 Wasm/运行时上限保持不变。
+完整 JS 总量包含该能力；VN 阅读器和 `./vn/player` 另有独立 JS 计量并各自在聚合中计入一次；
+Gamebook reader 与 VN reader 的既有 Wasm/运行时/API 上限保持不变。VN host/player 示例只导入可选 player 子路径，
+产品媒体不进入 SDK 默认导入链。
 
 `check:web-storage` 的计数器浏览器夹具直接调用 stock CacheBackend，验证默认 StorageHost 的
 冷键页、已存在/缺失对象点读、最大批次的缺失检查，以及跨批次的累计 flush 字节拒绝。

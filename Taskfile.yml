@@ -55,6 +55,13 @@ tasks:
       - npm run budget
       - npx playwright install chromium
       - npm run test:install
+  check:vn:
+    desc: VN reference player types and desktop/mobile Chromium journeys (port 4175)
+    deps: [web:build]
+    cmds: [pwsh -NoProfile -File scripts/check-vn.ps1]
+  vn:publish:
+    desc: Compile the host-owned VN source and write its immutable public objects
+    cmds: [node products/visual-novel-demo/scripts/publish.mjs]
   bench:g2:
     desc: Persistence and kernel benchmarks
     cmds: [pwsh -NoProfile -File scripts/benchmark-g2.ps1]

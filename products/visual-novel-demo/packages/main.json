@@ -1,0 +1,190 @@
+{
+  "id": "example.the-river-road",
+  "version": "1.0.0",
+  "exports": ["start", "narrow", "courtyard", "converge"],
+  "graphs": {
+    "start": {
+      "outcomes": ["arrived"],
+      "entry": "river",
+      "nodes": {
+        "river": {
+          "id": "node:00000000000000000000000000000001",
+          "type_id": "narrata.scene",
+          "data": {
+            "background": { "kind": "image", "provider": "demo", "key": "background/river-night", "revision": "1" },
+            "layers": [
+              { "id": "mira", "order": 10, "asset": { "kind": "image", "provider": "demo", "key": "character/mira", "revision": "1" } },
+              { "id": "tomas", "order": 20, "asset": { "kind": "image", "provider": "demo", "key": "character/tomas", "revision": "1" } }
+            ],
+            "music": { "kind": "play", "track": { "kind": "audio", "provider": "demo", "key": "music/river-road", "revision": "1" } },
+            "next": "mira-opening"
+          }
+        },
+        "mira-opening": {
+          "id": "node:00000000000000000000000000000002",
+          "type_id": "narrata.dialogue",
+          "data": {
+            "speaker": { "provider": "host", "key": "speaker.mira" },
+            "line": { "unit": { "provider": "host", "key": "dialogue.mira.opening" }, "first": "start", "last": "end" },
+            "voice": { "kind": "audio", "provider": "demo", "key": "voice/mira-opening", "revision": "1" },
+            "next": "tomas-road"
+          }
+        },
+        "tomas-road": {
+          "id": "node:00000000000000000000000000000003",
+          "type_id": "narrata.dialogue",
+          "data": {
+            "speaker": { "provider": "host", "key": "speaker.tomas" },
+            "line": { "unit": { "provider": "host", "key": "dialogue.tomas.road" }, "first": "start", "last": "end" },
+            "voice": { "kind": "audio", "provider": "demo", "key": "voice/tomas-road", "revision": "1" },
+            "next": "mira-hall"
+          }
+        },
+        "mira-hall": {
+          "id": "node:00000000000000000000000000000004",
+          "type_id": "narrata.dialogue",
+          "data": {
+            "speaker": { "provider": "host", "key": "speaker.mira" },
+            "line": { "unit": { "provider": "host", "key": "dialogue.mira.hall" }, "first": "start", "last": "end" },
+            "next": "route"
+          }
+        },
+        "route": {
+          "id": "node:00000000000000000000000000000005",
+          "type_id": "narrata.passage",
+          "data": {
+            "body": { "unit": { "provider": "host", "key": "choice.prompt" } },
+            "choice_points": [{
+              "id": "choice-point:00000000000000000000000000000001",
+              "key": "route",
+              "options": [
+                {
+                  "id": "option:00000000000000000000000000000001",
+                  "key": "narrow",
+                  "label": { "provider": "host", "key": "option.narrow" },
+                  "outcome": { "kind": "branch", "target": "narrow-call" }
+                },
+                {
+                  "id": "option:00000000000000000000000000000002",
+                  "key": "courtyard",
+                  "label": { "provider": "host", "key": "option.courtyard" },
+                  "outcome": { "kind": "branch", "target": "courtyard-call" }
+                }
+              ]
+            }]
+          }
+        },
+        "narrow-call": {
+          "id": "node:00000000000000000000000000000006",
+          "type_id": "narrata.call",
+          "data": {
+            "target": { "kind": "local", "graph": "narrow" },
+            "on_return": { "arrived": "converge-call" }
+          }
+        },
+        "courtyard-call": {
+          "id": "node:00000000000000000000000000000007",
+          "type_id": "narrata.call",
+          "data": {
+            "target": { "kind": "local", "graph": "courtyard" },
+            "on_return": { "arrived": "converge-call" }
+          }
+        },
+        "converge-call": {
+          "id": "node:00000000000000000000000000000008",
+          "type_id": "narrata.call",
+          "data": {
+            "target": { "kind": "local", "graph": "converge" },
+            "on_return": { "arrived": "finish" }
+          }
+        },
+        "finish": {
+          "id": "node:00000000000000000000000000000009",
+          "type_id": "narrata.return",
+          "data": { "outcome": "arrived" }
+        }
+      }
+    },
+    "narrow": {
+      "outcomes": ["arrived"],
+      "entry": "scene",
+      "nodes": {
+        "scene": {
+          "id": "node:00000000000000000000000000000011",
+          "type_id": "narrata.scene",
+          "data": {
+            "background": { "kind": "image", "provider": "demo", "key": "background/old-hall", "revision": "1" },
+            "layers": [{ "id": "mira", "order": 10, "asset": { "kind": "image", "provider": "demo", "key": "character/mira", "revision": "1" } }],
+            "music": { "kind": "keep" },
+            "next": "line"
+          }
+        },
+        "line": {
+          "id": "node:00000000000000000000000000000012",
+          "type_id": "narrata.dialogue",
+          "data": {
+            "speaker": { "provider": "host", "key": "speaker.mira" },
+            "line": { "unit": { "provider": "host", "key": "dialogue.narrow" }, "first": "start", "last": "end" },
+            "next": "return"
+          }
+        },
+        "return": { "id": "node:00000000000000000000000000000013", "type_id": "narrata.return", "data": { "outcome": "arrived" } }
+      }
+    },
+    "courtyard": {
+      "outcomes": ["arrived"],
+      "entry": "scene",
+      "nodes": {
+        "scene": {
+          "id": "node:00000000000000000000000000000021",
+          "type_id": "narrata.scene",
+          "data": {
+            "background": { "kind": "image", "provider": "demo", "key": "background/old-hall", "revision": "1" },
+            "layers": [{ "id": "tomas", "order": 20, "asset": { "kind": "image", "provider": "demo", "key": "character/tomas", "revision": "1" } }],
+            "music": { "kind": "keep" },
+            "next": "line"
+          }
+        },
+        "line": {
+          "id": "node:00000000000000000000000000000022",
+          "type_id": "narrata.dialogue",
+          "data": {
+            "speaker": { "provider": "host", "key": "speaker.tomas" },
+            "line": { "unit": { "provider": "host", "key": "dialogue.courtyard" }, "first": "start", "last": "end" },
+            "next": "return"
+          }
+        },
+        "return": { "id": "node:00000000000000000000000000000023", "type_id": "narrata.return", "data": { "outcome": "arrived" } }
+      }
+    },
+    "converge": {
+      "outcomes": ["arrived"],
+      "entry": "scene",
+      "nodes": {
+        "scene": {
+          "id": "node:00000000000000000000000000000031",
+          "type_id": "narrata.scene",
+          "data": {
+            "background": { "kind": "image", "provider": "demo", "key": "background/old-hall", "revision": "1" },
+            "layers": [
+              { "id": "mira", "order": 10, "asset": { "kind": "image", "provider": "demo", "key": "character/mira", "revision": "1" } },
+              { "id": "tomas", "order": 20, "asset": { "kind": "image", "provider": "demo", "key": "character/tomas", "revision": "1" } }
+            ],
+            "music": { "kind": "keep" },
+            "next": "line"
+          }
+        },
+        "line": {
+          "id": "node:00000000000000000000000000000032",
+          "type_id": "narrata.dialogue",
+          "data": {
+            "speaker": { "provider": "host", "key": "speaker.tomas" },
+            "line": { "unit": { "provider": "host", "key": "dialogue.converge" }, "first": "start", "last": "end" },
+            "next": "return"
+          }
+        },
+        "return": { "id": "node:00000000000000000000000000000033", "type_id": "narrata.return", "data": { "outcome": "arrived" } }
+      }
+    }
+  }
+}

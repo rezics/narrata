@@ -25,13 +25,16 @@ npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", ta
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./vn", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./reader-map", "./reader-map/react", "./content/native"]);
+assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./vn", "./vn/player", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./reader-map", "./reader-map/react", "./content/native"]);
 assert.deepEqual(manifest.dependencies, { graphology: "0.26.0", sigma: "3.0.3" }, "Only the lazy graph entry uses runtime dependencies");
 assert.deepEqual(manifest.peerDependenciesMeta, { react: { optional: true } });
 assert.equal(existsSync(join(directory, "node_modules/react")), false, "Framework-free hosts must not install React");
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 assert.ok(existsSync(join(installed, "dist/generated/vn-view.schema.json")), "The VN schema must ship in the tarball");
 assert.ok(existsSync(join(installed, "dist/generated/validate-vn-view.js")), "The checked VN validator must ship in the tarball");
+const installedPlayer = await import(pathToFileURL(join(installed, "dist/vn/player/index.js")).href);
+assert.equal(typeof installedPlayer.createVnPlayer, "function", "The optional VN player entry must be importable from the installed package");
+assert.equal(typeof installedPlayer.checkedVnMediaResolution, "function", "The installed VN player must expose its checked media boundary");
 // Served Wasm is identified by content: reader, raw compatibility module or authoring.
 const wasmKinds = new Map();
 for (const [kind, path] of [["reader", "dist/reader-wasm/narrata_nodes_wasm_bg.wasm"], ["compat", "dist/wasm/narrata_nodes_wasm_bg.wasm"], ["authoring", "dist/authoring-wasm/narrata_authoring_wasm_bg.wasm"]]) {

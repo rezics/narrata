@@ -52,6 +52,8 @@ jobs:
       - run: task check:r1
       # Package types, unit tests, Wasm/JS budgets and tarball install in Node, Bun and Chromium.
       - run: task check:web
+      # The optional VN player ships and is exercised from its own host product on port 4175.
+      - run: task check:vn
   server-storage:
     runs-on: ubuntu-latest
     services:

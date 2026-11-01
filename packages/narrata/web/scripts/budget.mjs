@@ -22,6 +22,8 @@ const isAuthoring = path => ["authoring", "maintenance", "server", "authoring-wa
 // The versioned VN entry and its generated validator are optional; root/reader keep their
 // Gamebook runtime budget while the complete VN route is measured separately below.
 const isVn = path => group(path) === "vn" || modulePath(path) === "generated/validate-vn-view.js";
+const isVnPlayer = path => modulePath(path).startsWith("vn/player/");
+const isVnReader = path => isVn(path) && !isVnPlayer(path);
 // The raw dist/wasm module keeps legacy publishGraph; no package entry imports it.
 const isCompat = path => group(path) === "wasm";
 // Measure both independent optional capabilities with identical bundling settings. Every
@@ -37,7 +39,8 @@ const graph = await bundled({ graph: "dist/graph/index.js", react: "dist/graph/r
 const readerMap = await bundled({ map: "dist/graph/reader-map.js", react: "dist/graph/reader-map-react.js" });
 // Count only modules unique to the new entry. Shared runtime transport, storage and Wasm glue
 // stay in the common runtime/reader asset totals rather than being charged twice here.
-const vn = measure(javascript.filter(isVn));
+const vn = measure(javascript.filter(isVnReader));
+const vnPlayer = measure(javascript.filter(isVnPlayer));
 // All graph-directory JS is already included in one of these two bundles (including the
 // generated map validator), so ordinary modules must not count those files a second time.
 const ordinary = measure(javascript.filter(path => group(path) !== "graph"));
@@ -62,6 +65,7 @@ export const sizes = {
   graph,
   readerMap,
   vn,
+  vnPlayer,
 };
 console.log(JSON.stringify(sizes, null, 2));
 for (const asset of Object.keys(sizes)) for (const compression of ["raw", "gzip"]) {

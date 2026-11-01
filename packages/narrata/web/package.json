@@ -21,6 +21,10 @@
       "types": "./dist/vn/index.d.ts",
       "import": "./dist/vn/index.js"
     },
+    "./vn/player": {
+      "types": "./dist/vn/player/index.d.ts",
+      "import": "./dist/vn/player/index.js"
+    },
     "./authoring": {
       "types": "./dist/authoring/index.d.ts",
       "import": "./dist/authoring/index.js"

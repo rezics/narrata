@@ -1,5 +1,6 @@
 import { openVn, type OpenVnOptions, type VnReader, type VnViewV1 } from "@rezics/narrata/vn";
 import type { ExecutionId } from "@rezics/narrata/vn";
+import { createVnPlayer, type VnPlayerSnapshot } from "@rezics/narrata/vn/player";
 
 const execution: ExecutionId = "execution:0190f2a0000070008000000000000001";
 const bytes = new Uint8Array();
@@ -23,4 +24,8 @@ reader.advance("commit", "node", []);
 // @ts-expect-error Choose requires the current choice point and selected option IDs.
 reader.choose("commit", []);
 
-void [complete, lazy, open, act];
+declare const player: ReturnType<typeof createVnPlayer<{ readonly scope: string }>>;
+const playerSnapshot: VnPlayerSnapshot = player.getSnapshot();
+const playerStatus: VnPlayerSnapshot["status"] = playerSnapshot.status;
+
+void [complete, lazy, open, act, playerStatus];
