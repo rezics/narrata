@@ -20,6 +20,8 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 固定播放器包为 `0.1.0-alpha.1`，tarball SHA-256 `4c77f0511fe1239c22fc6685e08fa8c84e0ca6e4e6b746abad169eda7861c649`，1,796,713 字节；见 `.temp/delivery/vn-player-release.json`。主线验收记录位于 `.temp/goal/runs/G-043/main-acceptance/b5c8457-retry-audit-tls/`。此包和旧 Gamebook、阅读 API 包身份分别保留，不能互换；播放器 CI 待本次推送后核对。
 
+播放器首轮 CI 七项成功，Ubuntu 的音频不可用手机状态因字体度量导致工具栏超界约 3px。`3ae7824` 修正参考 UI 的文字换行，并增加更宽字距的边界覆盖；定向 2 项与完整 VN 13 项本地通过，SDK 固定包未变，等待修复后的 CI。
+
 ## 下一步与未交付结果
 
 已验收的底层基础仍不等于完整 VN2/VN3：还需公共依赖桥接、有界候选媒体准备与缓存生命周期、A/B 按需分发证据、Web/Node/Bun 作者封装、实际编辑预览、多场景短篇和最终固定包交付。
