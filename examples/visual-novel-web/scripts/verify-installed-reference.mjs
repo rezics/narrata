@@ -209,7 +209,7 @@ async function runPublisher(id, command, script, cwd, receipt, save, sanitize, e
   if (!line) throw new Error(`${id} did not return the public publication summary.`);
   const summary = JSON.parse(line.slice(RESULT_MARKER.length));
   const pack = await readFile(join(resolve(cwd, "../../products/visual-novel-demo"), "story.narpack"));
-  if (summary.packBytes !== pack.byteLength || summary.packSha256 !== hash("sha256", pack) || summary.packSha512 !== `sha512-${createHash("sha512").update(pack).digest("base64")}`) {
+  if (summary.packBytes !== pack.byteLength || summary.packSha256 !== hash("sha256", pack) || summary.packSha512 !== hash("sha512", pack)) {
     throw new Error(`${id} summary did not match the written story.narpack bytes.`);
   }
   return summary;
