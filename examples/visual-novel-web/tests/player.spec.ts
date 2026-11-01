@@ -362,6 +362,43 @@ test("same-revision candidate media is reused only inside its authorization cont
   expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(2);
 });
 
+test("revisiting a choice prepares consumed candidate media again and reuses it on entry", async ({ page }) => {
+  await openPlayer(page);
+  await toChoice(page);
+  await waitForCandidatePreparation(page);
+  const firstPrepared = await metrics(page);
+  expect(firstPrepared.candidateQueries).toBe(1);
+  expect(firstPrepared.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(1);
+  expect(firstPrepared.mediaDecodes.filter(item => item.phase === "candidate" && item.key === "background/old-hall")).toHaveLength(1);
+
+  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  const firstEntry = await metrics(page);
+  expect(firstEntry.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(1);
+  expect(firstEntry.mediaDecodes.filter(item => item.key === "background/old-hall")).toHaveLength(1);
+
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeEnabled();
+  await expect.poll(async () => (await metrics(page)).candidateQueries).toBe(2);
+  await waitForCandidatePreparation(page);
+  const revisitedChoice = await metrics(page);
+  const targetRequests = revisitedChoice.mediaRequests.filter(item => item.key === "background/old-hall");
+  expect(targetRequests).toHaveLength(2);
+  expect(targetRequests.map(item => item.source)).toEqual(["network", "shared"]);
+  expect(targetRequests[1]?.networkBytes).toBe(0);
+  const targetDecodes = revisitedChoice.mediaDecodes.filter(item => item.key === "background/old-hall");
+  expect(targetDecodes.filter(item => item.phase === "candidate")).toHaveLength(2);
+  const networkBytesBeforeSecondEntry = targetRequests.reduce((total, item) => total + item.networkBytes, 0);
+
+  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  const secondEntry = await metrics(page);
+  expect(secondEntry.candidateQueries).toBe(2);
+  expect(secondEntry.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(2);
+  expect(secondEntry.mediaRequests.filter(item => item.key === "background/old-hall").reduce((total, item) => total + item.networkBytes, 0)).toBe(networkBytesBeforeSecondEntry);
+  expect(secondEntry.mediaDecodes.filter(item => item.key === "background/old-hall")).toHaveLength(targetDecodes.length);
+});
+
 test("an optional candidate resource failure leaves an available branch playable", async ({ page }) => {
   await openPlayer(page);
   await page.getByRole("button", { name: "Continue dialogue" }).click();
@@ -376,6 +413,9 @@ test("an optional candidate resource failure leaves an available branch playable
   await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("partial");
   await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeEnabled();
   expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.status)).toEqual(["unavailable"]);
+  expect((await metrics(page)).candidateQueries).toBe(1);
+  await page.waitForTimeout(100);
+  expect((await metrics(page)).candidateQueries).toBe(1);
 
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
   await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
@@ -498,6 +538,34 @@ test("a viewport change cancels the old candidate variant and releases its late 
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
   await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
   expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall" && item.variant === "portrait-cover")).toHaveLength(1);
+});
+
+test("clearing during a held media digest cannot repopulate the shared scope cache", async ({ page }) => {
+  await openPlayer(page);
+  await page.evaluate(() => window.__vnTestHooks?.armMediaDigestHold("background/old-hall"));
+  await toChoice(page);
+  await page.evaluate(async () => { await window.__vnTestHooks?.waitForMediaDigestHold(); });
+  const held = await metrics(page);
+  const heldRequest = held.mediaRequests.find(item => item.key === "background/old-hall");
+  expect(held.candidateQueries).toBe(1);
+  expect(heldRequest?.status).toBe("pending");
+  expect(heldRequest?.networkBytes).toBeGreaterThan(0);
+
+  await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
+  await page.evaluate(() => window.__vnTestHooks?.releaseMediaDigestHold());
+  await expect.poll(async () => (await metrics(page)).mediaRequests.find(item => item.key === "background/old-hall")?.status).toBe("aborted");
+  await page.evaluate(async () => {
+    const controller = window.__vnTestHooks?.controller;
+    if (!controller) throw new Error("The VN preparation controller is unavailable.");
+    await controller.retryCandidates();
+  });
+  await waitForCandidatePreparationToSettle(page);
+  const retried = await metrics(page);
+  const targetRequests = retried.mediaRequests.filter(item => item.key === "background/old-hall");
+  expect(targetRequests).toHaveLength(2);
+  expect(targetRequests[1]?.source).toBe("network");
+  expect(targetRequests[1]?.networkBytes).toBeGreaterThan(0);
+  expect(targetRequests[1]?.status).toBe("available");
 });
 
 test("a choice reopens cold with the same prompt and no retained speaker", async ({ page }) => {

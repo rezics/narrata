@@ -437,14 +437,32 @@ async function summarizeBrowserEvidence(consumerRoot) {
   const authoring = JSON.parse(await readFile(authoringPath, "utf8"));
   const candidateBudgetPath = join(root, "vn-authoring/candidate-budget-metrics.json");
   const candidateBudget = JSON.parse(await readFile(candidateBudgetPath, "utf8"));
-  const candidateAudioPlayCount = distribution.media.audioPlayCountAfterPreparation - distribution.media.audioPlayCountBeforePreparation;
+  const candidateAudioPath = join(root, "vn-authoring/candidate-audio-metrics.json");
+  const candidateAudio = JSON.parse(await readFile(candidateAudioPath, "utf8"));
+  const distributionAudioPlayCount = distribution.media.audioPlayCountAfterPreparation - distribution.media.audioPlayCountBeforePreparation;
+  const candidateAudioPlayCount = candidateAudio.playCountAfterPreparation - candidateAudio.playCountBeforePreparation;
   if (distribution.wasm.firstScreenReaderModuleCount !== 1 || distribution.wasm.firstScreenAuthoringModuleRequested
-    || candidateAudioPlayCount !== 0) {
+    || distributionAudioPlayCount !== 0) {
     throw new Error("The installed first-screen or candidate audio evidence does not prove lazy reader loading and silent preparation.");
+  }
+  if (candidateAudio.atChoice !== true || !["complete", "partial"].includes(candidateAudio.candidateStatus)
+    || candidateAudio.futureVoiceRequest?.status !== "available" || candidateAudio.futureVoiceRequest.networkBytes < 1
+    || candidateAudio.futureVoiceDecode?.phase !== "candidate" || candidateAudio.futureVoiceDecode?.kind !== "audio"
+    || candidateAudio.futureVoiceDecode?.bytes !== candidateAudio.futureVoiceRequest.bytes
+    || candidateAudioPlayCount !== 0 || candidateAudio.futureVoicePlayCount !== 0) {
+    throw new Error("The installed candidate did not decode the future voice without playing it.");
   }
   if (candidateBudget.playableChoice?.playerStatus !== "ready" || !candidateBudget.playableChoice.cursorAdvanced
     || candidateBudget.playableChoice.choiceCalls !== 1) {
     throw new Error("The installed bounded candidate did not prove a playable branch after partial preparation.");
+  }
+  if (candidateBudget.candidateStatus?.status !== "partial"
+    || candidateBudget.candidateBounds?.maxCandidateRequests !== 1
+    || candidateBudget.attempted?.length !== 1 || candidateBudget.attempted[0]?.revision !== "1"
+    || JSON.stringify(candidateBudget.refusedVersions) !== JSON.stringify(["2"])
+    || candidateBudget.refusedByCandidateRequestBound?.maxCandidateRequests !== 1
+    || candidateBudget.refusedByCandidateRequestBound?.revision !== "2") {
+    throw new Error("The installed budget evidence did not tie the refused revision to the one-request limit.");
   }
   const logicalRequests = parsed.flatMap(item => item.logicalRequests ?? []);
   const mediaRequests = parsed.flatMap(item => item.mediaRequests ?? []);
@@ -463,8 +481,18 @@ async function summarizeBrowserEvidence(consumerRoot) {
     actualImageAndAudioDecodeObserved: actualDecode,
     firstScreenReaderModuleCount: distribution.wasm.firstScreenReaderModuleCount,
     firstScreenAuthoringModuleRequested: distribution.wasm.firstScreenAuthoringModuleRequested,
-    candidateAudioDecodeCount: distribution.media.candidateAudioDecodes.length,
+    candidateAudioDecodeCount: candidateAudio.futureVoiceDecode ? 1 : 0,
     candidateAudioPlayCount: candidateAudioPlayCount,
+    candidateAudio: {
+      artifactId: candidateAudio.artifactId,
+      status: candidateAudio.candidateStatus,
+      bounds: candidateAudio.bounds,
+      futureVoiceRequest: candidateAudio.futureVoiceRequest,
+      futureVoiceDecode: candidateAudio.futureVoiceDecode,
+      playCountBeforePreparation: candidateAudio.playCountBeforePreparation,
+      playCountAfterPreparation: candidateAudio.playCountAfterPreparation,
+      futureVoicePlayCount: candidateAudio.futureVoicePlayCount,
+    },
     releasedResourceLeaseObserved: releaseObserved,
     logicalRequests,
     mediaRequests,
@@ -493,6 +521,7 @@ async function summarizeBrowserEvidence(consumerRoot) {
       mediaUnavailable: candidateBudget.candidateStatus?.mediaUnavailable,
       attempted: candidateBudget.attempted,
       refusedVersions: candidateBudget.refusedVersions,
+      refusedByCandidateRequestBound: candidateBudget.refusedByCandidateRequestBound,
       playableChoice: candidateBudget.playableChoice,
     },
   };

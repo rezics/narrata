@@ -16,6 +16,11 @@ async function openPlayer(page: Page) {
   await expect(page.getByRole("button", { name: "Continue dialogue" })).toBeEnabled();
 }
 
+async function unlockSound(page: Page) {
+  await page.getByRole("button", { name: "Turn sound on" }).click();
+  await expect(page.getByRole("button", { name: "Turn sound off" })).toBeVisible();
+}
+
 async function currentView(page: Page) {
   const view = await page.evaluate(async () => await window.__vnTestHooks?.currentView());
   if (!view) throw new Error("The VN browser probe did not expose a current view.");
@@ -64,7 +69,7 @@ async function waitForCandidatePreparation(page: Page) {
   await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("complete");
 }
 
-async function buildNewPublicationCandidate(): Promise<DemoCandidateTransfer> {
+async function buildNewPublicationCandidate(withFutureVoice = false): Promise<DemoCandidateTransfer> {
   const productDirectory = resolve(import.meta.dirname, "../../../products/visual-novel-demo");
   const manifest = asRecord(JSON.parse(await readFile(join(productDirectory, "project.json"), "utf8")) as unknown);
   const product = asRecord(manifest["product"]);
@@ -91,6 +96,11 @@ async function buildNewPublicationCandidate(): Promise<DemoCandidateTransfer> {
   const sceneData = asRecord(scene["data"]);
   const background = asRecord(sceneData["background"]);
   background["revision"] = "2";
+  if (withFutureVoice) {
+    const line = asRecord(narrowNodes["line"]);
+    const lineData = asRecord(line["data"]);
+    lineData["voice"] = { kind: "audio", provider: "demo", key: "voice/future-branch", revision: "1" };
+  }
 
   const authoring = await loadVnAuthoring();
   const split = authoring.splitVnSource(manifest, [[alias, source]]);
@@ -234,6 +244,52 @@ test("desktop author preview edits host content, plays a branch, recovers, and p
   await capture(page, "desktop-reopened.png");
 });
 
+test("a replaced preview host prepares again after a same-breakpoint resize", async ({ page }) => {
+  const formalBefore = await startAuthoring(page, 1586, 992);
+  const dialogue = page.getByRole("textbox", { name: "Dialogue" });
+  await dialogue.fill("The first isolated preview reaches the river choice.");
+  await expect(page.locator(".dialogue-copy")).toHaveText("The first isolated preview reaches the river choice.");
+  const firstHostId = await page.evaluate(() => window.__vnTestHooks?.metrics.audioTimelineId);
+  if (!firstHostId) throw new Error("The first isolated preview host identity is unavailable.");
+  await toChoice(page);
+  await waitForCandidatePreparation(page);
+  expect((await page.evaluate(() => window.__vnTestHooks?.metrics.candidateQueries))).toBe(1);
+
+  await dialogue.fill("The replacement preview has its own preparation attempt.");
+  await expect(page.locator(".dialogue-copy")).toHaveText("The replacement preview has its own preparation attempt.");
+  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.metrics.audioTimelineId)).not.toBe(firstHostId);
+  const replacementHostId = await page.evaluate(() => window.__vnTestHooks?.metrics.audioTimelineId);
+  if (!replacementHostId) throw new Error("The replacement preview host identity is unavailable.");
+
+  await toChoice(page);
+  await waitForCandidatePreparation(page);
+  const beforeResize = await page.evaluate(async () => ({
+    metrics: window.__vnTestHooks?.metrics,
+    view: await window.__vnTestHooks?.currentView(),
+  }));
+  expect(beforeResize.metrics?.candidateQueries).toBe(1);
+  if (!beforeResize.view) throw new Error("The replacement preview view is unavailable.");
+
+  await page.setViewportSize({ width: 1586, height: 820 });
+  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.metrics.candidateQueries)).toBe(2);
+  await waitForCandidatePreparation(page);
+  const afterResize = await page.evaluate(async () => ({
+    metrics: window.__vnTestHooks?.metrics,
+    view: await window.__vnTestHooks?.currentView(),
+  }));
+  expect(afterResize.metrics?.audioTimelineId).toBe(replacementHostId);
+  expect(afterResize.metrics?.candidateQueries).toBe(2);
+  expect(afterResize.view?.view.cursor).toBe(beforeResize.view.view.cursor);
+  expect(afterResize.view?.view.depth).toBe(beforeResize.view.view.depth);
+  await page.getByRole("link", { name: "Back to story" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator(".dialogue-copy")).toHaveText("Then we will take the river road.");
+  const formalAfter = await formalState(page);
+  expect(formalAfter.save).toBe(formalBefore.save);
+  expect(formalAfter.view?.cursor).toBe(formalBefore.view?.cursor);
+  expect(formalAfter.view?.depth).toBe(formalBefore.view?.depth);
+});
+
 test("running publication A stays pinned while public pack B starts under its own identity", async ({ page }) => {
   await openPlayer(page);
   const original = await currentView(page);
@@ -291,6 +347,14 @@ test("running publication A stays pinned while public pack B starts under its ow
       const fromB = publishedB.metrics.mediaRequests.find(item => item.contextScope === "demo-public" && item.key === key && item.source === "shared");
       expect(fromA, `A must fetch ${key} once`).toBeDefined();
       expect(fromB, `B should share only immutable bytes for ${key}`).toBeDefined();
+      expect(fromB).toMatchObject({
+        kind: fromA?.kind,
+        provider: fromA?.provider,
+        key: fromA?.key,
+        revision: fromA?.revision,
+        variant: fromA?.variant,
+        contextScope: fromA?.contextScope,
+      });
       expect(fromB?.sha256).toBe(fromA?.sha256);
       expect(fromB?.bytes).toBe(fromA?.bytes);
       expect(fromB?.networkBytes).toBe(0);
@@ -339,7 +403,15 @@ test("running publication A stays pinned while public pack B starts under its ow
       const a = originalMetrics.mediaRequests.find(item => item.contextScope === "demo-public" && item.key === key && item.source === "network");
       const b = publishedB.metrics.mediaRequests.find(item => item.contextScope === "demo-public" && item.key === key && item.source === "shared");
       if (!a || !b) throw new Error(`The immutable A/B byte-sharing evidence is missing ${key}.`);
-      return { key, revision: a.revision, variant: a.variant, bytes: a.bytes, sha256: a.sha256, aSource: a.source, bSource: b.source, bNetworkBytes: b.networkBytes };
+      return {
+        tuple: { kind: a.kind, provider: a.provider, key: a.key, revision: a.revision, variant: a.variant, contextScope: a.contextScope },
+        sharedTuple: { kind: b.kind, provider: b.provider, key: b.key, revision: b.revision, variant: b.variant, contextScope: b.contextScope },
+        bytes: a.bytes,
+        sha256: a.sha256,
+        aSource: a.source,
+        bSource: b.source,
+        bNetworkBytes: b.networkBytes,
+      };
     });
     const changedRevisionProof = {
       key: "background/old-hall",
@@ -428,10 +500,11 @@ test("a candidate request bound reports budget partial while the current B choic
     expect(projectedVersions).toEqual(["1", "2"]);
     const attempted = state.metrics.mediaRequests.filter(item => item.key === "background/old-hall");
     expect(attempted).toHaveLength(1);
+    expect(attempted.map(item => item.revision)).toEqual(["1"]);
     expect(attempted[0]?.status).toBe("available");
     expect(attempted.every(item => item.status === "available")).toBe(true);
     const refusedVersions = projectedVersions.filter(revision => !attempted.some(item => item.revision === revision));
-    expect(refusedVersions).toHaveLength(1);
+    expect(refusedVersions).toEqual(["2"]);
     await page.evaluate(async id => {
       const hooks = window.__vnTestHooks;
       if (!hooks) throw new Error("The bounded B choice probe is unavailable.");
@@ -453,6 +526,7 @@ test("a candidate request bound reports budget partial while the current B choic
       candidateStatus: state.candidateStatus,
       attempted,
       refusedVersions,
+      refusedByCandidateRequestBound: { maxCandidateRequests: state.metrics.candidateBounds.maxCandidateRequests, revision: "2" },
       decodes: state.metrics.mediaDecodes,
       playableChoice: {
         playerStatus: afterChoice.playerStatus,
@@ -460,6 +534,85 @@ test("a candidate request bound reports budget partial while the current B choic
         cursorAdvanced: afterChoice.cursor !== state.cursor,
         choiceCalls: afterChoice.metrics.readerCalls.choose,
       },
+    }, null, 2)}\n`);
+  } finally {
+    await page.evaluate(async id => { await window.__vnTestHooks?.closeCandidate(id); }, candidateHostId);
+  }
+});
+
+test("candidate preparation decodes a future voice without playing it", async ({ page }) => {
+  await openPlayer(page);
+  await unlockSound(page);
+  const candidate = await buildNewPublicationCandidate(true);
+  const mediaOverrides: readonly DemoMediaOverride[] = [
+    {
+      kind: "image",
+      provider: "demo",
+      key: "background/old-hall",
+      revision: "2",
+      path: "/assets/river-night-portrait.png",
+      mimeType: "image/png",
+      width: 853,
+      height: 1844,
+    },
+    {
+      kind: "audio",
+      provider: "demo",
+      key: "voice/future-branch",
+      revision: "1",
+      path: "/assets/audio/tomas-road.wav",
+      mimeType: "audio/wav",
+    },
+  ];
+  const contentDrafts: readonly (readonly [string, DemoContentDraft])[] = [["dialogue.mira.opening.b", {
+    text: "The new published version starts at the river.",
+    revision: "revision-b",
+  }]];
+  const candidateHostId = await page.evaluate(async input => {
+    const hooks = window.__vnTestHooks;
+    if (!hooks) throw new Error("The future-audio candidate probe is unavailable.");
+    return hooks.openCandidate(input.candidate, input.contentDrafts, input.mediaOverrides, 8, false);
+  }, { candidate, contentDrafts, mediaOverrides });
+  try {
+    await page.evaluate(async id => {
+      const hooks = window.__vnTestHooks;
+      if (!hooks) throw new Error("The candidate audio controls are unavailable.");
+      await hooks.unlockCandidateAudio(id);
+    }, candidateHostId);
+    const beforePreparation = await page.evaluate(id => window.__vnTestHooks?.candidateState(id), candidateHostId);
+    if (!beforePreparation) throw new Error("The future-audio candidate did not expose its choice state.");
+    expect(beforePreparation.playerStatus).toBe("ready");
+    expect(beforePreparation.atChoice).toBe(true);
+    expect(beforePreparation.soundStatus).toBe("on");
+    const playCountBefore = beforePreparation.metrics.audioEvents.filter(item => item.event === "play").length;
+
+    await page.evaluate(async id => {
+      const hooks = window.__vnTestHooks;
+      if (!hooks) throw new Error("The candidate preparation controls are unavailable.");
+      await hooks.retryCandidatePreparation(id);
+    }, candidateHostId);
+    const prepared = await page.evaluate(id => window.__vnTestHooks?.candidateState(id), candidateHostId);
+    if (!prepared?.candidateStatus) throw new Error("The future-audio preparation result was not observable.");
+    expect(prepared.playerStatus).toBe("ready");
+    expect(prepared.atChoice).toBe(true);
+    const request = prepared.metrics.mediaRequests.find(item => item.key === "voice/future-branch");
+    expect(request?.status).toBe("available");
+    expect(request?.networkBytes).toBeGreaterThan(0);
+    const decode = prepared.metrics.mediaDecodes.find(item => item.phase === "candidate" && item.kind === "audio" && item.key === "voice/future-branch");
+    expect(decode?.bytes).toBe(request?.bytes);
+    expect(prepared.metrics.audioEvents.filter(item => item.event === "play")).toHaveLength(playCountBefore);
+    expect(prepared.metrics.audioEvents.filter(item => item.event === "play" && item.key === "voice/future-branch")).toHaveLength(0);
+    await mkdir(evidenceDirectory, { recursive: true });
+    await writeFile(join(evidenceDirectory, "candidate-audio-metrics.json"), `${JSON.stringify({
+      artifactId: prepared.artifactId,
+      candidateStatus: prepared.candidateStatus.status,
+      atChoice: prepared.atChoice,
+      bounds: prepared.metrics.candidateBounds,
+      futureVoiceRequest: request,
+      futureVoiceDecode: decode,
+      playCountBeforePreparation: playCountBefore,
+      playCountAfterPreparation: prepared.metrics.audioEvents.filter(item => item.event === "play").length,
+      futureVoicePlayCount: prepared.metrics.audioEvents.filter(item => item.event === "play" && item.key === "voice/future-branch").length,
     }, null, 2)}\n`);
   } finally {
     await page.evaluate(async id => { await window.__vnTestHooks?.closeCandidate(id); }, candidateHostId);

@@ -13,6 +13,7 @@ import {
   type VnPresentedMedia,
   type VnPlayerCandidateStatus,
   type VnPlayerStatus,
+  type VnSoundStatus,
   type VnResolvedMedia,
 } from "@rezics/narrata/vn/player";
 import type { ResolveItem, ResolveRequest, Resolution } from "@rezics/narrata/reader";
@@ -69,6 +70,9 @@ export interface DemoHost {
   switchContext(scope: string): Promise<void>;
   /** Clears optional host resources without changing the reader save request or bytes. */
   clearPreparedCaches(): Promise<void>;
+  armMediaDigestHold(key: string): void;
+  waitForMediaDigestHold(): Promise<void>;
+  releaseMediaDigestHold(): void;
   unlockAudio(): Promise<void>;
   close(): Promise<void>;
 }
@@ -95,6 +99,7 @@ export interface DemoCandidateInspection {
   readonly cursor?: string;
   readonly atChoice: boolean;
   readonly playerStatus: VnPlayerStatus;
+  readonly soundStatus: VnSoundStatus;
   readonly candidateStatus?: VnPlayerCandidateStatus;
   readonly metrics: DemoMetrics;
 }
@@ -110,6 +115,14 @@ export interface DemoHostOptions {
   readonly contentDrafts?: ReadonlyMap<string, DemoContentDraft>;
   readonly mediaOverrides?: readonly DemoMediaOverride[];
   readonly maxCandidateRequests?: number;
+}
+
+interface MediaDigestHold {
+  readonly key: string;
+  readonly started: Promise<void>;
+  readonly markStarted: () => void;
+  readonly wait: Promise<void>;
+  readonly release: () => void;
 }
 
 interface ImageAssetDefinition {
@@ -184,11 +197,45 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
   const artifactId = candidate?.artifactId ?? vnDemoArtifactId;
   metrics.logicalRequests.push({ kind: "manifest", id: artifactId, artifact: artifactId, phase: "required", bytes: manifest.byteLength });
   const candidateFetch = { depth: 0 };
+  let nextDigestHold: MediaDigestHold | undefined;
+  let activeDigestHold: MediaDigestHold | undefined;
+  const armMediaDigestHold = (key: string) => {
+    if (nextDigestHold || activeDigestHold) throw new Error("A media digest hold is already armed.");
+    let markStarted!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>(resolve => { markStarted = resolve; });
+    const wait = new Promise<void>(resolve => { release = resolve; });
+    nextDigestHold = { key, started, markStarted, wait, release };
+  };
+  const waitForMediaDigestHold = () => {
+    const hold = activeDigestHold ?? nextDigestHold;
+    if (!hold) throw new Error("No media digest hold is armed.");
+    return hold.started;
+  };
+  const releaseMediaDigestHold = () => {
+    const hold = activeDigestHold ?? nextDigestHold;
+    if (!hold) throw new Error("No media digest hold is active.");
+    if (activeDigestHold === hold) activeDigestHold = undefined;
+    if (nextDigestHold === hold) nextDigestHold = undefined;
+    hold.release();
+  };
+  const digestMedia = async (bytes: Uint8Array, key: string): Promise<string> => {
+    const digest = crypto.subtle.digest("SHA-256", bytes.slice().buffer);
+    const hold = nextDigestHold?.key === key ? nextDigestHold : undefined;
+    if (hold) {
+      nextDigestHold = undefined;
+      activeDigestHold = hold;
+      hold.markStarted();
+      await hold.wait;
+      if (activeDigestHold === hold) activeDigestHold = undefined;
+    }
+    return [...new Uint8Array(await digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  };
 
   const contentResolver = {
     resolve: (request: ResolveRequest, signal: AbortSignal) => resolveContent(request, signal, metrics, options.contentDrafts),
   };
-  const mediaResolver: VnMediaResolver<DemoContext> = request => resolveMedia(request, metrics, controls, options.mediaOverrides ?? []);
+  const mediaResolver: VnMediaResolver<DemoContext> = request => resolveMedia(request, metrics, controls, options.mediaOverrides ?? [], digestMedia);
   let audioContext: AudioContext;
   const presentMedia: VnMediaPresenter = async (resource, request, view) => present(resource, request, metrics, audioContext, "screen", view);
   const prepareCandidateMedia: NonNullable<VnPlayerOptions<DemoContext>["prepareCandidateMedia"]> = async (resource, request) => present(resource, request, metrics, audioContext, "candidate");
@@ -301,6 +348,9 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
       await controller.setContext(context);
       clearSharedMediaBytes(context.media.scope);
     },
+    armMediaDigestHold,
+    waitForMediaDigestHold,
+    releaseMediaDigestHold,
     async unlockAudio() {
       await audioContext.resume();
     },
@@ -308,6 +358,7 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
       if (closing) return closing;
       closed = true;
       const controllerClose = controller.close();
+      if (activeDigestHold || nextDigestHold) releaseMediaDigestHold();
       closing = (async () => {
         try {
           try { await controllerClose; }
@@ -358,7 +409,13 @@ async function resolveContent(request: ResolveRequest, signal: AbortSignal, metr
   }));
 }
 
-async function resolveMedia(request: VnMediaRequest<DemoContext>, metrics: DemoMetrics, controls: DemoControls, overrides: readonly DemoMediaOverride[]): Promise<VnMediaResolution> {
+async function resolveMedia(
+  request: VnMediaRequest<DemoContext>,
+  metrics: DemoMetrics,
+  controls: DemoControls,
+  overrides: readonly DemoMediaOverride[],
+  digestMedia: (bytes: Uint8Array, key: string) => Promise<string>,
+): Promise<VnMediaResolution> {
   let done = false;
   const onAbort = () => { if (!done) metrics.aborts++; };
   request.signal.addEventListener("abort", onAbort, { once: true });
@@ -411,12 +468,17 @@ async function resolveMedia(request: VnMediaRequest<DemoContext>, metrics: DemoM
     if (request.signal.aborted) throw abortError();
     log.bytes = bytes.byteLength;
     log.networkBytes = bytes.byteLength;
-    log.sha256 = await sha256(bytes);
+    const digest = await digestMedia(bytes, request.slot.media.key);
+    if (request.signal.aborted) throw abortError();
+    log.sha256 = digest;
     log.status = "available";
     rememberSharedMediaBytes(cacheKey, request.context.scope, bytes);
     return available(request, definition, bytes, metrics, controls);
   } catch (error) {
-    if (request.signal.aborted) throw error;
+    if (request.signal.aborted) {
+      log.status = "aborted";
+      throw error;
+    }
     log.status = "unavailable";
     return unavailable(request);
   } finally {

@@ -56,7 +56,8 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
   const view = screen?.view;
   const ready = snapshot.status === "ready";
   const interaction = view?.view.interaction;
-  const candidateCursor = interaction?.kind === "choose" ? view?.view.cursor : undefined;
+  const candidateView = view?.view ?? snapshot.target?.view;
+  const candidateCursor = candidateView?.interaction.kind === "choose" ? candidateView.cursor : undefined;
   const candidateViewport = window.matchMedia("(max-width: 640px)").matches ? "portrait" : "landscape";
   const candidateScopeKey = `${host.preparationScope}:${candidateViewport}`;
   const hasHistory = Boolean(view && view.view.history.some(item => !item.current && item.depth < view.view.depth));
@@ -82,6 +83,7 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
         ...(view ? { cursor: view.cursor } : {}),
         atChoice: view?.interaction.kind === "choose",
         playerStatus: state.status,
+        soundStatus: state.soundStatus,
         ...(state.candidates ? { candidateStatus: state.candidates } : {}),
         metrics: structuredClone(candidate.host.metrics),
       };
@@ -96,7 +98,10 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
       async save() { return host.reader.exportSave(); },
       async currentView() { return host.reader.inspect(); },
       async clearPreparedCaches() { await host.clearPreparedCaches(); },
-      async openCandidate(candidate, contentDrafts, mediaOverrides, maxCandidateRequests): Promise<number> {
+      armMediaDigestHold(key) { host.armMediaDigestHold(key); },
+      async waitForMediaDigestHold() { await host.waitForMediaDigestHold(); },
+      releaseMediaDigestHold() { host.releaseMediaDigestHold(); },
+      async openCandidate(candidate, contentDrafts, mediaOverrides, maxCandidateRequests, prepareCandidates = true): Promise<number> {
         const candidateHost = await openDemoHost({
           candidate: {
             artifactId: candidate.artifactId,
@@ -118,7 +123,7 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
             if (current.screen?.view.view.interaction.kind !== "advance") break;
             await candidateHost.controller.advance();
           }
-          if (candidateHost.controller.getSnapshot().screen?.view.view.interaction.kind === "choose") {
+          if (prepareCandidates && candidateHost.controller.getSnapshot().screen?.view.view.interaction.kind === "choose") {
             await candidateHost.controller.retryCandidates();
           }
           const state = candidateHost.controller.getSnapshot();
@@ -144,6 +149,14 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
         }
         await candidate.host.controller.choose(option.id);
       },
+      async unlockCandidateAudio(id) {
+        const candidate = requireCandidateHost(id);
+        await candidate.host.unlockAudio();
+        await candidate.host.controller.setSoundEnabled(true);
+      },
+      async retryCandidatePreparation(id) {
+        await requireCandidateHost(id).host.controller.retryCandidates();
+      },
       async switchCandidateContext(id, scope) {
         const candidate = requireCandidateHost(id);
         await candidate.host.switchContext(scope);
@@ -167,7 +180,12 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
   }, [host]);
 
   useEffect(() => {
-    if (!ready || !candidateCursor) return;
+    if (!candidateView) return;
+    if (!candidateCursor) {
+      lastAutoPrepared.current = undefined;
+      return;
+    }
+    if (!ready) return;
     const preparationKey = `${candidateScopeKey}:${candidateCursor}:${presentationRefresh}`;
     if (lastAutoPrepared.current?.host === host && lastAutoPrepared.current.key === preparationKey) return;
     lastAutoPrepared.current = { host, key: preparationKey };

@@ -20,6 +20,9 @@ declare global {
       readonly reader: VnReader;
       readonly controller: VnPlayerController<DemoContext>;
       readonly isClosed: boolean;
+      armMediaDigestHold(key: string): void;
+      waitForMediaDigestHold(): Promise<void>;
+      releaseMediaDigestHold(): void;
       switchContext(scope: string): Promise<void>;
       save(): Promise<string>;
       currentView(): Promise<VnViewV1>;
@@ -29,9 +32,12 @@ declare global {
         contentDrafts: readonly (readonly [string, DemoContentDraft])[],
         mediaOverrides: readonly DemoMediaOverride[],
         maxCandidateRequests?: number,
+        prepareCandidates?: boolean,
       ): Promise<number>;
       candidateState(id: number): DemoCandidateInspection;
       chooseCandidate(id: number, optionIndex?: number): Promise<void>;
+      unlockCandidateAudio(id: number): Promise<void>;
+      retryCandidatePreparation(id: number): Promise<void>;
       switchCandidateContext(id: number, scope: string): Promise<void>;
       closeCandidate(id: number): Promise<void>;
       close(): Promise<void>;
