@@ -36,7 +36,9 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 编辑预览首轮 [CI](https://github.com/rezics/narrata/actions/runs/41299837049) 的 Ubuntu VN 旅程有 14 项通过、2 项手机工具栏内容溢出失败，作者三项均通过。`27274c1619fc747dcfb280888fcbbad19c0b6c4f` 保留 44px 触控目标，在手机使用带无障碍名称的历史图标，并覆盖 17px 大字号；完整 VN 16 项和仓库外固定包旅程 16 项均再次通过。独立验收还核对 Node/Bun 发布元数据及预览前后全部发布文件哈希一致；见 `.temp/goal/runs/vn-reference-installed/author-preview-mobile-fix/receipt.json`。[修复 CI](https://github.com/rezics/narrata/actions/runs/41301346061) 八项成功。
 
-当前 [G-049](tasks/G-049.md) 正在修正完整有界候选资源准备：冷图块媒体发现、候选资源取消/接管时的释放、加载中资源的预算及完整性状态。最终参考宿主接线、独立安装的编辑/播放/预加载联合旅程和固定包交付仍待完成。
+[G-049](tasks/G-049.md) 的公开依赖桥与有界候选准备 SDK 已在主线 `2745b876a66d079ff8ecd573239c27e8fb3a1d3e` 通过 R1、Web、VN、scripts、docs 五项检查：192 项包测试、25 项独立故障用例、49 项定向 VN 测试、28 项 R1 浏览器、16 项参考 VN 旅程及 53 项脚本测试通过。实际 Node/Bun 两种 Wasm profile 各回放 8 组冻结语料；原单参数调用保留，旧 Gamebook 基线与预算上限保持不变。独立 SDK 浏览器在准备阶段取得 217 字节冷图块，进入目标不重复请求已准备媒体，11 个模拟媒体 lease 全部释放，未来音频播放次数为零。Node/Bun 外部 realm 缓冲区、iframe URL 与源突变检查通过。固定源码审查和完整日志见 `.temp/goal/runs/G-049/manager-acceptance/` 与对应 `main-acceptance/2745b87/`。
+
+该 SDK 切片为 `0.1.0-alpha.1`、SHA-256 `2fae09fba6fffcbfefb395c524a030ed6d0c320634035586e99167574307344e`、2,275,288 字节，见 `.temp/delivery/vn-preparation-release.json`；与旧切片身份分别保留，CI 待推送后核对。CLI 工作保留后由 manager 完成释放、实时预算、源身份及集成修正。最终参考宿主接线、实际媒体和 VN A/B 联合旅程、完整固定包交付由 [G-051](tasks/G-051.md) 继续，尚未宣称完整 VN2/VN3。
 
 独立参考宿主的按需分发基线已在 `b2e40d99df320939fad87f1e48435ae990b71d3e` 测量：首屏 1 个 1,040 字节剧情块与 539 字节清单，背景、两个人物及当前音乐/语音共 8,816,923 字节；仅加载 1 个 reader Wasm，作者编译器保持懒加载。进入大厅后才增加 337 字节剧情块和大厅背景请求。该记录使用固定作者 API 切片，尚未包含候选预加载；原始响应身份、哈希与分阶段测量见 `.temp/goal/runs/vn-reference-installed/author-player-distribution-baseline/distribution.json`，最终接线由 [G-051](tasks/G-051.md) 验收。
 
