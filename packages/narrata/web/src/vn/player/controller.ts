@@ -211,10 +211,9 @@ export class VnPlayerController<HostContext> {
     const screen = this.screen;
     if (!screen || this.snapshot.status !== "ready") throw new Error("VN audio can be retried only on a ready screen.");
     const generation = this.generation;
-    this.presentationGeneration++;
+    this.invalidatePendingPresentation();
     this.audioLifecycle.abort();
     this.audioLifecycle = new AbortController();
-    this.abortOperation();
     const operation = new AbortController();
     this.operation = operation;
     this.audioLoading = true;
@@ -250,7 +249,10 @@ export class VnPlayerController<HostContext> {
     } catch (error) {
       if (!this.isOperationCurrent(generation, operation)) return;
       this.audioLoading = false;
-      if (isAbortError(error)) return;
+      if (isAbortError(error)) {
+        this.publish("ready", this.screen ?? screen, undefined, undefined, this.snapshot.saveStatus);
+        return;
+      }
       const failedScreen: VnPresentedView = { ...screen, audioIssues: uniqueRoles([...screen.audioIssues, ...audioSlots.map(slot => slot.role)]) };
       this.screen = failedScreen;
       this.publish("ready", failedScreen, undefined, undefined, "saved");
@@ -346,6 +348,7 @@ export class VnPlayerController<HostContext> {
   }
 
   private async performCheckout(commit: CommitId, screen: VnPresentedView): Promise<void> {
+    this.invalidatePendingPresentation();
     const generation = this.generation;
     this.pendingCheckout = commit;
     this.publish("submitting", screen, undefined, undefined, "saving");
@@ -466,6 +469,7 @@ export class VnPlayerController<HostContext> {
     const screen = this.screen;
     if (!screen || (!retry && this.snapshot.status !== "ready")) throw new Error("VN input is disabled until the current screen is ready.");
     if (this.snapshot.status === "submitting" || this.snapshot.status === "preparing") throw new Error("A VN transition is already in progress.");
+    this.invalidatePendingPresentation();
     const generation = this.generation;
     this.saveOutcomeUnknown = false;
     this.pendingInput = input;
@@ -709,8 +713,12 @@ export class VnPlayerController<HostContext> {
     } catch (error) {
       if (!this.isOperationCurrent(generation, operation) || operation.signal.aborted || this.screen !== screen) return;
       releaseAssets(resolvedAssets, screen.assets);
+      this.pendingAssets.clear();
       this.audioLoading = false;
-      if (isAbortError(error)) return;
+      if (isAbortError(error)) {
+        this.publish("ready", screen, undefined, undefined, this.snapshot.saveStatus);
+        return;
+      }
       const roles = slots.map(slot => slot.role);
       const failed: VnPresentedView = { ...screen, audioIssues: uniqueRoles([...screen.audioIssues, ...roles]) };
       this.screen = failed;
@@ -937,13 +945,13 @@ export class VnPlayerController<HostContext> {
     if (shouldPlayMusic && nextMusic?.kind === "audio") {
       attempted = true;
       try { await nextMusic.playFromStart(signal); played = true; }
-      catch (error) { if (signal.aborted) throw abortError(); stopIfAudio(nextMusic); }
+      catch (error) { if (signal.aborted || isAbortError(error)) throw abortError(); stopIfAudio(nextMusic); }
     }
     const shouldPlayVoice = nextVoice?.kind === "audio" && (!playRoles || playRoles.has("voice"));
     if (shouldPlayVoice && nextVoice?.kind === "audio") {
       attempted = true;
       try { await nextVoice.playFromStart(signal); played = true; }
-      catch (error) { if (signal.aborted) throw abortError(); stopIfAudio(nextVoice); }
+      catch (error) { if (signal.aborted || isAbortError(error)) throw abortError(); stopIfAudio(nextVoice); }
     }
     if (attempted && !played) {
       this.soundStatus = "unavailable";
@@ -978,6 +986,16 @@ export class VnPlayerController<HostContext> {
 
   private stopScreenAudio(screen: VnPresentedView | undefined): void {
     if (screen) stopAudio(screen.assets);
+  }
+
+  private invalidatePendingPresentation(): void {
+    this.presentationGeneration++;
+    this.abortOperation();
+    this.releasePendingAssets(this.screen?.assets ?? []);
+    this.target = undefined;
+    this.audioLoading = false;
+    // Installed audio still belongs to the visible line until the write is confirmed.
+    // Invalidating its publishers does not restart or stop a Keep track.
   }
 
   private abortOperation(): void {

@@ -657,6 +657,193 @@ test("variant refresh leaves a pending logical save and input untouched", async 
   }
 });
 
+test("an earlier variant refresh cannot unlock a pending logical save", async () => {
+  const store = await IndexedDbStore.open(`vn-player-refresh-before-save-${crypto.randomUUID()}`);
+  const started = deferred<void>();
+  const releaseWrite = deferred<void>();
+  let holdNextPersist = false;
+  const storage: CacheStore = {
+    load: request => store.load(request),
+    persist: async batch => {
+      if (holdNextPersist) {
+        holdNextPersist = false;
+        started.resolve();
+        await releaseWrite.promise;
+      }
+      return store.persist(batch);
+    },
+  };
+  const reader = await openVn({ pack: vnPack, execution, storage });
+  const advance = vi.spyOn(reader, "advance");
+  const harness = mediaHarness();
+  let variant = "desktop-cover";
+  const player = createVnPlayer({ ...playerOptions(reader, harness), selectVariant: (slot: { role: string }) => slot.role === "background" ? variant : "original" });
+  let inFlight: Promise<void> | undefined;
+  try {
+    await player.start();
+    await vi.waitFor(() => expect(player.getSnapshot().audioLoading).toBe(false));
+    const before = await reader.inspect();
+    harness.delayOnce("bg/room");
+    variant = "portrait-cover";
+    const refresh = player.refreshPresentation();
+    await vi.waitFor(() => expect(harness.requests.some(request => request.variant === variant)).toBe(true));
+    holdNextPersist = true;
+    inFlight = player.advance();
+    await started.promise;
+    expect(player.getSnapshot()).toMatchObject({ status: "submitting", saveStatus: "saving" });
+    harness.releaseLate();
+    await refresh;
+    expect(player.getSnapshot()).toMatchObject({ status: "submitting", saveStatus: "saving" });
+    await expect(player.advance()).rejects.toThrow("disabled");
+    expect(advance).toHaveBeenCalledTimes(1);
+    releaseWrite.resolve();
+    await inFlight;
+    expect((await reader.inspect()).view.depth).toBe(before.view.depth + 1);
+  } finally {
+    releaseWrite.resolve();
+    await inFlight;
+    await player.close();
+    await reader.close();
+    store.close();
+  }
+});
+
+test("a superseded refresh cannot erase an unknown save or its retry", async () => {
+  const store = await IndexedDbStore.open(`vn-player-refresh-unknown-${crypto.randomUUID()}`);
+  let loseNextAck = false;
+  const storage: CacheStore = {
+    load: request => store.load(request),
+    persist: async batch => {
+      const reply = await store.persist(batch);
+      if (loseNextAck) { loseNextAck = false; throw new Error("persisted acknowledgement lost"); }
+      return reply;
+    },
+  };
+  const reader = await openVn({ pack: vnPack, execution, storage });
+  const advance = vi.spyOn(reader, "advance");
+  const harness = mediaHarness();
+  let variant = "desktop-cover";
+  const player = createVnPlayer({ ...playerOptions(reader, harness), selectVariant: (slot: { role: string }) => slot.role === "background" ? variant : "original" });
+  try {
+    await player.start();
+    await vi.waitFor(() => expect(player.getSnapshot().audioLoading).toBe(false));
+    const before = await reader.inspect();
+    harness.delayOnce("bg/room");
+    variant = "portrait-cover";
+    const refresh = player.refreshPresentation();
+    await vi.waitFor(() => expect(harness.requests.some(request => request.variant === variant)).toBe(true));
+    loseNextAck = true;
+    await player.advance();
+    expect(player.getSnapshot()).toMatchObject({ status: "save-unknown", saveStatus: "unknown" });
+    harness.releaseLate();
+    await refresh;
+    expect(player.getSnapshot()).toMatchObject({ status: "save-unknown", saveStatus: "unknown" });
+    await player.retrySave();
+    expect(player.getSnapshot()).toMatchObject({ status: "ready", saveStatus: "saved" });
+    expect((await reader.inspect()).view.depth).toBe(before.view.depth + 1);
+    expect(advance).toHaveBeenCalledTimes(1);
+  } finally {
+    await player.close();
+    await reader.close();
+    store.close();
+  }
+});
+
+test("a late sound toggle cannot unlock a pending save or interrupt Keep music", async () => {
+  const store = await IndexedDbStore.open(`vn-player-audio-before-save-${crypto.randomUUID()}`);
+  const started = deferred<void>();
+  const releaseWrite = deferred<void>();
+  let holdNextPersist = false;
+  const storage: CacheStore = {
+    load: request => store.load(request),
+    persist: async batch => {
+      if (holdNextPersist) { holdNextPersist = false; started.resolve(); await releaseWrite.promise; }
+      return store.persist(batch);
+    },
+  };
+  const reader = await openVn({ pack: vnPack, execution, storage });
+  const harness = mediaHarness();
+  const player = createVnPlayer(playerOptions(reader, harness));
+  let inFlight: Promise<void> | undefined;
+  try {
+    await player.start();
+    await vi.waitFor(() => expect(player.getSnapshot().audioLoading).toBe(false));
+    harness.deferPlayOnce("music/theme");
+    const sound = player.setSoundEnabled(true);
+    await vi.waitFor(() => expect(harness.hasPendingPlay()).toBe(true));
+    holdNextPersist = true;
+    inFlight = player.advance();
+    await started.promise;
+    harness.resolveDeferredPlay();
+    await sound;
+    expect(player.getSnapshot()).toMatchObject({ status: "submitting", saveStatus: "saving" });
+    const music = harness.presentations.find(item => item.key === "music/theme");
+    expect(music).toBeDefined();
+    expect(harness.activeAudio.has(music!.id)).toBe(true);
+    releaseWrite.resolve();
+    await inFlight;
+    expect((await reader.inspect()).view.scene.music?.key).toBe("music/theme");
+    expect(harness.activeAudio.has(music!.id)).toBe(true);
+    expect(harness.audioEvents.filter(item => item.event === "stop" && item.key === "music/theme")).toHaveLength(0);
+  } finally {
+    releaseWrite.resolve();
+    await inFlight;
+    await player.close();
+    await reader.close();
+    store.close();
+  }
+});
+
+test("turning sound off settles optional playback preparation and releases its candidate", async () => {
+  const reader = await openVn({ pack: vnPack, execution });
+  const harness = mediaHarness();
+  harness.delayOnce("music/theme");
+  harness.deferPlayOnce("music/theme");
+  const player = createVnPlayer(playerOptions(reader, harness));
+  try {
+    await player.start();
+    await player.setSoundEnabled(true);
+    harness.releaseLate();
+    await vi.waitFor(() => expect(harness.hasPendingPlay()).toBe(true));
+    await player.setSoundEnabled(false);
+    harness.resolveDeferredPlay();
+    await vi.waitFor(() => expect(player.getSnapshot()).toMatchObject({ status: "ready", audioLoading: false, soundStatus: "off" }));
+    expect(harness.activeAudio.size).toBe(0);
+    expect(harness.presentationReleases.filter(key => key === "music/theme")).toHaveLength(1);
+  } finally {
+    await player.close();
+    await reader.close();
+  }
+  expect(harness.releasedPresentationIds).toHaveLength(harness.presentations.length);
+  expect(new Set(harness.releasedPresentationIds).size).toBe(harness.releasedPresentationIds.length);
+});
+
+test("turning sound off settles an audio retry awaiting playback", async () => {
+  const reader = await openVn({ pack: vnPack, execution });
+  const harness = mediaHarness();
+  harness.failOnce("music/theme");
+  const player = createVnPlayer(playerOptions(reader, harness));
+  try {
+    await player.start();
+    await vi.waitFor(() => expect(player.getSnapshot().audioLoading).toBe(false));
+    await player.setSoundEnabled(true);
+    expect(player.getSnapshot().soundStatus).toBe("on");
+    harness.deferPlayOnce("music/theme");
+    const retry = player.retryAudio();
+    await vi.waitFor(() => expect(harness.hasPendingPlay()).toBe(true));
+    await player.setSoundEnabled(false);
+    harness.resolveDeferredPlay();
+    await retry;
+    expect(player.getSnapshot()).toMatchObject({ status: "ready", audioLoading: false, soundStatus: "off" });
+    expect(harness.activeAudio.size).toBe(0);
+  } finally {
+    await player.close();
+    await reader.close();
+  }
+  expect(harness.releasedPresentationIds).toHaveLength(harness.presentations.length);
+  expect(new Set(harness.releasedPresentationIds).size).toBe(harness.releasedPresentationIds.length);
+});
+
 test("an unresolved optional audio request leaves a muted ready scene interactive", async () => {
   const reader = await openVn({ pack: vnPack, execution });
   const harness = mediaHarness();
