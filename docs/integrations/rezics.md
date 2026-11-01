@@ -144,13 +144,23 @@ M1 本地固定交付已通过独立 tarball 的 Node/Bun/Chromium 验证：公�
 
 REZICS 侧需保留每个历史构件的精确清单、程序块，以及随发布提供的名称元数据，并按需提供该构件；升级界面呈现 SDK 评估报告，对要求确认的计划取得读者确认。存档服务提供耐久的修订比较写入，结果未知时保留原请求并核实，同时落实账号隔离及关闭/删库生命周期。升级已确认后，只有在对应构件的正文与标签解析就绪时才开放新画面的选择；尚未就绪时保留已确认进度并允许重试。接口操作顺序见 [SDK 在线旅程说明](../../packages/narrata/web/README.md#authenticated-online-journeys) 与 [存档维护说明](../../packages/narrata/web/README.md#save-maintenance)。
 
-[Gamebook SDK](../../packages/narrata/web/README.md) 的完整固定包已通过本地及主线 CI 验收，源码与包身份见上文；tarball 由维护者提供，安装前核对固定身份。[Web VN Goal](../goals/web-vn/GOAL.md) 的 VN1 阅读与播放器切片已通过本地主线验收：版本 `0.1.0-alpha.1`、[源码 b5c8457630177173ea233a569bb0eb5c7f845e8d](https://github.com/rezics/narrata/tree/b5c8457630177173ea233a569bb0eb5c7f845e8d)、tarball SHA-256 `4c77f0511fe1239c22fc6685e08fa8c84e0ca6e4e6b746abad169eda7861c649`，1,796,713 字节。维护者提供该固定文件；旧阅读 API 切片 `e81a492` / `11db5e10fbe1a6319ae921fb90e1d30bcc00678c5d679bf9886dc078f5a13299` 和完整 Gamebook 包保留各自历史身份，不与本包互换。此切片尚不是完整 VN2/VN3 交付。
+[Gamebook SDK](../../packages/narrata/web/README.md) 的完整固定包已通过本地及主线 CI 验收，源码与包身份见上文；tarball 由维护者提供，安装前核对固定身份。Web VN 的阅读、播放器、作者入口和候选准备使用下文最终固定 SDK。旧 VN1 播放器切片 `b5c8457630177173ea233a569bb0eb5c7f845e8d` / `4c77f0511fe1239c22fc6685e08fa8c84e0ca6e4e6b746abad169eda7861c649`、阅读 API 切片 `e81a492` / `11db5e10fbe1a6319ae921fb90e1d30bcc00678c5d679bf9886dc078f5a13299` 和完整 Gamebook 包保留各自历史身份，不与最终 VN 包互换。
 
 播放端从 `@rezics/narrata/vn/player` 创建协调器，宿主提供内容、媒体解析与呈现适配；参考实现位于 `examples/visual-novel-web/`。协调器借用 reader，关闭呈现只释放呈现资源，不代表存档已确认；写入结果未知时先通过原 reader 核实/重试，再结束 reader 生命周期。场景资源重试不重复叙事输入。
 
 参考 reader 关闭自动候选准备，先只取入口所需图块、当前画面和 reader；抵达选择点后才以显式逻辑/媒体上限调用 `retryCandidates()`。宿主从类型化角色提示选择变体，并让当前画面与候选资源走同一个解码辅助函数；候选音轨只解码、不播放。同授权 scope 下，A/B reader 可以通过有界的宿主缓存复用完全相同的媒体字节（scope、kind、provider、key、revision、variant）；缓存上限为 16 MiB、32 项。解码后的 Image/AudioBuffer、Object URL、audio context 和 playback source 仍属于各自 reader/presentation，绝不跨会话共享。Revision 或 scope 改变会使用独立的字节键；上下文和 viewport 改变会取消旧工作、释放候选 lease 并按新 scope/variant 重新准备。部分候选结果不会阻止可用路线继续，资源重试只重做呈现。
 
 最终 VN reference-host 消费包固定为版本 `0.1.0-alpha.1`、源码 `2745b876a66d079ff8ecd573239c27e8fb3a1d3e`、SHA-256 `2fae09fba6fffcbfefb395c524a030ed6d0c320634035586e99167574307344e`、2,275,288 字节；SHA-512、源输入哈希和每次运行证据保存在新 receipt。`examples/visual-novel-web/scripts/verify-installed-reference.mjs` 与 `task vn:verify-installed` 需要显式 tarball 和新 label：它复制已跟踪的 reader、源稿、公共对象和媒体到系统临时 `.temp/`，安装该精确 tarball，分别经 Node 与 Bun 的公开 `@rezics/narrata/vn/server` 构建相同 pack，再构建实际宿主并跑 Chromium journey。receipt、请求和字节测量、lease 释放证据与截图都留在独立消费者目录；不会覆盖旧 label。此本地包消费不表示 npm registry 已发布，也不替代 REZICS 真实联合验收。
+
+最终参考宿主固定源码为 `2ab588ed3eefabcf5fa2f96541d1d310099058f7`。该源码的 VN、脚本和文档检查，以及仓库外固定包的 29 项 Chromium 桌面/手机旅程均通过；SDK 源码与此前[八项成功的 CI](https://github.com/rezics/narrata/actions/runs/41317830696)保持一致。独立消费者 label 为 `main-vn-final-2ab588e`，receipt 位于系统临时目录的 `.temp/narrata-vn-reference/<label>/receipt.json`。Node/Bun 的 pack SHA-256 均为 `ac0b0e97bf9b20a99d6388b8e125a50f5b412cd0e3f6fc8fdf2075bd4eccdb10`，两次发布及浏览器预览前后 34 个发布文件的完整哈希清单一致。
+
+该消费记录中，首屏只取 539 字节清单、1,040 字节入口剧情块及当前媒体，只加载一个 reader Wasm，作者编译器保持懒加载。选择点才取得 337/346 字节候选剧情块并准备媒体；进入目标复用已准备资源。额外的真实语音候选解码 116,868 字节而未提前播放。A/B 固定逻辑、同授权媒体字节复用、变更 revision/scope 的隔离、可用分支不等待可选 I/O、有界部分准备、取消释放，以及缓存清理后未知存档原字节重试均有浏览器证据。资源时序和体积来自本地参考宿主测量，不代表 REZICS 的网络性能。
+
+复现时由维护者提供上述固定 tarball，并使用尚未使用过的 label：
+
+```powershell
+task vn:verify-installed -- --tarball <fixed-tarball-path> --receipt-label <new-label>
+```
 
 需要作者入口时，历史作者 API 切片为 `0.1.0-alpha.1`、[源码 c0d3ddfdd8e46f15a68c4296fb954e2a2def3408](https://github.com/rezics/narrata/tree/c0d3ddfdd8e46f15a68c4296fb954e2a2def3408)、tarball SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`；它与前述播放器历史切片身份分别保留。浏览器 `@rezics/narrata/vn/authoring` 和 Node/Bun `@rezics/narrata/vn/server` 提供同候选校验、编译和不可变对象导出，具体调用见[包说明](../../packages/narrata/web/README.md)。参考作者流程已接入真实宿主正文编辑和隔离即时预览，预览不写正式发布指针或读者存档；固定最终包的独立安装与联合旅程仍按上文区分。七项 Gamebook 请求仍为“提出”，npm registry 尚未发布，真实 REZICS 联合验收尚未执行。
 

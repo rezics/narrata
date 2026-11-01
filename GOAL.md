@@ -12,9 +12,9 @@
 
 | Goal | 当前阶段 | 范围 |
 | --- | --- | --- |
-| [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | VN2/VN3：按需准备与作者流程 | VN0 → VN1 → VN2 → VN3 |
+| [Web VN 与按需分发](docs/goals/web-vn/GOAL.md) | 最终验收与交付收尾 | VN0 → VN1 → VN2 → VN3 |
 
-VN0 与 VN1 的阅读 API、可恢复参考播放器和类型化媒体呈现已通过本地主线验收；公开作者入口、编辑预览及有界候选准备 SDK 也已验收。当前继续完成参考宿主预加载接线、A/B 与资源缓存联合旅程，以及独立固定包的最终短篇交付。固定源码与检查记录见[接续状态](docs/goals/web-vn/state.md)，实际管理器登记、任务与路径认领以 goalctl 账本为准。
+VN0 → VN3 的 SDK 与最终参考宿主已通过本地主线及仓库外固定包验收，29 项浏览器旅程通过。当前完成最终 CI、需求核对和归档；固定交付见[集成交接](docs/integrations/rezics.md#narrata-自己的交付依赖)，检查记录见[接续状态](docs/goals/web-vn/state.md)。实际管理器登记、任务与路径认领以 goalctl 账本为准。
 
 ## 接续
 
