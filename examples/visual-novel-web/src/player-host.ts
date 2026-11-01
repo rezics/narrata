@@ -45,9 +45,21 @@ export interface DemoHost {
   readonly reader: VnReader;
   readonly metrics: DemoMetrics;
   readonly controls: DemoControls;
+  readonly isClosed: boolean;
   switchContext(scope: string): Promise<void>;
   unlockAudio(): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface VnCandidateSnapshot {
+  readonly artifactId: string;
+  readonly manifest: Uint8Array;
+  readonly objects: ReadonlyMap<string, Uint8Array>;
+}
+
+export interface DemoHostOptions {
+  readonly candidate?: VnCandidateSnapshot;
+  readonly contentDrafts?: ReadonlyMap<string, { readonly text: string; readonly revision: string }>;
 }
 
 interface ImageAssetDefinition {
@@ -92,7 +104,8 @@ const CONTENT_ASSETS = new Map([
   ["dialogue.converge", { path: "/content/en/host/dialogue.converge.txt", revision: "1" }],
 ]);
 
-export async function openDemoHost(): Promise<DemoHost> {
+export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoHost> {
+  const candidate = options.candidate;
   const metrics: DemoMetrics = {
     logicalRequests: [],
     contentRequests: [],
@@ -107,17 +120,18 @@ export async function openDemoHost(): Promise<DemoHost> {
     retries: { resource: 0, audio: 0, logical: 0, save: 0 },
   };
   const controls: DemoControls = {};
-  const manifest = await fetchBytes(vnDemoManifestPath);
-  metrics.logicalRequests.push({ kind: "manifest", id: vnDemoArtifactId, bytes: manifest.byteLength });
+  const manifest = candidate?.manifest ?? await fetchBytes(vnDemoManifestPath);
+  metrics.logicalRequests.push({ kind: "manifest", id: candidate?.artifactId ?? vnDemoArtifactId, bytes: manifest.byteLength });
 
   const contentResolver = {
-    resolve: (request: ResolveRequest, signal: AbortSignal) => resolveContent(request, signal, metrics),
+    resolve: (request: ResolveRequest, signal: AbortSignal) => resolveContent(request, signal, metrics, options.contentDrafts),
   };
   const mediaResolver: VnMediaResolver<DemoContext> = request => resolveMedia(request, metrics, controls);
+  let audioContext: AudioContext;
   const presentMedia: VnMediaPresenter = async (resource, request, view) => present(resource, request, view, metrics, audioContext);
   const context: VnPlayerContext<DemoContext> = { media: { scope: "demo-public" }, content: { languages: ["en"], realization: "river-road:1", viewer: "demo-reader" } };
-  const store = await IndexedDbStore.open("narrata-visual-novel-demo");
-  const storage: CacheStore = {
+  const store = candidate ? undefined : await IndexedDbStore.open("narrata-visual-novel-demo");
+  const storage: CacheStore | undefined = store ? {
     load: request => store.load(request),
     persist: async batch => {
       metrics.saveWrites.push({ bytes: batch.byteLength, sha256: await sha256(batch) });
@@ -128,21 +142,34 @@ export async function openDemoHost(): Promise<DemoHost> {
       }
       return store.persist(batch);
     },
-  };
+  } : undefined;
   const reader = await openVn({
-    manifest,
-    execution: EXECUTION,
-    storage,
+    manifest: candidate?.manifest ?? manifest,
+    ...(storage ? { storage } : {}),
+    execution: candidate ? `execution:${crypto.randomUUID().replaceAll("-", "")}` : EXECUTION,
     fetchChunk: async id => {
       if (!/^object:[0-9a-f]{64}$/.test(id)) throw new Error("The requested VN chunk identity is invalid.");
-      const url = `${vnDemoObjectDirectory}/${id.slice("object:".length)}.cbor`;
-      const bytes = await fetchBytes(url);
+      const bytes = candidate?.objects.get(id) ?? (candidate ? undefined : await fetchBytes(`${vnDemoObjectDirectory}/${id.slice("object:".length)}.cbor`));
+      if (!bytes) throw new Error("The checked VN preview omitted a referenced program object.");
       metrics.logicalRequests.push({ kind: "chunk", id, bytes: bytes.byteLength });
-      return bytes;
+      return bytes.slice();
     },
+  }).catch(error => {
+    store?.close();
+    throw error;
   });
-  if (reader.artifactId !== vnDemoArtifactId) throw new Error("The loaded VN manifest does not match the pinned product artifact.");
+  if (reader.artifactId !== (candidate?.artifactId ?? vnDemoArtifactId)) {
+    try { await reader.close(); }
+    finally { store?.close(); }
+    throw new Error("The loaded VN manifest does not match its checked host candidate.");
+  }
   const countedReader = countReader(reader, metrics);
+  try { audioContext = new AudioContext({ latencyHint: "interactive" }); }
+  catch (error) {
+    try { await reader.close(); }
+    finally { store?.close(); }
+    throw error;
+  }
   const playerOptions: VnPlayerOptions<DemoContext> = {
     reader: countedReader,
     text: contentResolver,
@@ -160,11 +187,13 @@ export async function openDemoHost(): Promise<DemoHost> {
   };
   const controller = createVnPlayer(playerOptions);
   let closed = false;
+  let closing: Promise<void> | undefined;
   return {
     controller,
     reader: countedReader,
     metrics,
     controls,
+    get isClosed() { return closed; },
     async switchContext(scope) {
       await controller.setContext({
         media: { scope },
@@ -174,17 +203,25 @@ export async function openDemoHost(): Promise<DemoHost> {
     async unlockAudio() {
       await audioContext.resume();
     },
-    async close() {
-      if (closed) return;
+    close() {
+      if (closing) return closing;
       closed = true;
-      await controller.close();
-      store.close();
-      await audioContext.close();
+      const controllerClose = controller.close();
+      closing = (async () => {
+        try {
+          try { await controllerClose; }
+          finally { await countedReader.close(); }
+        } finally {
+          store?.close();
+          await audioContext.close();
+        }
+      })();
+      return closing;
     },
   };
 }
 
-async function resolveContent(request: ResolveRequest, signal: AbortSignal, metrics: DemoMetrics): Promise<readonly Resolution[]> {
+async function resolveContent(request: ResolveRequest, signal: AbortSignal, metrics: DemoMetrics, drafts?: DemoHostOptions["contentDrafts"]): Promise<readonly Resolution[]> {
   if (!request.context.languages?.includes("en")) return request.items.map(() => ({ status: "unavailable" }));
   return Promise.all(request.items.map(async (item: ResolveItem): Promise<Resolution> => {
     if (signal.aborted) throw abortError();
@@ -192,6 +229,14 @@ async function resolveContent(request: ResolveRequest, signal: AbortSignal, metr
     const row: DemoMetrics["contentRequests"][number] = { provider: reference.provider, key: reference.key, bytes: 0, status: "pending" };
     metrics.contentRequests.push(row);
     try {
+      const draft = drafts?.get(reference.key);
+      if (reference.provider === "host" && draft) {
+        const bytes = new TextEncoder().encode(draft.text);
+        row.bytes = bytes.byteLength;
+        row.revision = draft.revision;
+        row.status = "ok";
+        return { status: "ok", revision: draft.revision, payload: { text: draft.text } };
+      }
       const content = CONTENT_ASSETS.get(reference.key);
       if (reference.provider !== "host" || !content) {
         row.status = "unavailable";
@@ -423,8 +468,6 @@ function countReader(reader: VnReader, metrics: DemoMetrics): VnReader {
     close: () => reader.close(),
   };
 }
-
-const audioContext = new AudioContext({ latencyHint: "interactive" });
 
 async function fetchBytes(path: string, signal?: AbortSignal): Promise<Uint8Array> {
   const response = await fetch(path, signal ? { signal, cache: "no-cache" } : { cache: "no-cache" });

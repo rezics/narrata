@@ -1,10 +1,19 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import type { MouseEvent } from "react";
 import { openDemoHost, type DemoHost } from "./player-host.js";
 import { PlayerStage } from "./PlayerStage.js";
 import { readVnText, type VnPlayerSnapshot } from "@rezics/narrata/vn/player";
 
+const AuthoringApp = lazy(() => import("./AuthoringApp.js"));
+
 export function App() {
+  if (location.pathname === "/author") {
+    return <Suspense fallback={<main className="boot-state"><p>Opening the editor…</p></main>}><AuthoringApp /></Suspense>;
+  }
+  return <ReaderApp />;
+}
+
+function ReaderApp() {
   const [host, setHost] = useState<DemoHost>();
   const [openError, setOpenError] = useState(false);
 
@@ -38,7 +47,7 @@ export function App() {
   return <PlayerSurface host={host} />;
 }
 
-function PlayerSurface({ host }: { host: DemoHost }) {
+export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; authorMode?: boolean }) {
   const snapshot = useSyncExternalStore(host.controller.subscribe, host.controller.getSnapshot, host.controller.getSnapshot);
   const [historyOpen, setHistoryOpen] = useState(false);
   const screen = snapshot.screen;
@@ -55,6 +64,7 @@ function PlayerSurface({ host }: { host: DemoHost }) {
       controls: host.controls,
       reader: host.reader,
       controller: host.controller,
+      isClosed: host.isClosed,
       async switchContext(scope) { await host.switchContext(scope); },
       async save() { return host.reader.exportSave(); },
       async currentView() { return host.reader.inspect(); },
@@ -127,6 +137,10 @@ function PlayerSurface({ host }: { host: DemoHost }) {
     <main className="player-shell" onClick={activateStage}>
       <PlayerStage screen={screen} />
       <header className="player-toolbar" aria-label="Story controls" onClick={event => event.stopPropagation()}>
+        <a className="toolbar-control author-route-control" href={authorMode ? "/" : "/author"} aria-label={authorMode ? "Back to story" : "Edit story"}>
+          <span>{authorMode ? "Story" : "Edit"}</span>
+        </a>
+        <span className="toolbar-divider" aria-hidden="true" />
         <button className="toolbar-control" type="button" disabled={!ready || !hasHistory} onClick={() => { void host.controller.back().catch(() => undefined); }}>
           <ArrowLeftIcon /><span>Back</span>
         </button>

@@ -65,10 +65,10 @@ async function save(page: Page) {
 }
 
 async function expectToolbarControlsFit(page: Page, width: number, height: number) {
-  const controls = await page.locator(".player-toolbar button").evaluateAll(buttons => buttons.map(button => {
+  const controls = await page.locator(".player-toolbar a, .player-toolbar button").evaluateAll(elements => elements.map(button => {
     const bounds = button.getBoundingClientRect();
     return {
-      label: button.getAttribute("aria-label"),
+      label: button.getAttribute("aria-label") ?? button.textContent,
       left: bounds.left,
       top: bounds.top,
       right: bounds.right,
@@ -78,7 +78,7 @@ async function expectToolbarControlsFit(page: Page, width: number, height: numbe
       scrollWidth: button.scrollWidth,
     };
   }));
-  expect(controls.length).toBeGreaterThanOrEqual(3);
+  expect(controls.length).toBeGreaterThanOrEqual(4);
   expect(controls.some(control => control.label?.toLowerCase().includes("sound"))).toBe(true);
   for (const control of controls) {
     expect(control.left).toBeGreaterThanOrEqual(0);
