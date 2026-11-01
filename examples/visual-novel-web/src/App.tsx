@@ -145,7 +145,7 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
           <ArrowLeftIcon /><span>Back</span>
         </button>
         <span className="toolbar-divider" aria-hidden="true" />
-        <button className="toolbar-control" type="button" disabled={!ready || !view?.view.history.length} onClick={() => setHistoryOpen(true)}>
+        <button className="toolbar-control history-control" type="button" aria-label="History" disabled={!ready || !view?.view.history.length} onClick={() => setHistoryOpen(true)}>
           <HistoryIcon /><span>History</span>
         </button>
         <span className="toolbar-divider" aria-hidden="true" />

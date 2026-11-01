@@ -657,11 +657,14 @@ button:disabled {
   .save-status,
   .sound-control { min-height: 44px; gap: 7px; }
 
+  .toolbar-control { min-width: 44px; flex-shrink: 0; }
+  .history-control > span { display: none; }
+
   .toolbar-control svg,
   .save-status svg,
   .sound-control > svg { width: 20px; height: 20px; }
 
-  .toolbar-divider { height: 24px; }
+  .toolbar-divider { display: none; }
   .switch { width: 42px; height: 24px; padding: 2px; }
   .switch > span { width: 18px; height: 18px; }
   .sound-control.is-on .switch > span { transform: translateX(18px); }

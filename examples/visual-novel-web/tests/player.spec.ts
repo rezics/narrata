@@ -86,7 +86,7 @@ async function expectToolbarControlsFit(page: Page, width: number, height: numbe
     expect(control.right).toBeLessThanOrEqual(width);
     expect(control.bottom).toBeLessThanOrEqual(height);
     expect(control.height).toBeGreaterThanOrEqual(44);
-    expect(control.scrollWidth).toBeLessThanOrEqual(control.clientWidth + 1);
+    expect(control.scrollWidth, `${control.label} content must fit its touch target`).toBeLessThanOrEqual(control.clientWidth + 1);
   }
 }
 
@@ -184,6 +184,7 @@ test("390 by 844 keeps audio-unavailable copy and its retry control inside the s
     await expectToolbarControlsFit(page, 390, 844);
     await page.locator(".player-toolbar").evaluate(toolbar => {
       toolbar.style.letterSpacing = "0.06em";
+      toolbar.style.fontSize = "17px";
     });
     await expectToolbarControlsFit(page, 390, 844);
 
