@@ -16,7 +16,7 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 [G-044](../../../archive/goals/web-vn-2026-10-31/tasks/G-044.md) 的有界只读增量依赖投影与 [G-046](../../../archive/goals/web-vn-2026-10-31/tasks/G-046.md) 的原始 Wasm 作者桥接，已在同一主线 `2ab426777130512e6fe35f81d10567c612b5a7fa` 通过 R1、Web 和文档检查：R1 浏览器 28 项，Web 单元 147 项，独立安装消费者 25 项及 Node/Bun/Chromium 旅程通过，包体积限制未放宽。原生投影有 17 项定向测试；Wasm 桥接的实际 Node/Bun 调用生成与冻结语料逐字节相同的包，修改后候选有效且旧候选保持不变。既有兼容语料和交换格式未改。固定源码与失败/重试记录见 `.temp/goal/runs/G-046/main-acceptance/2ab4267-retry-cached-registry/` 及两项任务的 `manager-acceptance/`。
 
-[G-043](tasks/G-043.md) 的播放器切片已在主线 `b5c8457630177173ea233a569bb0eb5c7f845e8d` 通过 R1、Web、VN、scripts、docs 五项检查：R1 浏览器 28 项，Web 单元 168 项，独立安装 25 项，VN 桌面/手机旅程 13 项；其中 21 项播放器测试覆盖资源与音频生命周期、保存边界和重试。最终桌面、手机及重试截图与已审阅图像逐字节相同。CLI 网络重试后由 manager 保留工作区并完成提交与集成；旧失败与检查记录保留。
+[G-043](../../../archive/goals/web-vn-2026-10-31/tasks/G-043.md) 的播放器切片已在主线 `b5c8457630177173ea233a569bb0eb5c7f845e8d` 通过 R1、Web、VN、scripts、docs 五项检查：R1 浏览器 28 项，Web 单元 168 项，独立安装 25 项，VN 桌面/手机旅程 13 项；其中 21 项播放器测试覆盖资源与音频生命周期、保存边界和重试。最终桌面、手机及重试截图与已审阅图像逐字节相同。CLI 网络重试后由 manager 保留工作区并完成提交与集成；旧失败与检查记录保留。
 
 固定播放器包为 `0.1.0-alpha.1`，tarball SHA-256 `4c77f0511fe1239c22fc6685e08fa8c84e0ca6e4e6b746abad169eda7861c649`，1,796,713 字节；见 `.temp/delivery/vn-player-release.json`。主线验收记录位于 `.temp/goal/runs/G-043/main-acceptance/b5c8457-retry-audit-tls/`。此包和旧 Gamebook、阅读 API 包身份分别保留，不能互换；播放器 CI 待本次推送后核对。
 
