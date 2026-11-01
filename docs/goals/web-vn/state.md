@@ -30,6 +30,8 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 已验收的底层基础仍不等于完整 VN2/VN3：还需公共依赖桥接、有界候选媒体准备与缓存生命周期、A/B 按需分发证据、Web/Node/Bun 作者封装、实际编辑预览、多场景短篇和最终固定包交付。
 
+下一批为 [G-049](tasks/G-049.md) 的公共依赖桥接与完整有界候选资源准备，以及 [G-050](tasks/G-050.md) 的参考应用草稿编辑、隔离即时预览。两项使用 gpt-6-luna/high，分别认领 SDK/原生支持与示例 UI；最终参考宿主接线和固定包完整旅程仍需联合验收。
+
 manager 为 `codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn`。模型与 effort 按任务简报选择，Codex worker 优先使用 gpt-6-luna/high 或 max；实时派发、认领与进程以 `task goal -- status` 为准。
 
 REZICS 的媒体、授权和上传能力仍只列为[宿主能力请求](../../integrations/rezics.md#web-vn-后续需要的宿主能力)。七项 Gamebook 请求仍为“提出”，npm registry 未发布，真实 REZICS 联合验收尚未执行；单仓库 VN0 验收不代表 VN 产品上线。
