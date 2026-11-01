@@ -1,6 +1,6 @@
 # REZICS 接入 Goal 交接简报
 
-更新：2026-10-31。首发 Gamingbook 是正文阅读与分支选择；传统 Web VN 随后纳入。
+更新：2026-11-01。首发 Gamingbook 是正文阅读与分支选择；传统 Web VN 随后纳入。
 本页根据[重建宿主的能力复核](rezics.md)更新，供 REZICS 按当前工作流程建立接入任务。
 Narrata 不修改 REZICS 仓库，也不在自己的 goalctl 中登记或派发 REZICS worker。
 
@@ -18,7 +18,7 @@ Narrata 不修改 REZICS 仓库，也不在自己的 goalctl 中登记或派发 
 
 Narrata 的最终 Gamebook SDK 固定包包含 M1 与原定全部 M2 能力，包括作者图与关系、作品演化、存档维护及完整阅读器历史/迁移组合；版本、源码、校验和及验收见本页的[固定交付记录](rezics.md#narrata-自己的交付依赖)。REZICS 按 M1、M2 分阶段实施，但使用同一个完整包和 [SDK 接入说明](../../packages/narrata/web/README.md)。此前 M1、地图及维护 tarball 保留各自历史身份与证据，不拼装为本次交付。Narrata SDK 阶段已具备固定交付证据；REZICS 的实际产品可用仍以双方固定版本的真实联合旅程为准。
 
-[后续 Web VN](../goals/web-vn/GOAL.md) 已进入语义与兼容设计，尚无 VN 能力交付；需要的媒体和分发能力见集成文档，不与首发正文/选择型 Gamebook 混为同一阅读体验。
+Web VN 提供独立的阅读、播放器与作者入口；可消费的固定切片及是否覆盖完整阶段，以[交接记录](rezics.md#narrata-自己的交付依赖)为准。媒体和分发能力仍需宿主实现，不与正文/选择型 Gamebook 混为同一阅读体验。
 
 ## 任务顺序
 

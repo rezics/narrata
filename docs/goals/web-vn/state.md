@@ -38,6 +38,8 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 当前 [G-049](tasks/G-049.md) 正在修正完整有界候选资源准备：冷图块媒体发现、候选资源取消/接管时的释放、加载中资源的预算及完整性状态。最终参考宿主接线、独立安装的编辑/播放/预加载联合旅程和固定包交付仍待完成。
 
+独立参考宿主的按需分发基线已在 `b2e40d99df320939fad87f1e48435ae990b71d3e` 测量：首屏 1 个 1,040 字节剧情块与 539 字节清单，背景、两个人物及当前音乐/语音共 8,816,923 字节；仅加载 1 个 reader Wasm，作者编译器保持懒加载。进入大厅后才增加 337 字节剧情块和大厅背景请求。该记录使用固定作者 API 切片，尚未包含候选预加载；原始响应身份、哈希与分阶段测量见 `.temp/goal/runs/vn-reference-installed/author-player-distribution-baseline/distribution.json`，最终接线由 [G-051](tasks/G-051.md) 验收。
+
 manager 为 `codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn`。模型与 effort 按任务简报选择，Codex worker 优先使用 gpt-6-luna/high 或 max；实时派发、认领与进程以 `task goal -- status` 为准。
 
 REZICS 的媒体、授权和上传能力仍只列为[宿主能力请求](../../integrations/rezics.md#web-vn-后续需要的宿主能力)。七项 Gamebook 请求仍为“提出”，npm registry 未发布，真实 REZICS 联合验收尚未执行；单仓库 VN0 验收不代表 VN 产品上线。

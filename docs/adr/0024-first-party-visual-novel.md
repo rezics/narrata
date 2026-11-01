@@ -1,14 +1,14 @@
 # ADR 0024：第一方视觉小说语义与兼容边界
 
-状态：Accepted（2026-10-31，Web VN Goal manager 审阅后接受）。VN0 原生语义与双格式兼容实现已验收，固定源码与检查结果见[接续状态](../goals/web-vn/state.md)。本文保留决定理由、恢复语义、格式兼容、未交付的公开接口约定与宿主边界；播放器、媒体 resolver、VN authoring 和短篇产品仍待交付。
+状态：Accepted（2026-10-31，Web VN Goal manager 审阅后接受）。本文保留语义、兼容与宿主边界的决定理由；公开接口与调用见[包说明](../../packages/narrata/web/README.md)，可消费版本及验收范围见[固定交接](../integrations/rezics.md#narrata-自己的交付依赖)。
 
-本 ADR 依据[决定 2、11、14、17、18](../product/decisions.md)，为 Web VN VN0 选定一条实现路线。它只决定 Narrata 自己的执行、状态、资源引用及兼容边界；不增加 RuntimeStateV0 能力，不实现播放器、编辑器、宿主媒体服务或 VN 完整产品。
+本 ADR 依据[决定 2、11、14、17、18](../product/decisions.md)，为节点栈上的第一方 Web VN 选定实现路线。它决定 Narrata 自己的执行、状态、资源引用及兼容边界，不增加 RuntimeStateV0 能力，也不替代宿主的内容编辑、媒体服务与授权政策。
 
 ## 已接受的基线与边界
 
 Gamebook 仍以既有节点栈、格式 2/schema 1/revision 2、`BookView` 与冻结语料为兼容基线。VN0 原生语义在同一节点执行、Session、历史、存档和按需逻辑块加载框架上实现；逐句对白、类型化推进和可恢复场景的精确类型与编码由 Rust、生成 schema、测试和 `fixtures/compat/nodes-vn-v1/` corpus 表达。旧 Flow/Scene 仅作行为证据，[决定 11](../product/decisions.md#11-节点组合模型是长期内核的语义基础)仍排除对 `RuntimeStateV0` 的产品扩展。
 
-可安装的 VN reader 已通过固定包验收；VN authoring/server API、Web 媒体 resolver 和播放器仍待交付，本 ADR 保留其选定约定与验收。完整产品范围见 [Web VN Goal](../goals/web-vn/GOAL.md)。
+公开 `./vn`、`./vn/player`、`./vn/authoring` 与 `./vn/server` 分别承载阅读、呈现和作者能力；精确类型、受检解析与生命周期断言由实现、生成 schema 和测试表达，本 ADR 不重复接口字段或测试矩阵。
 
 ## 决定
 
@@ -50,7 +50,7 @@ VN 程序采用节点图执行器上的第一方类型化语义扩展：作者�
 
 宿主仍拥有解析出的正文、说话者名、选项标签、本地化实现和媒体字节。相同的文本引用可按宿主选择的语言/实现策略解析为不同文字，而这些解析字节不进入逻辑对象；变更程序中记录的引用则会改变相应逻辑对象。媒体版本身份参与引用它的程序或场景状态，实际字节、授权地址、DOM 元素、音频上下文/播放器句柄、解码缓冲、播放头以及用户手势授权属于播放端或宿主，不能进入持久叙事状态。
 
-Web 媒体边界必须有独立的媒体描述/解析结果类型，明确资源类别、不可变修订和受检变体；现有只返回文字 Payload 的 ContentResolver 不通过断言、`unknown` 到 media cast 或未检查字段承载媒体。Narrata 只消费已验证的资源描述，访问控制和授权 URL 由宿主在实际请求时提供。这个 typed media resolver 尚未交付。
+Web 媒体边界有独立的媒体描述/解析结果类型，明确资源类别、不可变修订和受检变体；现有只返回文字 Payload 的 ContentResolver 不通过断言、`unknown` 到 media cast 或未检查字段承载媒体。Narrata 只消费已验证的资源描述，访问控制和授权 URL 由宿主在实际请求时提供。
 
 ### 5. 资源准备与逻辑提交分离
 
@@ -74,25 +74,12 @@ Gamebook 的 R1 存档继续通过现有受检读取/迁移路径回到 Gamebook
 
 兼容语料 `fixtures/compat/nodes-vn-v1/` 冻结原生执行与对象格式；`fixtures/compat/vn-view-v1/` 从独立安装包的公共 API 生成，冻结版本化 Web View 的对白、选择、场景变化与结局样例。两者分别证明原生格式与公开交换边界，既有语料保持不变。未来任何格式变化仍需新的 ADR、旧格式读取/迁移路径和新增冻结证据。
 
-Web 交换 View 是独立版本边界：`@rezics/narrata/vn` 提供 version 1 的判别联合，按权威 Rust/schema 生成 TypeScript 声明和运行时校验。Gamebook `BookView` 与既有入口保持不变；VN View 不伪装成旧 Gamebook 交互，也不含渲染句柄。该子路径已从固定 tarball 验证，npm registry 尚未发布。
+Web 交换 View 是独立版本边界：`@rezics/narrata/vn` 提供 version 1 的判别联合，按权威 Rust/schema 生成 TypeScript 声明和运行时校验。Gamebook `BookView` 与既有入口保持不变；VN View 不伪装成旧 Gamebook 交互，也不含渲染句柄。
 
 VN 源稿检查及预览使用独立的已安装入口：browser `@rezics/narrata/vn/authoring` 与 Node/Bun `@rezics/narrata/vn/server`。两者均校验 VN source format 3；预览打开同一次检查通过的候选对象，不发布作品、不切换正式发布指针、不写读者存档。现有 `@rezics/narrata/authoring` 和 `@rezics/narrata/server` 继续保留 Gamebook 类型和语义。
 
-## VN0–VN3 的后续验收切片
+## 后果与宿主验收
 
-下表记录已验收的 VN0 边界与尚需交付的 VN1–VN3 验收；表内源码路径仅作接入参考。
+同一 Session 与存档基础承担 VN 和 Gamebook 的执行与恢复，呈现句柄和可选资源准备保持独立生命周期。这使媒体失败可以保留已提交的位置，也要求播放器明确区分叙事输入、资源重试与未知存档写入的重试。实现若改变本文的恢复、Gamebook 兼容、媒体或作者边界，应先修订 ADR，再冻结新语料。
 
-| 切片 | 主要源码归属 | 最小验收断言 |
-| --- | --- | --- |
-| VN0：原生语义与兼容（已验收） | 实现、生成 schema 与 `fixtures/compat/nodes-vn-v1/` corpus | 连续对白停在安全点；选择、场景恢复与同输入确定性由主线实现和兼容证据通过验收；旧 Gamebook format 2/schema 1/revision 2 与既有 corpus 保持有效。 |
-| VN1：可安装 API 和桌面/手机播放器 | `packages/narrata/web/src/vn/`、对应 Rust/Wasm View 与生成校验声明、`packages/narrata/web/package.json` 与 `README.md`；新增 `examples/visual-novel-web/` 及浏览器套件 | 固定安装包的 `@rezics/narrata/vn` 子路径公开有类型的打开/推进/选择/呈现 API；桌面及手机宽度可完整玩完含多行对白、背景、立绘、分支、汇合和至少一条音乐或语音的短场景；关闭重开、回退和另选分支恢复相应对白/场景；播放器使用来源宿主提供的媒体解析，不使用 V0 global 或 DOM 句柄作存档。 |
-| VN2：按需媒体/剧情与恢复 | `packages/narrata/web/src/vn/`；与 `packages/narrata/web/src/artifacts.ts`、`content/`、`storage.ts` 的窄接口整合；`examples/visual-novel-web/` 的模拟宿主和浏览器测试 | 首屏不取全作；当前场景及直接候选的预取受界、过期时取消；失败可重试且不重复输入；A 运行期间发布 B 不混用引用；不可用/撤回不假报结局；离开场景可释放解码资源；清理资源缓存不删除未同步存档；恢复遵守音乐从头和语音当前行从头的策略。 |
-| VN3：作者即预览、短篇和固定包交接 | `packages/narrata/tooling/crates/narrata-authoring/`、`packages/narrata/tooling/crates/narrata-authoring-wasm/`；`packages/narrata/web/src/vn/` 的公开 authoring/server 接缝；`packages/narrata/web/package.json`、README 与 pack/install scripts；`examples/visual-novel-web/` | 通过已安装的 VN browser authoring 与 Node/Bun server API 校验 VN 源稿、预览与发布；预览的是同一检查通过的候选，且不发布、不切换正式发布指针、不写读者存档。交付多场景、多条对白、分支与结局短篇，含背景/立绘/音轨和中途恢复。固定 tarball 须在浏览器 reader、browser authoring 及所需 Node/Bun authoring/build/publish consumer 路径安装验证；记录首屏和候选资源请求身份/字节数、安装包大小、保存恢复与失败重试证据及来源提交和 tarball SHA-256。桌面、手机浏览器回归通过。 |
-
-Gamebook 作者、发布、存档、历史、地图及维护能力继续沿用现有 Goal 已验收的归属和接口；本 ADR 不重开它们。VN0–VN3 均完成也只是 Narrata 单仓库能力与固定包的交付，REZICS 的真实联合旅程仍按[集成文档](../integrations/rezics.md#web-vn-真实联合验收)单独验收，不据此宣布 VN 产品上线。
-
-## 后果与未验证项
-
-VN0 原生执行、双格式兼容及 version 1 VN reader 已通过验收，固定输入见[接续状态](../goals/web-vn/state.md)。尚未交付的边界包括 browser/Node/Bun VN authoring/server、typed media resolver、桌面/手机播放器以及完整样例产品；各自的验收要求保留在上表和 [Web VN Goal](../goals/web-vn/GOAL.md)。
-
-未完成的验证仍包括：宿主如何提供不可变媒体版本及受检变体、如何按当前账号/授权与正文解析上下文取消和隔离资源请求，以及目标浏览器中用户手势、解码失败、关闭/重开与存档恢复的交互。若真实实现推翻本文的恢复、Gamebook 兼容、媒体或作者边界，应先修订 ADR，再冻结新语料。REZICS 的实际能力与真实联合旅程仍以[集成文档](../integrations/rezics.md)为准。
+阶段验收范围与未完成工作集中记录在根 [GOAL.md](../../GOAL.md)，不在本 ADR 维护另一份进度表。Narrata 的模拟宿主和固定包验收只能证明单仓库交付；REZICS 的不可变媒体版本、当前账号授权、正文解析政策与目标浏览器交互仍须完成[真实联合旅程](../integrations/rezics.md#web-vn-真实联合验收)，不能据此宣布 VN 产品上线。
