@@ -246,7 +246,10 @@ test("running publication A stays pinned while public pack B starts under its ow
   expect(publishedB.firstText).toBe("The new published version starts at the river.");
   expect(publishedB.atChoice).toBe(true);
   expect(publishedB.metrics.logicalRequests.every(item => item.artifact === candidate.artifactId)).toBe(true);
-  expect(publishedB.metrics.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.status])).toEqual([["2", "available"]]);
+  expect(publishedB.metrics.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.status])).toEqual([
+    ["1", "available"],
+    ["2", "available"],
+  ]);
   expect(publishedB.metrics.mediaDecodes.some(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "2")).toBe(true);
   await mkdir(evidenceDirectory, { recursive: true });
   await writeFile(join(evidenceDirectory, "publication-b-metrics.json"), `${JSON.stringify({

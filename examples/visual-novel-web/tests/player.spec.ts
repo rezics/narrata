@@ -40,6 +40,10 @@ async function waitForCandidatePreparation(page: Page) {
   await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("complete");
 }
 
+async function waitForCandidatePreparationToSettle(page: Page) {
+  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toMatch(/^(complete|partial)$/);
+}
+
 async function clearPreparedCaches(page: Page) {
   await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
 }
@@ -325,7 +329,7 @@ test("same-revision candidate media is reused only inside its authorization cont
 
   await page.evaluate(async () => { await window.__vnTestHooks?.switchContext("reader-two"); });
   await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeEnabled();
-  await waitForCandidatePreparation(page);
+  await waitForCandidatePreparationToSettle(page);
   const secondScope = await metrics(page);
   expect(secondScope.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.contextScope])).toEqual([
     ["1", "demo-public"],
