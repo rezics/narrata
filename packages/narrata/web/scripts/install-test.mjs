@@ -330,6 +330,9 @@ execFileSync(process.execPath, [join(directory, "vn-authoring.mjs"), "browser-en
 execFileSync("bun", [join(directory, "node.mjs"), "default"], { cwd: directory, stdio: "inherit" });
 execFileSync("bun", [join(directory, "authoring.mjs"), "default"], { cwd: directory, stdio: "inherit" });
 execFileSync("bun", [join(directory, "vn-authoring.mjs"), "default"], { cwd: directory, stdio: "inherit" });
+cpSync(resolve(here, "scripts/install/vn-source-context.mjs"), join(directory, "vn-source-context.mjs"));
+execFileSync(process.execPath, [join(directory, "vn-source-context.mjs")], { cwd: directory, stdio: "inherit" });
+execFileSync("bun", [join(directory, "vn-source-context.mjs")], { cwd: directory, stdio: "inherit" });
 
 npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", "react@19.2.8", "react-dom@19.2.8", "@types/react@^19.0.0", "@types/react-dom@^19.0.0", `vitest@${packageMetadata.devDependencies.vitest}`, `fake-indexeddb@${packageMetadata.devDependencies["fake-indexeddb"]}`);
 cpSync(resolve(here,"scripts/install/maintenance.mjs"),join(directory,"maintenance.mjs"));
@@ -618,6 +621,12 @@ window.ready = new URLSearchParams(location.search).has("reference") ? (async ()
         throw error;
       }
     },
+    vnForeignUrl: async source => {
+      const { openVn } = await import("@rezics/narrata/vn");
+      const reader = await openVn({ pack: await bytes("/vn-story.narpack"), execution: ${JSON.stringify(execution)}, wasm: source });
+      await reader.close();
+      return true;
+    },
     vnModuleCompatibility: (incompatibleWasmUrl, compatibleWasmUrl, mutationMode) => new Promise((resolve, reject) => {
       const worker = new Worker(new URL("./vn-module-worker.js", import.meta.url), { type: "module" });
       worker.onerror = event => { worker.terminate(); reject(new Error(event.message)); };
@@ -729,6 +738,15 @@ try {
   assert.match(vnModuleCompatibility.featureError, /must include the `vn-dependencies` feature/);
   assert.match(vnModuleCompatibility.sourceError, /one Wasm module/);
   const vnSourceMutations = [];
+  const vnForeignUrl = await page.evaluate(async source => {
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    try {
+      const foreign = new frame.contentWindow.URL(new URL(source, location.href).href);
+      return { foreign: !(foreign instanceof URL), accepted: await window.installed.vnForeignUrl(foreign) };
+    } finally { frame.remove(); }
+  }, vnReaderWasmUrl);
+  assert.deepEqual(vnForeignUrl, { foreign: true, accepted: true });
   for (const mode of ["bytes", "url"]) {
     const result = await page.evaluate(({ incompatible, compatible, mode }) => window.installed.vnModuleCompatibility(incompatible, compatible, mode),
       { incompatible: readerWasmUrl, compatible: vnReaderWasmUrl, mode });
@@ -792,7 +810,7 @@ try {
   writeFileSync(join(directory, "provided-history-names.json"), JSON.stringify(historical, null, 2));
   writeFileSync(join(directory,"maintenance-browser.json"),JSON.stringify(maintenance,null,2));
   assert.deepEqual(errors, []);
-  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored, vn: vnEvidence, vnCandidates: vnCandidateEvidence, vnModuleCompatibility, vnSourceMutations }, null, 2));
+  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored, vn: vnEvidence, vnCandidates: vnCandidateEvidence, vnModuleCompatibility, vnSourceMutations, vnForeignUrl }, null, 2));
   await page.screenshot({ path: join(directory, "desktop-reader.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: join(directory, "mobile-reader.png"), fullPage: true });

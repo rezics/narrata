@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { runInNewContext } from "node:vm";
+import { openVn } from "@rezics/narrata/vn";
+
+const bytes = new Uint8Array(await readFile("node_modules/@rezics/narrata/dist/vn-reader-wasm/narrata_nodes_wasm_bg.wasm"));
+const pack = new Uint8Array(await readFile("public/vn-story.narpack"));
+const execution = `execution:${"d".repeat(32)}`;
+const foreign = runInNewContext(`new Uint8Array(${bytes.byteLength})`);
+assert.equal(foreign instanceof Uint8Array, false, "The source must actually come from another realm.");
+foreign.set(bytes);
+const first = await openVn({ pack, execution, wasm: foreign });
+await first.close();
+const buffer = runInNewContext(`new ArrayBuffer(${bytes.byteLength})`);
+assert.equal(buffer instanceof ArrayBuffer, false);
+new Uint8Array(buffer).set(bytes);
+const equivalent = await openVn({ pack, execution, wasm: buffer });
+await equivalent.close();
+foreign[foreign.length - 1] ^= 1;
+await assert.rejects(openVn({ pack, execution, wasm: foreign }), /one Wasm module/);
+new Uint8Array(buffer)[bytes.length - 1] ^= 1;
+await assert.rejects(openVn({ pack, execution, wasm: buffer }), /one Wasm module/);
+console.log("Installed VN source snapshots accept equivalent foreign buffers and reject mutation.");

@@ -57,9 +57,9 @@ function initializeVn(source?: WasmSource): Promise<void> {
     }
     return initialized.then(() => undefined);
   }
-  const boundSource = sourceToLoad instanceof URL ? new URL(sourceToLoad.href)
-    : sourceToLoad instanceof Uint8Array ? new Uint8Array(sourceToLoad)
-    : sourceToLoad instanceof ArrayBuffer ? new Uint8Array(new Uint8Array(sourceToLoad)) : sourceToLoad;
+  const sourceUrl = wasmSourceUrl(sourceToLoad);
+  const sourceBytes = sourceUrl ? undefined : wasmSourceBytes(sourceToLoad);
+  const boundSource = sourceUrl ?? (sourceBytes ? new Uint8Array(sourceBytes) : sourceToLoad);
   initializedSource = boundSource;
   if (!initialized) {
     initialized = (async () => {
@@ -77,23 +77,34 @@ function initializeVn(source?: WasmSource): Promise<void> {
 }
 
 function sameWasmSource(left: WasmSource, right: WasmSource): boolean {
-  const url = (value: WasmSource): URL | undefined => value instanceof URL
-    ? value
-    : typeof value === "string" ? new URL(value, import.meta.url) : undefined;
-  const leftUrl = url(left);
-  const rightUrl = url(right);
+  const leftUrl = wasmSourceUrl(left);
+  const rightUrl = wasmSourceUrl(right);
   if (leftUrl || rightUrl) return leftUrl?.href === rightUrl?.href;
-  const bytes = (value: WasmSource): Uint8Array | undefined => value instanceof Uint8Array
-    ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-    : value instanceof ArrayBuffer ? new Uint8Array(value) : undefined;
-  const leftBytes = bytes(left);
-  const rightBytes = bytes(right);
+  const leftBytes = wasmSourceBytes(left);
+  const rightBytes = wasmSourceBytes(right);
   if (leftBytes || rightBytes) {
     return leftBytes !== undefined && rightBytes !== undefined
       && leftBytes.byteLength === rightBytes.byteLength
       && leftBytes.every((byte, index) => byte === rightBytes[index]);
   }
   return left === right;
+}
+
+function wasmSourceUrl(value: WasmSource): URL | undefined {
+  if (typeof value === "string") return new URL(value, import.meta.url);
+  try {
+    const href: unknown = Object.getOwnPropertyDescriptor(URL.prototype, "href")?.get?.call(value);
+    return typeof href === "string" ? new URL(href) : undefined;
+  } catch { return undefined; }
+}
+
+function wasmSourceBytes(value: WasmSource): Uint8Array | undefined {
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  try {
+    const length: unknown = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "byteLength")?.get?.call(value);
+    // The native getter establishes the ArrayBuffer brand across realms; instanceof cannot.
+    return typeof length === "number" ? new Uint8Array(value as ArrayBuffer) : undefined;
+  } catch { return undefined; }
 }
 
 function requireDependencyModule(raw: VnBook): void {
