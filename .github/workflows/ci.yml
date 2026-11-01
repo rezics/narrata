@@ -84,6 +84,9 @@ jobs:
           cache-dependency-path: |
             packages/narrata/kernel/js/package-lock.json
             packages/narrata/web/package-lock.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
       - uses: arduino/setup-task@v2
         with:
           version: 3.52.0
