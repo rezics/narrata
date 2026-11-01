@@ -8,6 +8,29 @@ import type { DemoCandidateTransfer, DemoContentDraft, DemoMediaOverride } from 
 const screenshots = resolve(import.meta.dirname, "../../../.temp/goal/runs/vn-authoring/screenshots");
 const evidenceDirectory = resolve(import.meta.dirname, "../../../.temp/goal/runs/vn-authoring");
 
+async function openPlayer(page: Page) {
+  await page.setViewportSize({ width: 1586, height: 992 });
+  await page.goto("/");
+  await expect(page).toHaveTitle("The River Road");
+  await expect(page.getByText("The last train is already gone.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue dialogue" })).toBeEnabled();
+}
+
+async function currentView(page: Page) {
+  const view = await page.evaluate(async () => await window.__vnTestHooks?.currentView());
+  if (!view) throw new Error("The VN browser probe did not expose a current view.");
+  return view;
+}
+
+async function toChoice(page: Page) {
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
+}
+
 async function startAuthoring(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height });
   const authorRequests: string[] = [];

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { MouseEvent } from "react";
-import { openDemoHost, type DemoCandidateInspection, type DemoCandidateTransfer, type DemoContentDraft, type DemoHost, type DemoMediaOverride } from "./player-host.js";
+import { openDemoHost, type DemoCandidateInspection, type DemoHost } from "./player-host.js";
 import { PlayerStage } from "./PlayerStage.js";
 import { readVnText, type VnPlayerSnapshot } from "@rezics/narrata/vn/player";
 
