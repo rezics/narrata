@@ -1,10 +1,12 @@
-import init, {
-  Drafts as RawDrafts, IdMinter as RawMinter, Preview as RawPreview, Publication as RawPublication,
+import {
+  Drafts as RawDrafts, IdMinter as RawMinter, Publication as RawPublication,
   PublicationLoader as RawLoader, Records as RawRecords, Source as RawSource, validateRecord as rawValidateRecord,
 } from "../authoring-wasm/narrata_authoring_wasm.js";
+import { createAuthoringPreview, Handle, Preview, loadAuthoringWasmFrom, readRecords, recordBytes } from "./shared.js";
+import type { CheckedRecord, RecordCheck, RecordsResult, RecordInput, WasmSource } from "./shared.js";
 import type {
   AuthoredId, CompositionLock, ContentOutline, Diagnostic, DraftRecord, MintedIds, ObjectReference, PackageSource,
-  PreviewReport, ProjectManifest, PublicationDescription, PublishReport, RecordIndexes, RecordReport,
+  PreviewReport, ProjectManifest, PublicationDescription, PublishReport, RecordReport,
   RelationIndex, RelationKind, RelationPart, RelationRow, AuthorRelationQuery, AuthorRelationPage,
 } from "../generated/authoring.js";
 import { Evolution, EvolutionPlan, planEvolution, readEvolution } from "./evolution.js";
@@ -16,7 +18,7 @@ export * from "./evolution-controller.js";
 export * from "./maps.js";
 export type { RelationIndex, RelationKind, RelationPart, RelationRow, AuthorRelationQuery, AuthorRelationPage } from "../generated/authoring.js";
 
-export type WasmSource = URL | string | Uint8Array | ArrayBuffer | WebAssembly.Module;
+export type { CheckedRecord, RecordCheck, RecordsResult, WasmSource } from "./shared.js";
 
 /** A thrown authoring failure; checks and publication report diagnostics instead of throwing. */
 export class AuthoringError extends Error {
@@ -34,13 +36,9 @@ function call<T>(operation: () => T): T {
   }
 }
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 /** Stored record bytes, or a typed record encoded as JSON for checking and normalization. */
-export type RecordInput = Uint8Array | DraftRecord;
-function recordBytes(record: RecordInput): Uint8Array {
-  return record instanceof Uint8Array ? record : encoder.encode(JSON.stringify(record));
-}
+export type { RecordInput } from "./shared.js";
 /** Checks external bytes with the Rust record validator before returning a typed record. */
 export function decodeRecord(bytes: Uint8Array): DraftRecord {
   const result = records(call(() => rawValidateRecord(bytes)));
@@ -53,26 +51,6 @@ export function decodeRecord(bytes: Uint8Array): DraftRecord {
   return JSON.parse(decoder.decode(checked.bytes)) as DraftRecord;
 }
 
-export interface CheckedRecord {
-  /** Narrata's record key, derived from IDs or scope; host revision keys are not narrative identity. */
-  readonly key: string;
-  /** Canonical bytes: the form a host stores. */
-  readonly bytes: Uint8Array;
-  /** Derived index rows a host replaces together with the payload; absent for a lone record check. */
-  readonly indexes?: RecordIndexes;
-}
-export interface RecordsResult {
-  readonly complete: boolean;
-  readonly diagnostics: readonly Diagnostic[];
-  /** Empty whenever an error or limit prevented a checked value. */
-  readonly records: readonly CheckedRecord[];
-  readonly minted: readonly AuthoredId[];
-}
-export interface RecordCheck {
-  readonly complete: boolean;
-  readonly diagnostics: readonly Diagnostic[];
-  readonly record?: CheckedRecord;
-}
 export interface AssembledSource {
   readonly complete: boolean;
   readonly diagnostics: readonly Diagnostic[];
@@ -81,34 +59,7 @@ export interface AssembledSource {
 }
 
 function records(raw: RawRecords): RecordsResult {
-  try {
-    const report = JSON.parse(raw.report()) as RecordReport;
-    const list: CheckedRecord[] = [];
-    for (let index = 0; index < report.records; index++) {
-      const key = raw.key(index), bytes = raw.bytes(index), indexes = raw.indexes(index);
-      if (key === undefined || bytes === undefined) throw new Error("The authoring module omitted a checked record");
-      list.push(indexes === undefined ? { key, bytes } : { key, bytes, indexes: JSON.parse(indexes) as RecordIndexes });
-    }
-    return { complete: report.complete, diagnostics: report.diagnostics, records: list, minted: report.minted };
-  } finally { raw.free(); }
-}
-
-/** Freed handles throw instead of reaching released Wasm memory. */
-abstract class Handle<T extends { free(): void }> {
-  #raw: T | undefined;
-  constructor(raw: T) { this.#raw = raw; }
-  protected get raw(): T {
-    if (!this.#raw) throw new Error("This authoring handle was freed.");
-    return this.#raw;
-  }
-  /** Moves the Rust value out for a consuming call; the wrapper then behaves as freed. */
-  protected take(): T {
-    const raw = this.raw;
-    this.#raw = undefined;
-    return raw;
-  }
-  /** Releases the Wasm memory; idempotent. */
-  free(): void { this.#raw?.free(); this.#raw = undefined; }
+  try { return readRecords(raw); } finally { raw.free(); }
 }
 
 /** A checked, immutable publication: description and objects, retrieved one at a time. */
@@ -166,18 +117,7 @@ export class Publication extends Handle<RawPublication> {
   get handle(): RawPublication { return this.raw; }
 }
 
-/** Program objects of a preview compilation; never a publication. */
-export class Preview extends Handle<RawPreview> {
-  readonly report: PreviewReport;
-  /** @internal */
-  constructor(raw: RawPreview) { super(raw); this.report = JSON.parse(raw.report()) as PreviewReport; }
-  get compiled(): boolean { return this.report.artifact_id != null; }
-  manifest(): Uint8Array | undefined { return this.raw.manifest(); }
-  names(): Uint8Array | undefined { return this.raw.names(); }
-  /** A chunk or tombstone set by `object:<hex>` (the reader's fetchChunk ID) or bare hex. */
-  object(id: string): Uint8Array | undefined { return call(() => this.raw.object(id)); }
-  pack(): Uint8Array { return call(() => this.raw.pack()); }
-}
+export { Preview } from "./shared.js";
 
 export interface PublishResult {
   readonly report: PublishReport;
@@ -215,7 +155,7 @@ export class Drafts extends Handle<RawDrafts> {
   /** Compiles program objects for an immediate preview with the reader's openBook. */
   preview(options: ComposeOptions = {}): Preview {
     const lock = options.lock && JSON.stringify(options.lock);
-    return new Preview(call(() => options.previous ? this.raw.composeAfter(options.previous.handle, lock) : this.raw.compose(lock)));
+    return createAuthoringPreview(call(() => options.previous ? this.raw.composeAfter(options.previous.handle, lock) : this.raw.compose(lock)), call);
   }
   publish(options: ComposeOptions = {}): PublishResult {
     const lock = options.lock && JSON.stringify(options.lock);
@@ -323,23 +263,9 @@ const authoring: Authoring = {
   publicationFromPack: pack => new Publication(call(() => RawPublication.fromPack(pack))),
 };
 
-let initialized: Promise<void> | undefined;
 /** Initializes the authoring module once per JS realm, independently of the reader's module. */
 export function loadAuthoringFrom(source: WasmSource | (() => Promise<WasmSource>)): Promise<Authoring> {
-  if (!initialized) {
-    initialized = (async () => {
-      let input = typeof source === "function" ? await source() : source;
-      const url = input instanceof URL ? input : typeof input === "string" ? new URL(input, import.meta.url) : undefined;
-      if (url?.protocol === "file:") {
-        // A variable specifier keeps browser bundlers from importing a Node-only module.
-        const module = "node:fs/promises";
-        const { readFile }: typeof import("node:fs/promises") = await import(/* @vite-ignore */ module);
-        input = new Uint8Array(await readFile(url));
-      }
-      await init({ module_or_path: input });
-    })().catch(error => { initialized = undefined; throw error; });
-  }
-  return initialized.then(() => authoring);
+  return loadAuthoringWasmFrom(source, import.meta.url).then(() => authoring);
 }
 
 export type {

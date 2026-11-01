@@ -25,7 +25,7 @@ npm("install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", ta
 const installed = join(directory, "node_modules/@rezics/narrata");
 assert.equal(realpathSync(installed), installed, "Installation must be unpacked, not a workspace symlink");
 const manifest = JSON.parse(readFileSync(join(installed, "package.json")));
-assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./vn", "./vn/authoring", "./vn/player", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./reader-map", "./reader-map/react", "./content/native"]);
+assert.deepEqual(Object.keys(manifest.exports), [".", "./reader", "./vn", "./vn/authoring", "./vn/server", "./vn/player", "./authoring", "./server", "./storage", "./react", "./testing", "./graph", "./graph/react", "./reader-map", "./reader-map/react", "./content/native"]);
 assert.deepEqual(manifest.dependencies, { graphology: "0.26.0", sigma: "3.0.3" }, "Only the lazy graph entry uses runtime dependencies");
 assert.deepEqual(manifest.peerDependenciesMeta, { react: { optional: true } });
 assert.equal(existsSync(join(directory, "node_modules/react")), false, "Framework-free hosts must not install React");
@@ -224,7 +224,12 @@ console.log("Installed authoring published A and B in " + mode + ": " + JSON.str
 cpSync(resolve(here, "../../../products/visual-novel-demo/project.json"), join(directory, "vn-project.json"));
 cpSync(resolve(here, "../../../products/visual-novel-demo/packages/main.json"), join(directory, "vn-main.json"));
 cpSync(resolve(here, "../../../products/visual-novel-demo/story.narpack"), join(directory, "vn-host-pack.narpack"));
+cpSync(resolve(here, "../../../products/visual-novel-demo/scripts/publish-lib.mjs"), join(directory, "publish-lib.mjs"));
+mkdirSync(join(directory, "vn-input/packages"), { recursive: true });
+cpSync(join(directory, "vn-project.json"), join(directory, "vn-input/project.json"));
+cpSync(join(directory, "vn-main.json"), join(directory, "vn-input/packages/main.json"));
 const vnMetadata = readFileSync(resolve(here, "../../../examples/visual-novel-web/src/generated/publication.ts"), "utf8");
+writeFileSync(join(directory, "vn-host-publication.ts"), vnMetadata);
 const vnArtifact = vnMetadata.match(/vnDemoArtifactId = "(artifact:[0-9a-f]{64})"/)?.[1];
 if (!vnArtifact) throw new Error("The reference VN artifact metadata is missing its checked identity");
 const vnFolder = vnArtifact.slice("artifact:".length);
@@ -235,22 +240,28 @@ cpSync(join(directory, "vn-project.json"), join(publicDirectory, "vn-project.jso
 cpSync(join(directory, "vn-main.json"), join(publicDirectory, "vn-main.json"));
 writeFileSync(join(directory, "vn-authoring.mjs"), `
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { strict as assert } from "node:assert";
-import { loadVnAuthoring } from "@rezics/narrata/server";
+import { publishReferenceVn } from "./publish-lib.mjs";
 import { openVn } from "@rezics/narrata/vn";
 const mode = process.argv[2];
+const nodeApi = await import("@rezics/narrata/vn/server");
+assert.deepEqual(Object.keys(nodeApi), ["loadVnAuthoring"], "the VN server entry exposes no Gamebook facade");
+assert.equal("loadVnAuthoring" in await import("@rezics/narrata/server"), false, "the Gamebook server entry keeps its original API");
+await assert.rejects(() => nodeApi.loadVnAuthoring(new Uint8Array([0])));
 const api = mode === "browser-entry" ? await (await import("@rezics/narrata/vn/authoring")).loadVnAuthoring()
-  : await loadVnAuthoring();
+  : await nodeApi.loadVnAuthoring();
 const project = JSON.parse(await readFile(new URL("./vn-project.json", import.meta.url), "utf8"));
 const main = JSON.parse(await readFile(new URL("./vn-main.json", import.meta.url), "utf8"));
 const hostPack = new Uint8Array(await readFile(new URL("./vn-host-pack.narpack", import.meta.url)));
 const hostLock = JSON.parse(await readFile(new URL("./vn-host-lock.json", import.meta.url), "utf8"));
 const split = api.splitVnSource(project, [["main", main]]);
-assert.equal(split.report.complete, true);
-assert.deepEqual(split.report.diagnostics.filter(item => item.severity === "error"), []);
+assert.equal(split.complete, true);
+assert.deepEqual(split.diagnostics.filter(item => item.severity === "error"), []);
 const drafts = api.createVnDrafts();
 for (const record of split.records) drafts.add(record.bytes);
-const checked = drafts.check(); assert.equal(checked.report.complete, true); assert.deepEqual(checked.report.diagnostics, []);
+const checked = drafts.check(); assert.equal(checked.complete, true); assert.deepEqual(checked.diagnostics, []);
 const candidate = drafts.preview();
 try {
   assert.equal(candidate.compiled, true);
@@ -272,10 +283,36 @@ try {
     const hex = id.startsWith("object:") ? id.slice(7) : id;
     assert.deepEqual(candidate.object(id), new Uint8Array(await readFile(new URL("./vn-host-objects/" + hex + ".cbor", import.meta.url))));
   }
+  const editedSource = structuredClone(main);
+  editedSource.graphs.start.nodes.river.data.background.revision = "2";
+  const editedSplit = api.splitVnSource(project, [["main", editedSource]]);
+  const editedDrafts = api.createVnDrafts();
+  for (const record of editedSplit.records) editedDrafts.add(record.bytes);
+  assert.equal(editedDrafts.check().diagnostics.some(item => item.severity === "error"), false);
+  const editedCandidate = editedDrafts.preview();
+  try {
+    assert.equal(editedCandidate.compiled, true, "the valid edited snapshot must compile");
+    assert.notEqual(editedCandidate.report.artifact_id, oldArtifact);
+    assert.deepEqual(candidate.pack(), hostPack, "the earlier candidate remains usable after editing");
+  } finally { editedCandidate.free(); editedDrafts.free(); }
   candidate.free(); candidate.free();
   assert.throws(() => candidate.manifest(), /freed/);
   assert.equal(oldArtifact?.startsWith("artifact:"), true);
 } finally { candidate.free(); drafts.free(); }
+drafts.free();
+assert.throws(() => drafts.check(), /freed/);
+const output = fileURLToPath(new URL("./vn-rebuild-" + mode + "/", import.meta.url));
+const built = await publishReferenceVn({ authoring: api, sourceDirectory: fileURLToPath(new URL("./vn-input/", import.meta.url)),
+  packPath: join(output, "story.narpack"), publicStoryDirectory: join(output, "public/story"), generatedPublicationPath: join(output, "publication.ts") });
+assert.equal(built.artifact_id, hostLock.artifact_id);
+assert.deepEqual(built.lock, hostLock);
+assert.deepEqual(built.pack, hostPack);
+assert.deepEqual(await readFile(join(output, "publication.ts"), "utf8"), await readFile(new URL("./vn-host-publication.ts", import.meta.url), "utf8"));
+for (const object of built.objects) {
+  const hex = object.id.slice("object:".length);
+  assert.deepEqual(new Uint8Array(await readFile(join(output, "public/story", built.artifact_id.slice(9), "objects", hex + ".cbor"))),
+    new Uint8Array(await readFile(new URL("./vn-host-objects/" + hex + ".cbor", import.meta.url))));
+}
 console.log("Installed VN authoring candidate passed in " + mode);
 `);
 for (const mode of ["default", "url", "bytes"]) {
@@ -334,14 +371,24 @@ import { author } from "./journey.mjs";
 import { verifyMaps } from "./maps.mjs";
 async function previewVn() {
   const { loadVnAuthoring } = await import("@rezics/narrata/vn/authoring");
+  const { openVn } = await import("@rezics/narrata/vn");
   const api = await loadVnAuthoring();
   const [manifest, source] = await Promise.all([fetch("/vn-project.json").then(response => response.json()), fetch("/vn-main.json").then(response => response.json())]);
   const split = api.splitVnSource(manifest, [["main", source]]);
-  if (!split.report.complete || split.report.diagnostics.some(item => item.severity === "error")) throw new Error("VN source split failed");
+  if (!split.complete || split.diagnostics.some(item => item.severity === "error")) throw new Error("VN source split failed");
   const drafts = api.createVnDrafts(); for (const record of split.records) drafts.add(record.bytes);
   const candidate = drafts.preview();
-  try { return { artifact: candidate.report.artifact_id, lock: candidate.report.lock, objects: candidate.report.objects.length,
-    manifestBytes: candidate.manifest()?.byteLength ?? 0, packBytes: candidate.pack().byteLength }; }
+  try {
+    const pack = candidate.pack();
+    const reader = await openVn({ pack, execution: ${JSON.stringify(execution)} });
+    try {
+      const opened = await reader.inspect();
+      if (opened.view.artifact_id !== candidate.report.artifact_id || opened.view.interaction.kind !== "advance") throw new Error("The VN reader did not open the exact preview candidate");
+      return { artifact: candidate.report.artifact_id, openedArtifact: opened.view.artifact_id, interaction: opened.view.interaction.kind,
+        lock: candidate.report.lock, objects: candidate.report.objects.length,
+        manifestBytes: candidate.manifest()?.byteLength ?? 0, packBytes: pack.byteLength };
+    } finally { await reader.close(); }
+  }
   finally { candidate.free(); drafts.free(); }
 }
 self.onmessage = async () => {
@@ -538,6 +585,8 @@ try {
   const authored = await page.evaluate(() => window.installed.author());
   assert.equal(authored.firstScreen, 1, "Published A's first screen fetches only the entry chunk");
   assert.match(authored.vnPreview.artifact, /^artifact:[0-9a-f]{64}$/);
+  assert.equal(authored.vnPreview.openedArtifact, authored.vnPreview.artifact);
+  assert.equal(authored.vnPreview.interaction, "advance");
   assert.ok(authored.vnPreview.lock && authored.vnPreview.objects > 0 && authored.vnPreview.manifestBytes > 0 && authored.vnPreview.packBytes > 0);
   assert.ok(served.includes("authoring") && !served.includes("compat"), "The Worker loads the authoring Wasm on demand; nothing loads the compatibility module");
   const maintenance = await page.evaluate(() => window.installed.maintenance());

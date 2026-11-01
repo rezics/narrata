@@ -25,6 +25,10 @@
       "types": "./dist/vn/authoring.d.ts",
       "import": "./dist/vn/authoring.js"
     },
+    "./vn/server": {
+      "types": "./dist/vn/server.d.ts",
+      "import": "./dist/vn/server.js"
+    },
     "./vn/player": {
       "types": "./dist/vn/player/index.d.ts",
       "import": "./dist/vn/player/index.js"

@@ -99,19 +99,19 @@ or reader entry.
 ### Visual novel authoring
 
 Load the format-3 authoring facade from `@rezics/narrata/vn/authoring` in a browser Worker, or
-use `loadVnAuthoring` from `@rezics/narrata/server` in Node or Bun. It checks complete VN record
+use `loadVnAuthoring` from `@rezics/narrata/vn/server` in Node or Bun. It checks complete VN record
 sets and compiles a disposable preview candidate; it does not publish or save a reader session.
 The host can serve `manifest()`, `names()` and requested `object("object:<hex>")` bytes directly
 to `openVn`, or keep the exact `pack()` for its own immutable object store.
 
 ```ts
-import { loadVnAuthoring } from "@rezics/narrata/server";
+import { loadVnAuthoring } from "@rezics/narrata/vn/server";
 
 const vn = await loadVnAuthoring();
 const drafts = vn.createVnDrafts();
 for (const record of storedRecords) drafts.add(record);
-const checked = drafts.check(); // Structural records plus complete source-format-3 VN semantics.
-if (checked.report.complete && !checked.report.diagnostics.some(item => item.severity === "error")) {
+const checked = drafts.check(); // Complete source-format-3 VN semantics.
+if (checked.complete && !checked.diagnostics.some(item => item.severity === "error")) {
   const candidate = drafts.preview();
   try {
     if (candidate.compiled) await host.keepPreview({

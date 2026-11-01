@@ -18,11 +18,12 @@ const group = path => modulePath(path).split("/")[0];
 const nativeModules = new Set(["content/native.js", "testing/native-document.js"]);
 const isNativeContent = path => nativeModules.has(modulePath(path));
 // Authoring and server entries, their Wasm glue, generated types and sample; never on a reader route.
-const isAuthoring = path => ["authoring", "maintenance", "server", "authoring-wasm"].includes(group(path)) || ["generated/authoring.js", "testing/authoring.js"].includes(modulePath(path));
+const isSharedAuthoring = path => modulePath(path) === "authoring/shared.js";
+const isAuthoring = path => !isSharedAuthoring(path) && (["authoring", "maintenance", "server", "authoring-wasm"].includes(group(path)) || ["generated/authoring.js", "testing/authoring.js"].includes(modulePath(path)));
 // The versioned VN entry and its generated validator are optional; root/reader keep their
 // Gamebook runtime budget while the complete VN route is measured separately below.
 const isVn = path => group(path) === "vn" || modulePath(path) === "generated/validate-vn-view.js";
-const isVnAuthoring = path => modulePath(path).startsWith("vn/authoring.");
+const isVnAuthoring = path => modulePath(path).startsWith("vn/authoring.") || modulePath(path).startsWith("vn/server.");
 const isVnPlayer = path => modulePath(path).startsWith("vn/player/");
 const isVnReader = path => isVn(path) && !isVnPlayer(path) && !isVnAuthoring(path);
 // The raw dist/wasm module keeps legacy publishGraph; no package entry imports it.
@@ -58,8 +59,9 @@ export const sizes = {
   compatWasm: wasm("wasm/narrata_nodes_wasm_bg.wasm"),
   authoringWasm: wasm("authoring-wasm/narrata_authoring_wasm_bg.wasm"),
   javascript: { raw: ordinary.raw + graph.raw + readerMap.raw, gzip: ordinary.gzip + graph.gzip + readerMap.gzip },
-  runtime: measure(javascript.filter(path => !["react", "testing", "graph"].includes(group(path)) && !isNativeContent(path) && !isAuthoring(path) && !isVn(path) && !isCompat(path))),
+  runtime: measure(javascript.filter(path => !["react", "testing", "graph"].includes(group(path)) && !isNativeContent(path) && !isAuthoring(path) && !isSharedAuthoring(path) && !isVn(path) && !isCompat(path))),
   authoring: measure(javascript.filter(isAuthoring)),
+  authoringShared: measure(javascript.filter(isSharedAuthoring)),
   compat: measure(javascript.filter(isCompat)),
   react: measure(javascript.filter(path => group(path) === "react")),
   testing: measure(javascript.filter(path => group(path) === "testing" && !isNativeContent(path) && !isAuthoring(path))),

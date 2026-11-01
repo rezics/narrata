@@ -2,7 +2,6 @@
 // installed package with no browser globals, working-directory or repository paths.
 import { readFile } from "node:fs/promises";
 import { loadAuthoringFrom, type Authoring, type WasmSource } from "../authoring/core.js";
-import { loadVnAuthoringFrom, type VnAuthoring } from "../vn/authoring.js";
 
 export * from "../authoring/core.js";
 export * from "./relations.js";
@@ -11,9 +10,4 @@ export { PostgresStore, LibraryUnavailable, LibraryQuotaExceeded, SqlStoreFormat
 
 export function loadAuthoring(source?: WasmSource): Promise<Authoring> {
   return loadAuthoringFrom(source ?? (async () => new Uint8Array(await readFile(new URL("../authoring-wasm/narrata_authoring_wasm_bg.wasm", import.meta.url)))));
-}
-
-/** Loads only the explicit format-3 VN authoring facade. */
-export function loadVnAuthoring(source?: WasmSource): Promise<VnAuthoring> {
-  return loadVnAuthoringFrom(source ?? (async () => new Uint8Array(await readFile(new URL("../authoring-wasm/narrata_authoring_wasm_bg.wasm", import.meta.url)))));
 }

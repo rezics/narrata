@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test } from "vitest";
-import { loadVnAuthoring } from "@rezics/narrata/server";
+import { loadVnAuthoring } from "@rezics/narrata/vn/server";
 import { openVn } from "@rezics/narrata/vn";
 import { shortStorySource } from "@rezics/narrata/testing";
 import { execution } from "./fixture.js";
@@ -19,7 +19,7 @@ function drafts(packageSource: unknown = source) {
   const value = api.then(authoring => {
     const drafts = authoring.createVnDrafts();
     const split = authoring.splitVnSource(project, [["main", packageSource]]);
-    if (!split.report.complete || split.report.diagnostics.some(item => item.severity === "error")) throw new Error(JSON.stringify(split.report.diagnostics));
+    if (!split.complete || split.diagnostics.some(item => item.severity === "error")) throw new Error(JSON.stringify(split.diagnostics));
     for (const record of split.records) drafts.add(record.bytes);
     return drafts;
   });
@@ -30,8 +30,8 @@ test("VN source checks and previews one immutable source-format-3 candidate", as
   const authoring = await api;
   const input = await drafts();
   const checked = input.check();
-  expect(checked.report.complete).toBe(true);
-  expect(checked.report.diagnostics).toEqual([]);
+  expect(checked.complete).toBe(true);
+  expect(checked.diagnostics).toEqual([]);
   expect(checked.records.length).toBeGreaterThan(2);
   const candidate = input.preview();
   const repeated = input.preview();
@@ -66,7 +66,7 @@ test("VN source checks and previews one immutable source-format-3 candidate", as
     background.revision = "2";
     const edited = await drafts(changed);
     const editedCheck = edited.check();
-    expect(editedCheck.report.complete).toBe(true);
+    expect(editedCheck.complete).toBe(true);
     const next = edited.preview();
     try {
       expect(next.compiled).toBe(true);
@@ -77,7 +77,7 @@ test("VN source checks and previews one immutable source-format-3 candidate", as
   expect(() => authoring.checkVnRecord(new Uint8Array([0]))).not.toThrow();
   const structural = authoring.checkVnRecord(new TextEncoder().encode(JSON.stringify({ format_version: 1, kind: "project", payload: {} })));
   expect(structural.record).toBeUndefined();
-  expect(structural.report.diagnostics.some(item => item.severity === "error")).toBe(true);
+  expect(structural.diagnostics.some(item => item.severity === "error")).toBe(true);
 });
 
 test("a structurally valid record set with invalid VN semantics cannot compile", async () => {
@@ -89,8 +89,8 @@ test("a structurally valid record set with invalid VN semantics cannot compile",
   const input = await drafts(bad);
   try {
     const check = input.check();
-    expect(check.report.complete).toBe(true);
-    expect(check.report.diagnostics.some(item => item.severity === "error")).toBe(true);
+    expect(check.complete).toBe(true);
+    expect(check.diagnostics.some(item => item.severity === "error")).toBe(true);
     const candidate = input.preview();
     try {
       expect(candidate.compiled).toBe(false);
@@ -106,7 +106,7 @@ test("the VN authoring entry rejects a source-format-2 Gamebook snapshot", async
   const input = authoring.createVnDrafts();
   try {
     for (const record of split.records) input.add(record.bytes);
-    expect(input.check().report.diagnostics.some(item => item.severity === "error")).toBe(true);
+    expect(input.check().diagnostics.some(item => item.severity === "error")).toBe(true);
     const candidate = input.preview();
     try { expect(candidate.compiled).toBe(false); }
     finally { candidate.free(); }
