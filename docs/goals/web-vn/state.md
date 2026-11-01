@@ -18,13 +18,13 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 [G-043](../../../archive/goals/web-vn-2026-10-31/tasks/G-043.md) 的播放器切片已在主线 `b5c8457630177173ea233a569bb0eb5c7f845e8d` 通过 R1、Web、VN、scripts、docs 五项检查：R1 浏览器 28 项，Web 单元 168 项，独立安装 25 项，VN 桌面/手机旅程 13 项；其中 21 项播放器测试覆盖资源与音频生命周期、保存边界和重试。最终桌面、手机及重试截图与已审阅图像逐字节相同。CLI 网络重试后由 manager 保留工作区并完成提交与集成；旧失败与检查记录保留。
 
-固定播放器包为 `0.1.0-alpha.1`，tarball SHA-256 `4c77f0511fe1239c22fc6685e08fa8c84e0ca6e4e6b746abad169eda7861c649`，1,796,713 字节；见 `.temp/delivery/vn-player-release.json`。主线验收记录位于 `.temp/goal/runs/G-043/main-acceptance/b5c8457-retry-audit-tls/`。此包和旧 Gamebook、阅读 API 包身份分别保留，不能互换；播放器 CI 待本次推送后核对。
+固定播放器包为 `0.1.0-alpha.1`，tarball SHA-256 `4c77f0511fe1239c22fc6685e08fa8c84e0ca6e4e6b746abad169eda7861c649`，1,796,713 字节；见 `.temp/delivery/vn-player-release.json`。主线验收记录位于 `.temp/goal/runs/G-043/main-acceptance/b5c8457-retry-audit-tls/`。此包和旧 Gamebook、阅读 API 包身份分别保留，不能互换。
 
 播放器首轮 CI 七项成功，Ubuntu 的音频不可用手机状态因字体度量导致工具栏超界约 3px。`3ae7824` 修正参考 UI 的文字换行，并增加更宽字距的边界覆盖；定向 2 项与完整 VN 13 项本地通过，SDK 固定包未变。[修复后的 CI](https://github.com/rezics/narrata/actions/runs/41292011583)八项成功。
 
 [G-048](../../../archive/goals/web-vn-2026-10-31/tasks/G-048.md) 的依赖 Wasm 接口在 `d71fa706d7179341d1d21ef713604a4c43cf8d22` 通过主线 R1、Web、docs，Node/Bun 实际 Wasm 各回放 8 组新语料，结果逐字节一致；旧语料未改。ADR 0025 和 `vn-dependencies-v1` 冻结格式已建立。该接口仍需在 VN reader 构建显式启用功能开关，并接入公开 TS 和资源准备；未宣称完整 VN2。
 
-[G-047](../../../archive/goals/web-vn-2026-10-31/tasks/G-047.md) 在 `c0d3ddfdd8e46f15a68c4296fb954e2a2def3408` 通过 R1、Web、VN、scripts、docs：171 项包测试、25 项独立安装测试、28 项 R1 浏览器和 13 项 VN 旅程。公开 `./vn/authoring`、`./vn/server` 已验证 Node/Bun 与浏览器的同候选编译和打开，参考发布脚本使用公开入口并复现原构件、对象、lock 和 pack。固定作者 API 切片为 `0.1.0-alpha.1`、SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`，1,815,163 字节；见 `.temp/delivery/vn-authoring-release.json` 和对应主线验收目录。编辑控件仍待实现。
+[G-047](../../../archive/goals/web-vn-2026-10-31/tasks/G-047.md) 在 `c0d3ddfdd8e46f15a68c4296fb954e2a2def3408` 通过 R1、Web、VN、scripts、docs：171 项包测试、25 项独立安装测试、28 项 R1 浏览器和 13 项 VN 旅程。公开 `./vn/authoring`、`./vn/server` 已验证 Node/Bun 与浏览器的同候选编译和打开，参考发布脚本使用公开入口并复现原构件、对象、lock 和 pack。固定作者 API 切片为 `0.1.0-alpha.1`、SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`，1,815,163 字节；见 `.temp/delivery/vn-authoring-release.json` 和对应主线验收目录。编辑控件的验收见下文作者预览记录。
 
 ## 下一步与未交付结果
 
@@ -34,7 +34,7 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 参考宿主源码 `18ea5b3e30f268806bc8cbca18aa7ddd5e6cf8df` 已复制到仓库外，安装上述固定作者 API tarball；检查确认 SDK 实际路径位于独立消费者内。Node/Bun 经公开 `./vn/server` 重新生成相同短篇 pack，实际宿主构建与全部 16 项桌面/手机编辑、播放、保存恢复及失败重试旅程通过。该记录证明当前作者/播放器切片可独立消费，最终候选预加载仍需用最终固定包重跑；见 `.temp/goal/runs/vn-reference-installed/author-preview-baseline-esm/receipt.json`。
 
-编辑预览首轮 [CI](https://github.com/rezics/narrata/actions/runs/41299837049) 的 Ubuntu VN 旅程有 14 项通过、2 项手机工具栏内容溢出失败，作者三项均通过。`27274c1619fc747dcfb280888fcbbad19c0b6c4f` 保留 44px 触控目标，在手机使用带无障碍名称的历史图标，并覆盖 17px 大字号；完整 VN 16 项和仓库外固定包旅程 16 项均再次通过。独立验收还核对 Node/Bun 发布元数据及预览前后全部发布文件哈希一致；见 `.temp/goal/runs/vn-reference-installed/author-preview-mobile-fix/receipt.json`。[修复 CI](https://github.com/rezics/narrata/actions/runs/41301346061) 正在运行。
+编辑预览首轮 [CI](https://github.com/rezics/narrata/actions/runs/41299837049) 的 Ubuntu VN 旅程有 14 项通过、2 项手机工具栏内容溢出失败，作者三项均通过。`27274c1619fc747dcfb280888fcbbad19c0b6c4f` 保留 44px 触控目标，在手机使用带无障碍名称的历史图标，并覆盖 17px 大字号；完整 VN 16 项和仓库外固定包旅程 16 项均再次通过。独立验收还核对 Node/Bun 发布元数据及预览前后全部发布文件哈希一致；见 `.temp/goal/runs/vn-reference-installed/author-preview-mobile-fix/receipt.json`。[修复 CI](https://github.com/rezics/narrata/actions/runs/41301346061) 八项成功。
 
 当前 [G-049](tasks/G-049.md) 正在修正完整有界候选资源准备：冷图块媒体发现、候选资源取消/接管时的释放、加载中资源的预算及完整性状态。最终参考宿主接线、独立安装的编辑/播放/预加载联合旅程和固定包交付仍待完成。
 
