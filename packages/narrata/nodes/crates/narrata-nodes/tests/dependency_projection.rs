@@ -989,7 +989,7 @@ fn the_current_choice_scan_and_queue_stop_at_the_caller_limits() {
     let normal = project(&session);
     assert!(normal.is_complete());
     assert_eq!(wide_lines(&normal), lines(80..120));
-    assert_eq!(normal.work.scans, 120);
+    assert_eq!(normal.work.scans, 121); // the point, then 120 options
     assert_eq!(normal.work.locations, 40);
 
     // A scan bound inside the hidden run stops before any option could contribute: nothing was
@@ -1003,10 +1003,11 @@ fn the_current_choice_scan_and_queue_stop_at_the_caller_limits() {
     assert_eq!(hidden_only.work.locations, 0);
     assert!(hidden_only.content.is_empty());
 
-    // 85 scans: the 80 hidden/disabled ones and exactly the first five enabled routes.
-    let five = session.dependency_projection(limits(256, 85)).unwrap();
-    assert_eq!(five.truncations, vec![Truncation::Scans { limit: 85 }]);
-    assert_eq!(five.work.scans, 85);
+    // 86 scans: the point, the 80 hidden/disabled options and exactly the first five enabled
+    // routes.
+    let five = session.dependency_projection(limits(256, 86)).unwrap();
+    assert_eq!(five.truncations, vec![Truncation::Scans { limit: 86 }]);
+    assert_eq!(five.work.scans, 86);
     assert_eq!(five.work.locations, 5);
     assert_eq!(wide_lines(&five), lines(80..85));
 
@@ -1015,7 +1016,7 @@ fn the_current_choice_scan_and_queue_stop_at_the_caller_limits() {
     let three = session.dependency_projection(limits(3, 1000)).unwrap();
     assert_eq!(three.truncations, vec![Truncation::Locations { limit: 3 }]);
     assert_eq!(three.work.locations, 3);
-    assert_eq!(three.work.scans, 84);
+    assert_eq!(three.work.scans, 85);
     assert_eq!(wide_lines(&three), lines(80..83));
     assert_eq!(
         three,
@@ -1035,12 +1036,12 @@ fn the_scan_bound_also_covers_later_choice_points() {
             .dependency_projection(DependencyLimits::new(256, 8, 1000, 1000, scans).unwrap())
             .unwrap()
     };
-    // Two options now, then the next choice point and its option.
-    let exact = with(4);
+    // The current point, its two options, then the next choice point and its option.
+    let exact = with(5);
     assert!(exact.is_complete());
-    assert_eq!(exact.work.scans, 4);
-    let short = with(3);
-    assert_eq!(short.truncations, vec![Truncation::Scans { limit: 3 }]);
+    assert_eq!(exact.work.scans, 5);
+    let short = with(4);
+    assert_eq!(short.truncations, vec![Truncation::Scans { limit: 4 }]);
     assert!(!content_of(&short).contains(&(ContentRole::ChoiceLabel, "label.onward")));
 }
 
@@ -1086,4 +1087,142 @@ fn unchanged_scene_resources_stay_with_the_view_and_scene_nodes_replace_them_ent
         .find(|dependency| dependency.role == MediaRole::MusicKeep)
         .unwrap();
     assert_eq!(Some(&kept.reference), scene.music.as_ref());
+}
+
+/// `chain`: one passage with 60 optional choice points, then a tail line; the story starts the
+/// passage straight after the second line.
+fn late_choice() -> Compilation {
+    variant(|_, package| {
+        package["graphs"]["start"]["nodes"]["two"]["data"]["next"] = json!("chain");
+        let points: Vec<Value> = (0..60_u32)
+            .map(|index| {
+                let last = index == 59;
+                let outcome = if last {
+                    json!({"kind": "branch", "target": "tail"})
+                } else {
+                    json!({"kind": "local", "reply": segment("chain.body", &format!("r{index}"), &format!("r{index}")),
+                           "rejoin": format!("b{}", index + 1)})
+                };
+                json!({
+                    "id": point(300 + index), "key": format!("p{index}"),
+                    "placement": format!("b{index}"), "min": u32::from(last),
+                    "options": [{
+                        "id": option(300 + index), "key": format!("c{index}"),
+                        "label": content(&format!("label.chain{index}")), "outcome": outcome
+                    }]
+                })
+            })
+            .collect();
+        let nodes = &mut package["graphs"]["start"]["nodes"];
+        nodes["chain"] = plan(
+            40,
+            "narrata.passage",
+            json!({"body": {"unit": content("chain.body")}, "choice_points": points}),
+        );
+        nodes["tail"] = plan(
+            41,
+            "narrata.dialogue",
+            json!({"line": line("line.tail"), "next": "finish"}),
+        );
+    })
+}
+
+#[test]
+fn a_late_current_choice_point_is_found_under_the_scan_budget() {
+    let compilation = late_choice();
+    let (mut session, names) = start(&compilation);
+    advance(&mut session, &names);
+    advance(&mut session, &names);
+    for _ in 0..59 {
+        choose(&mut session, &names, &[]);
+    }
+    let with = |scans| {
+        session
+            .dependency_projection(DependencyLimits::new(256, 8, 1000, 1000, scans).unwrap())
+            .unwrap()
+    };
+    // The point is the sixtieth: 60 points looked up, then its one option.
+    let whole = with(61);
+    assert!(whole.is_complete());
+    assert_eq!(whole.work.scans, 61);
+    assert_eq!(
+        content_of(&whole),
+        expected(&[(ContentRole::DialogueLine, "line.tail")])
+    );
+    // A tiny budget stops inside the lookup: a truncation with no references, not an error and
+    // not an invalid state, and no more points examined than the budget allows.
+    let tiny = with(5);
+    assert_eq!(tiny.truncations, vec![Truncation::Scans { limit: 5 }]);
+    assert_eq!(tiny.work.scans, 5);
+    assert!(tiny.content.is_empty() && tiny.media.is_empty());
+    // Found on the last unit of budget, but nothing is left for its option.
+    let found = with(60);
+    assert_eq!(found.truncations, vec![Truncation::Scans { limit: 60 }]);
+    assert!(found.content.is_empty());
+}
+
+#[test]
+fn proposed_options_and_passages_are_chained_in_order_under_the_scan_budget() {
+    let compilation = variant(|_, package| {
+        package["graphs"]["start"]["nodes"]["ask"]["data"]["choice_points"][0]["proposals"] =
+            json!(true);
+    });
+    let (mut session, names) = start(&compilation);
+    at_ask(&mut session, &names);
+    let generated = |key: &str| json!({"provider": "gen", "key": key});
+    let request: narrata_nodes::ProposalRequest = serde_json::from_value(json!({
+        "choice_point": point(1),
+        "options": [
+            // Appended after the four own options, in this order; the first reaches the
+            // `secret` line, which no own option offers.
+            {"label": generated("prop.a"), "outcome": {"kind": "branch", "target": node(8)}},
+            {"label": generated("prop.b"), "outcome": {"kind": "branch", "target": "extra"}}
+        ],
+        "nodes": [{
+            "key": "extra",
+            "title": generated("extra.title"),
+            "body": {"unit": generated("extra.body")},
+            "choice_points": [{"options": [
+                {"label": generated("extra.label"), "outcome": {"kind": "branch", "target": node(9)}}
+            ]}]
+        }]
+    }))
+    .unwrap();
+    let cursor = session.cursor().unwrap();
+    session.propose(&cursor, &request).unwrap();
+    let with = |scans| {
+        session
+            .dependency_projection(DependencyLimits::new(256, 8, 1000, 1000, scans).unwrap())
+            .unwrap()
+    };
+
+    // The point, four own options and two proposed ones, then the proposed passage's point and
+    // its one option when it is entered.
+    let whole = with(100);
+    assert!(whole.is_complete());
+    assert_eq!(whole.work.scans, 7 + 2);
+    assert!(whole.unknowns.contains(&Unknown::HostProposals));
+    let content = content_of(&whole);
+    assert!(content.contains(&(ContentRole::DialogueLine, "line.secret")));
+    // The proposed passage is entered from its overlay: title, body and its own option label.
+    for entry in [
+        (ContentRole::PassageTitle, "extra.title"),
+        (ContentRole::PassageBody, "extra.body"),
+        (ContentRole::ChoiceLabel, "extra.label"),
+    ] {
+        assert!(content.contains(&entry), "{entry:?}");
+    }
+
+    // Own options come first: with the point and four own options paid for, the first
+    // proposed option is reached but not the second.
+    let first_only = with(6);
+    assert_eq!(first_only.truncations, vec![Truncation::Scans { limit: 6 }]);
+    assert_eq!(first_only.work.scans, 6);
+    assert!(content_of(&first_only).contains(&(ContentRole::DialogueLine, "line.secret")));
+    assert!(!content_of(&first_only).contains(&(ContentRole::PassageTitle, "extra.title")));
+
+    // Not even the proposed options are reached before the own ones are paid for.
+    let own_only = with(5);
+    assert_eq!(own_only.work.scans, 5);
+    assert!(!content_of(&own_only).contains(&(ContentRole::DialogueLine, "line.secret")));
 }

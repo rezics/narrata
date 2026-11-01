@@ -49,7 +49,6 @@
 //! [`DependencyProjection::unknowns`]; it describes how conservative a complete result is.
 
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
 };
@@ -57,10 +56,12 @@ use std::{
 use narrata_kernel::content::ContentRef;
 
 use crate::{
-    ArtifactId, CommitId, Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, ObjectId, Program, Result,
-    State,
+    ArtifactId, ChoicePointId, CommitId, Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, ObjectId,
+    Program, Result, State,
     expr::Values,
-    plan::{ChoicePoint, Graph, GraphRef, MediaRef, MusicAction, Outcome, Passage, Plan},
+    plan::{
+        ChoicePoint, Graph, GraphRef, MediaRef, MusicAction, OptionPlan, Outcome, Passage, Plan,
+    },
 };
 
 /// Checked bounds of one projection. Every limit is at least one, except `graphs`, where zero
@@ -87,8 +88,10 @@ impl DependencyLimits {
     /// * `graphs`: graphs loaded beyond those the current frames already hold.
     /// * `candidates`: references considered, counting repeats.
     /// * `references`: distinct graph, content and media references returned.
-    /// * `scans`: options and choice points examined, whatever their visibility, before their
-    ///   conditions are evaluated or their targets queued.
+    /// * `scans`: choice points and options examined, whatever their visibility, before their
+    ///   conditions are evaluated or their targets queued. Finding the current choice point in
+    ///   its passage costs one per point passed, and a point's proposed options are examined
+    ///   after its own, one each; no passage is copied or composed first.
     pub fn new(
         locations: u32,
         graphs: u32,
@@ -326,22 +329,40 @@ struct Visit {
     key: Key,
 }
 
-fn plan_at<'g>(state: &State, graph: &'g Graph, place: &Place) -> Option<Cow<'g, Plan>> {
-    match place.frame.and_then(|index| state.frames.get(index)) {
-        Some(frame) => frame.overlay.plan(graph, &place.node),
-        None => graph.nodes.get(&place.node).map(Cow::Borrowed),
-    }
+/// A node as the checked program or a frame's proposals define it, borrowed. Nothing is cloned
+/// or composed here: a passage's appended options are chained lazily by [`options`], under the
+/// scan budget of whoever iterates them.
+enum Node<'x> {
+    Plan(&'x Plan),
+    Proposed(&'x Passage),
 }
 
-/// Whether the reader certainly acts at `point`: the runtime only skips a point that may choose
-/// nothing when no option is available, and an unconditional option always is.
-fn appears_surely(point: &ChoicePoint) -> bool {
-    point.min > 0
-        || point.proposals
-        || point
-            .options
-            .iter()
-            .any(|option| option.visible_if.is_none() && option.enabled_if.is_none())
+type Appended = BTreeMap<ChoicePointId, Vec<OptionPlan>>;
+
+fn node_at<'x>(state: &'x State, graph: &'x Graph, place: &Place) -> Option<Node<'x>> {
+    graph.nodes.get(&place.node).map(Node::Plan).or_else(|| {
+        let frame = state.frames.get(place.frame?)?;
+        frame.overlay.nodes.get(&place.node).map(Node::Proposed)
+    })
+}
+
+/// The options proposed in the frame of `place`, by choice point.
+fn appended<'x>(state: &'x State, place: &Place) -> Option<&'x Appended> {
+    let frame = state.frames.get(place.frame?)?;
+    Some(&frame.overlay.options)
+}
+
+/// The options of `point` in order: its own, then the proposed ones appended to it.
+fn options<'x>(
+    appended: Option<&'x Appended>,
+    point: &'x ChoicePoint,
+) -> impl Iterator<Item = &'x OptionPlan> + 'x {
+    point.options.iter().chain(
+        appended
+            .and_then(|appended| appended.get(&point.id))
+            .into_iter()
+            .flatten(),
+    )
 }
 
 /// Computes the projection of the checked `state`, which must be the current state of the
@@ -482,44 +503,55 @@ impl Walker<'_> {
         let music = state.scene.as_ref().and_then(|scene| scene.music.clone());
         let graph = self.program.graph(&frame.graph)?;
         self.graphs.insert(frame.graph.clone(), Some(graph.clone()));
-        let plan = frame
-            .overlay
-            .plan(&graph, &frame.node)
-            .ok_or_else(|| Error::new("state", "dependencies", "unknown current node"))?;
-        match &*plan {
-            Plan::Dialogue { next, .. } => {
+        let top = base
+            .last()
+            .ok_or_else(|| Error::new("state", "dependencies", "no frame"))?;
+        let passage = match node_at(state, &graph, top) {
+            Some(Node::Plan(Plan::Dialogue { next, .. })) => {
                 self.continue_at(None, &base, &music, *next);
-                Ok(())
+                return Ok(());
             }
-            Plan::Passage(passage) => {
-                let (index, point) = passage
-                    .choice_points
-                    .iter()
-                    .enumerate()
-                    .find(|(_, point)| Some(point.id) == frame.at)
-                    .ok_or_else(|| Error::new("state", "dependencies", "no choice point"))?;
-                let values = Values {
-                    parameters: &frame.parameters,
-                    locals: &frame.locals,
-                    shared: &state.shared,
-                };
-                self.seed_choice(&base, &music, passage, index, point, &values)
+            Some(Node::Plan(Plan::Passage(passage)) | Node::Proposed(passage)) => passage,
+            Some(Node::Plan(_)) => {
+                return Err(Error::new("state", "dependencies", "not at an interaction"));
             }
-            _ => Err(Error::new("state", "dependencies", "not at an interaction")),
+            None => return Err(Error::new("state", "dependencies", "unknown current node")),
+        };
+        // The current point is looked up under the scan budget too: a safe point late in
+        // a passage must not cost a scan of all its choice points. Running out of budget
+        // is a truncation, not an invalid state.
+        let mut found = None;
+        for (index, point) in passage.choice_points.iter().enumerate() {
+            if !self.scan() {
+                return Ok(());
+            }
+            if Some(point.id) == frame.at {
+                found = Some((index, point));
+                break;
+            }
         }
+        let (index, point) =
+            found.ok_or_else(|| Error::new("state", "dependencies", "no choice point"))?;
+        let values = Values {
+            parameters: &frame.parameters,
+            locals: &frame.locals,
+            shared: &state.shared,
+        };
+        let extra = appended(state, top);
+        self.seed_choice(&base, &music, (passage, extra), index, point, &values)
     }
 
     fn seed_choice(
         &mut self,
         base: &[Place],
         music: &Option<MediaRef>,
-        passage: &Passage,
+        (passage, extra): (&Passage, Option<&Appended>),
         index: usize,
         point: &ChoicePoint,
         values: &Values<'_>,
     ) -> Result<()> {
         let rejoins = |point: &ChoicePoint| {
-            point.options.first().is_some_and(|option| {
+            options(extra, point).next().is_some_and(|option| {
                 matches!(
                     &option.outcome,
                     Outcome::Local {
@@ -535,7 +567,7 @@ impl Walker<'_> {
         // Choosing nothing is possible when `min` is zero; it follows the first option's rejoin.
         let mut local = point.min == 0;
         let mut rejoin = point.min == 0 && rejoins(point);
-        for option in &point.options {
+        for option in options(extra, point) {
             // Charged before the option's conditions are evaluated, hidden or not.
             if !self.scan() {
                 return Ok(());
@@ -585,7 +617,7 @@ impl Walker<'_> {
             if rejoin && let Some(body) = &passage.body {
                 self.note_content(ContentRole::PassageBody, &body.unit);
             }
-            self.arrive(None, base, music, passage, false, index + 1);
+            self.arrive(None, base, music, (passage, extra), false, index + 1);
         }
         Ok(())
     }
@@ -671,17 +703,27 @@ impl Walker<'_> {
             return;
         };
         let state = self.state;
-        let Some(plan) = plan_at(state, &graph, top) else {
-            self.truncate(Truncation::Unresolved {
-                graph: top.graph.clone(),
-                node: Some(top.node),
-                error: Error::new("state", top.node.to_string(), "unknown checked node"),
-            });
-            return;
-        };
         let parent = Some(index);
-        match &*plan {
-            Plan::Passage(passage) => self.arrive(parent, &stack, &music, passage, true, 0),
+        let extra = appended(state, top);
+        let plan = match node_at(state, &graph, top) {
+            Some(Node::Plan(plan)) => plan,
+            Some(Node::Proposed(passage)) => {
+                self.arrive(parent, &stack, &music, (passage, extra), true, 0);
+                return;
+            }
+            None => {
+                self.truncate(Truncation::Unresolved {
+                    graph: top.graph.clone(),
+                    node: Some(top.node),
+                    error: Error::new("state", top.node.to_string(), "unknown checked node"),
+                });
+                return;
+            }
+        };
+        match plan {
+            Plan::Passage(passage) => {
+                self.arrive(parent, &stack, &music, (passage, extra), true, 0);
+            }
             Plan::Dialogue {
                 speaker,
                 line,
@@ -809,8 +851,10 @@ impl Walker<'_> {
                 let Some(graph) = self.graph(&caller.graph) else {
                     return;
                 };
-                let resumed = match plan_at(state, &graph, caller).as_deref() {
-                    Some(Plan::Call { on_return, .. }) => on_return.get(outcome).copied(),
+                let resumed = match node_at(state, &graph, caller) {
+                    Some(Node::Plan(Plan::Call { on_return, .. })) => {
+                        on_return.get(outcome).copied()
+                    }
                     _ => None,
                 };
                 match resumed {
@@ -833,7 +877,7 @@ impl Walker<'_> {
         parent: Option<usize>,
         stack: &[Place],
         music: &Option<MediaRef>,
-        passage: &Passage,
+        (passage, extra): (&Passage, Option<&Appended>),
         header: bool,
         first_point: usize,
     ) {
@@ -852,12 +896,18 @@ impl Walker<'_> {
             if point.proposals {
                 self.unknowns.insert(Unknown::HostProposals);
             }
-            for option in &point.options {
+            // The reader certainly acts here when the point must be answered or offers an
+            // unconditional option (the runtime only skips a point that may choose nothing when
+            // none is available).
+            let mut surely = point.min > 0 || point.proposals;
+            for option in options(extra, point) {
                 if !self.scan() {
                     return;
                 }
                 if option.visible_if.is_some() || option.enabled_if.is_some() {
                     self.unknowns.insert(Unknown::Conditions);
+                } else {
+                    surely = true;
                 }
                 if let Some(label) = &option.label {
                     self.note_content(ContentRole::ChoiceLabel, label);
@@ -866,7 +916,7 @@ impl Walker<'_> {
                     self.note_content(ContentRole::ChoiceReason, reason);
                 }
             }
-            if appears_surely(point) {
+            if surely {
                 return;
             }
         }
