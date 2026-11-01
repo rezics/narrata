@@ -22,9 +22,9 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 播放器首轮 CI 七项成功，Ubuntu 的音频不可用手机状态因字体度量导致工具栏超界约 3px。`3ae7824` 修正参考 UI 的文字换行，并增加更宽字距的边界覆盖；定向 2 项与完整 VN 13 项本地通过，SDK 固定包未变。[修复后的 CI](https://github.com/rezics/narrata/actions/runs/41292011583)八项成功。
 
-[G-048](tasks/G-048.md) 的依赖 Wasm 接口在 `d71fa706d7179341d1d21ef713604a4c43cf8d22` 通过主线 R1、Web、docs，Node/Bun 实际 Wasm 各回放 8 组新语料，结果逐字节一致；旧语料未改。ADR 0025 和 `vn-dependencies-v1` 冻结格式已建立。该接口仍需在 VN reader 构建显式启用功能开关，并接入公开 TS 和资源准备；未宣称完整 VN2。
+[G-048](../../../archive/goals/web-vn-2026-10-31/tasks/G-048.md) 的依赖 Wasm 接口在 `d71fa706d7179341d1d21ef713604a4c43cf8d22` 通过主线 R1、Web、docs，Node/Bun 实际 Wasm 各回放 8 组新语料，结果逐字节一致；旧语料未改。ADR 0025 和 `vn-dependencies-v1` 冻结格式已建立。该接口仍需在 VN reader 构建显式启用功能开关，并接入公开 TS 和资源准备；未宣称完整 VN2。
 
-[G-047](tasks/G-047.md) 在 `c0d3ddfdd8e46f15a68c4296fb954e2a2def3408` 通过 R1、Web、VN、scripts、docs：171 项包测试、25 项独立安装测试、28 项 R1 浏览器和 13 项 VN 旅程。公开 `./vn/authoring`、`./vn/server` 已验证 Node/Bun 与浏览器的同候选编译和打开，参考发布脚本使用公开入口并复现原构件、对象、lock 和 pack。固定作者 API 切片为 `0.1.0-alpha.1`、SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`，1,815,163 字节；见 `.temp/delivery/vn-authoring-release.json` 和对应主线验收目录。编辑控件仍待实现。
+[G-047](../../../archive/goals/web-vn-2026-10-31/tasks/G-047.md) 在 `c0d3ddfdd8e46f15a68c4296fb954e2a2def3408` 通过 R1、Web、VN、scripts、docs：171 项包测试、25 项独立安装测试、28 项 R1 浏览器和 13 项 VN 旅程。公开 `./vn/authoring`、`./vn/server` 已验证 Node/Bun 与浏览器的同候选编译和打开，参考发布脚本使用公开入口并复现原构件、对象、lock 和 pack。固定作者 API 切片为 `0.1.0-alpha.1`、SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`，1,815,163 字节；见 `.temp/delivery/vn-authoring-release.json` 和对应主线验收目录。编辑控件仍待实现。
 
 ## 下一步与未交付结果
 
