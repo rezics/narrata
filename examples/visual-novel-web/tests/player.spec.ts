@@ -182,6 +182,10 @@ test("390 by 844 keeps audio-unavailable copy and its retry control inside the s
     const retrySound = page.getByRole("button", { name: "Retry sound" });
     await expect(retrySound).toBeEnabled();
     await expectToolbarControlsFit(page, 390, 844);
+    await page.locator(".player-toolbar").evaluate(toolbar => {
+      toolbar.style.letterSpacing = "0.06em";
+    });
+    await expectToolbarControlsFit(page, 390, 844);
 
     const status = await page.locator(".audio-status").boundingBox();
     const continueButton = await page.getByRole("button", { name: "Continue dialogue" }).boundingBox();

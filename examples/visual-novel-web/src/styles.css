@@ -601,6 +601,9 @@ button:disabled {
   .switch > span { width: 18px; height: 18px; }
   .sound-control.is-on .switch > span { transform: translateX(18px); }
   .sound-control .switch { display: none; }
+  .sound-control { min-width: 0; }
+  .sound-control > svg { flex-shrink: 0; }
+  .sound-control > span:not(.switch) { min-width: 0; white-space: normal; text-align: left; }
 
   .dialogue-panel {
     min-height: 25%;
