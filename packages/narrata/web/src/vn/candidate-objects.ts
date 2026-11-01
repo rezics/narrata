@@ -15,6 +15,7 @@ export class CandidateObjects implements PreparedProgramSource {
   private preparedGeneration = 0;
   private preparedRequestCount = 0;
   private preparedFetchedBytes = 0;
+  private reservedFetchBytes = 0;
   private readonly optionalOperations = new Set<AbortController>();
   private activeOptionalRequests = 0;
   private readonly optionalWaiters: Array<{
@@ -88,7 +89,6 @@ export class CandidateObjects implements PreparedProgramSource {
             outcomes.set(id, "corrupt");
             continue;
           }
-          this.preparedFetchedBytes += bytes.byteLength;
           if (bytes.byteLength < 1 || bytes.byteLength > 8 * 1024 * 1024
             || this.preparedFetchedBytes > 64 * 1024 * 1024 || this.preparedBytes + bytes.byteLength > 16 * 1024 * 1024) {
             outcomes.set(id, "budget");
@@ -98,8 +98,8 @@ export class CandidateObjects implements PreparedProgramSource {
           this.preparedObjects.set(key, { bytes: bytes.slice(), status: "fetched" });
           this.preparedBytes += bytes.byteLength;
           inserted.add(key);
-        } catch {
-          outcomes.set(id, operationSignal.aborted ? "cancelled" : "unavailable");
+        } catch (error) {
+          outcomes.set(id, operationSignal.aborted ? "cancelled" : error instanceof CandidateByteBudgetError ? "budget" : "unavailable");
         }
       }
     };
@@ -150,17 +150,34 @@ export class CandidateObjects implements PreparedProgramSource {
 
   private async fetchOptional(loader: (id: string, signal?: AbortSignal) => Promise<Uint8Array>, id: string, signal: AbortSignal): Promise<Uint8Array> {
     const release = await this.acquireOptional(signal);
+    const reserved = 8 * 1024 * 1024;
+    if (signal.aborted) {
+      release();
+      throw new DOMException("Optional program preparation was cancelled.", "AbortError");
+    }
+    // The host does not supply sizes in advance. Reserve the per-object maximum so
+    // concurrent, duplicate and cancelled requests cannot spend the same byte credit.
+    if (this.preparedFetchedBytes + this.reservedFetchBytes + reserved > 64 * 1024 * 1024) {
+      release();
+      throw new CandidateByteBudgetError("Optional program requests exceed their cumulative byte budget.");
+    }
+    this.reservedFetchBytes += reserved;
     let loading: Promise<Uint8Array> | undefined;
     let released = false;
-    const releaseOnce = () => { if (released) return; released = true; release(); };
+    const settle = (bytes?: Uint8Array) => {
+      if (released) return;
+      released = true;
+      this.reservedFetchBytes -= reserved;
+      if (bytes instanceof Uint8Array) this.preparedFetchedBytes += bytes.byteLength;
+      release();
+    };
     try {
-      loading = Promise.resolve(loader(id, signal));
-      const bytes = await raceAbort(loading, signal);
-      releaseOnce();
-      return bytes;
+      loading = Promise.resolve(loader(id, signal)).then(bytes => { settle(bytes); return bytes; }, error => { settle(); throw error; });
+      return await raceAbort(loading, signal);
     } catch (error) {
-      if (signal.aborted && loading) void loading.then(releaseOnce, releaseOnce);
-      else releaseOnce();
+      // A cancelled caller stops waiting, but its host request keeps the reservation
+      // and the concurrency slot until the original promise actually settles.
+      if (!loading) settle();
       throw error;
     }
   }
@@ -222,6 +239,8 @@ export class CandidateObjects implements PreparedProgramSource {
     if (this.closed) throw new Error(this.closedMessage);
   }
 }
+
+class CandidateByteBudgetError extends Error {}
 
 function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
