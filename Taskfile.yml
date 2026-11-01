@@ -63,6 +63,9 @@ tasks:
     desc: Compile the host-owned VN source and write its immutable public objects
     deps: [web:build]
     cmds: [node products/visual-novel-demo/scripts/publish.mjs]
+  vn:verify-installed:
+    desc: Copy the tracked VN reference host, install a fixed SDK tarball, and record Node/Bun/Chromium evidence
+    cmds: ['node examples/visual-novel-web/scripts/verify-installed-reference.mjs {{.CLI_ARGS}}']
   bench:g2:
     desc: Persistence and kernel benchmarks
     cmds: [pwsh -NoProfile -File scripts/benchmark-g2.ps1]

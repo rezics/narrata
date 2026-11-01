@@ -1,8 +1,12 @@
+import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { loadVnAuthoring } from "@rezics/narrata/vn/server";
+import type { DemoCandidateTransfer, DemoContentDraft, DemoMediaOverride } from "../src/player-host.js";
 
 const screenshots = resolve(import.meta.dirname, "../../../.temp/goal/runs/vn-authoring/screenshots");
+const evidenceDirectory = resolve(import.meta.dirname, "../../../.temp/goal/runs/vn-authoring");
 
 async function startAuthoring(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height });
@@ -33,6 +37,78 @@ async function formalState(page: Page) {
   }));
 }
 
+async function waitForCandidatePreparation(page: Page) {
+  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("complete");
+}
+
+async function buildNewPublicationCandidate(): Promise<DemoCandidateTransfer> {
+  const productDirectory = resolve(import.meta.dirname, "../../../products/visual-novel-demo");
+  const manifest = asRecord(JSON.parse(await readFile(join(productDirectory, "project.json"), "utf8")) as unknown);
+  const product = asRecord(manifest["product"]);
+  const entry = asRecord(product["entry"]);
+  const alias = entry["package"];
+  if (typeof alias !== "string") throw new Error("The reference VN project has no entry package.");
+  const packages = asRecord(manifest["packages"]);
+  const packagePath = packages[alias];
+  if (typeof packagePath !== "string") throw new Error("The reference VN project has no source package.");
+  const source = asRecord(JSON.parse(await readFile(resolve(productDirectory, packagePath), "utf8")) as unknown);
+
+  const graphs = asRecord(source["graphs"]);
+  const start = asRecord(graphs["start"]);
+  const startNodes = asRecord(start["nodes"]);
+  const opening = asRecord(startNodes["mira-opening"]);
+  const openingData = asRecord(opening["data"]);
+  const line = asRecord(openingData["line"]);
+  const contentUnit = asRecord(line["unit"]);
+  contentUnit["key"] = "dialogue.mira.opening.b";
+
+  const narrow = asRecord(graphs["narrow"]);
+  const narrowNodes = asRecord(narrow["nodes"]);
+  const scene = asRecord(narrowNodes["scene"]);
+  const sceneData = asRecord(scene["data"]);
+  const background = asRecord(sceneData["background"]);
+  background["revision"] = "2";
+
+  const authoring = await loadVnAuthoring();
+  const split = authoring.splitVnSource(manifest, [[alias, source]]);
+  if (!split.complete || split.diagnostics.some(item => item.severity === "error")) {
+    throw new Error(`The in-memory publication candidate did not validate: ${JSON.stringify(split.diagnostics)}`);
+  }
+  const drafts = authoring.createVnDrafts();
+  let candidate: ReturnType<typeof drafts.preview> | undefined;
+  try {
+    for (const record of split.records) drafts.add(record.bytes);
+    const checked = drafts.check();
+    if (!checked.complete || checked.diagnostics.some(item => item.severity === "error")) {
+      throw new Error(`The in-memory publication candidate did not compile: ${JSON.stringify(checked.diagnostics)}`);
+    }
+    candidate = drafts.preview();
+    const artifactId = candidate.report.artifact_id;
+    const manifestBytes = candidate.manifest();
+    if (!candidate.compiled || !artifactId || !manifestBytes) throw new Error("The in-memory publication candidate is incomplete.");
+    const pack = candidate.pack();
+    const objects = candidate.report.objects.map(id => {
+      const bytes = candidate?.object(id);
+      if (!bytes) throw new Error(`The in-memory publication omitted ${id}.`);
+      return { id, bytes: Array.from(bytes) };
+    });
+    return {
+      artifactId,
+      manifest: Array.from(manifestBytes),
+      objects,
+      publication: { bytes: pack.byteLength, sha256: createHash("sha256").update(pack).digest("hex") },
+    };
+  } finally {
+    candidate?.free();
+    drafts.free();
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("The reference VN source has an unexpected shape.");
+  return value as Record<string, unknown>;
+}
+
 async function authorSnapshot(page: Page) {
   return page.evaluate(() => ({
     artifact: window.__vnAuthorHooks?.candidate(),
@@ -57,8 +133,12 @@ async function playNarrowBranchToEnding(page: Page) {
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await waitForCandidatePreparation(page);
+  const prepared = await page.evaluate(() => window.__vnTestHooks?.metrics.mediaRequests.filter(item => item.key === "background/old-hall").length);
+  expect(prepared).toBe(1);
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
   await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.__vnTestHooks?.metrics.mediaRequests.filter(item => item.key === "background/old-hall").length)).toBe(1);
   await capture(page, "desktop-branch.png");
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByText("We found the same door from different sides.", { exact: true })).toBeVisible();
@@ -108,6 +188,59 @@ test("desktop author preview edits host content, plays a branch, recovers, and p
   await expect(page.getByRole("heading", { name: "Edit the opening" })).toBeVisible();
   await expect(page.locator(".dialogue-copy")).toHaveText("The last train is already gone.");
   await capture(page, "desktop-reopened.png");
+});
+
+test("running publication A stays pinned while public pack B starts under its own identity", async ({ page }) => {
+  await openPlayer(page);
+  const original = await currentView(page);
+  const originalArtifact = original.view.artifact_id;
+  const candidate = await buildNewPublicationCandidate();
+  expect(candidate.artifactId).not.toBe(originalArtifact);
+  expect(candidate.publication.bytes).toBeGreaterThan(0);
+  expect(candidate.publication.sha256).toMatch(/^[0-9a-f]{64}$/);
+
+  const contentDrafts: readonly (readonly [string, DemoContentDraft])[] = [["dialogue.mira.opening.b", {
+    text: "The new published version starts at the river.",
+    revision: "revision-b",
+  }]];
+  const mediaOverrides: readonly DemoMediaOverride[] = [{
+    kind: "image",
+    provider: "demo",
+    key: "background/old-hall",
+    revision: "2",
+    path: "/assets/old-hall-interior.png",
+    mimeType: "image/png",
+    width: 1586,
+    height: 992,
+  }];
+  const publishedB = await page.evaluate(async input => {
+    const hooks = window.__vnTestHooks;
+    if (!hooks) throw new Error("The VN publication probe is unavailable.");
+    return hooks.inspectCandidate(input.candidate, input.contentDrafts, input.mediaOverrides);
+  }, { candidate, contentDrafts, mediaOverrides });
+  expect(publishedB.artifactId).toBe(candidate.artifactId);
+  expect(publishedB.artifactId).not.toBe(originalArtifact);
+  expect(publishedB.firstText).toBe("The new published version starts at the river.");
+  expect(publishedB.atChoice).toBe(true);
+  expect(publishedB.metrics.logicalRequests.every(item => item.artifact === candidate.artifactId)).toBe(true);
+  expect(publishedB.metrics.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.status])).toEqual([["2", "available"]]);
+  expect(publishedB.metrics.mediaDecodes.some(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "2")).toBe(true);
+  await mkdir(evidenceDirectory, { recursive: true });
+  await writeFile(join(evidenceDirectory, "publication-b-metrics.json"), `${JSON.stringify({
+    artifactId: publishedB.artifactId,
+    firstText: publishedB.firstText,
+    candidateStatus: publishedB.candidateStatus,
+    metrics: publishedB.metrics,
+  }, null, 2)}\n`);
+
+  await toChoice(page);
+  await waitForCandidatePreparation(page);
+  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  const originalMetrics = await page.evaluate(() => window.__vnTestHooks?.metrics);
+  expect(originalMetrics?.logicalRequests.length).toBeGreaterThan(1);
+  expect(originalMetrics?.logicalRequests.every(item => item.artifact === originalArtifact)).toBe(true);
+  expect(originalMetrics?.mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.revision)).toEqual(["1"]);
 });
 
 test("390px author preview stays usable, discards a late candidate, and recovers from resource failure", async ({ page }) => {
@@ -164,10 +297,12 @@ test("390px author preview stays usable, discards a late candidate, and recovers
   await expect(page.locator(".dialogue-copy")).toHaveText("The mobile draft is ready for another preview.");
   await page.getByRole("button", { name: "Hide" }).click();
   await expect(page.getByRole("button", { name: "Edit draft" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await waitForCandidatePreparation(page);
+  await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
   await page.route("**/assets/old-hall-interior.png", route => route.abort());
-  await page.getByRole("button", { name: "Continue dialogue" }).click();
-  await page.getByRole("button", { name: "Continue dialogue" }).click();
-  await page.getByRole("button", { name: "Continue dialogue" }).click();
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Scene unavailable" })).toBeVisible();
   await capture(page, "phone-resource-unavailable.png");

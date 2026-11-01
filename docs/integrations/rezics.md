@@ -148,7 +148,11 @@ REZICS 侧需保留每个历史构件的精确清单、程序块，以及随发�
 
 播放端从 `@rezics/narrata/vn/player` 创建协调器，宿主提供内容、媒体解析与呈现适配；参考实现位于 `examples/visual-novel-web/`。协调器借用 reader，关闭呈现只释放呈现资源，不代表存档已确认；写入结果未知时先通过原 reader 核实/重试，再结束 reader 生命周期。场景资源重试不重复叙事输入。
 
-需要作者入口时，使用作者 API 切片：`0.1.0-alpha.1`、[源码 c0d3ddfdd8e46f15a68c4296fb954e2a2def3408](https://github.com/rezics/narrata/tree/c0d3ddfdd8e46f15a68c4296fb954e2a2def3408)、tarball SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`。它提供浏览器 `@rezics/narrata/vn/authoring` 和 Node/Bun `@rezics/narrata/vn/server` 的同候选校验、编译和不可变对象导出；具体调用见[包说明](../../packages/narrata/web/README.md)。预览不写正式发布指针或读者存档，媒体和正文仍由宿主解析；该包与上文播放器历史切片身份分别保留。实际编辑预览和完整 VN2/VN3 交付仍待完成。REZICS 专用实现仍只列为本页能力请求；七项 Gamebook 请求仍为“提出”，npm registry 尚未发布，真实联合验收尚未执行。
+参考 reader 关闭自动候选准备，先只取入口所需图块、当前画面和 reader；抵达选择点后才以显式逻辑/媒体上限调用 `retryCandidates()`。宿主从类型化角色提示选择变体，并让当前画面与候选资源走同一个解码辅助函数；候选音轨只解码、不播放。相同授权上下文、角色、不可变媒体修订和变体可复用呈现 lease；上下文、授权或 viewport 改变时取消旧工作并释放候选缓存。部分候选结果不会阻止可用路线继续，资源重试只重做呈现。
+
+最终 VN reference-host 消费包固定为版本 `0.1.0-alpha.1`、源码 `2745b876a66d079ff8ecd573239c27e8fb3a1d3e`、SHA-256 `2fae09fba6fffcbfefb395c524a030ed6d0c320634035586e99167574307344e`、2,275,288 字节；SHA-512、源输入哈希和每次运行证据保存在新 receipt。`examples/visual-novel-web/scripts/verify-installed-reference.mjs` 与 `task vn:verify-installed` 需要显式 tarball 和新 label：它复制已跟踪的 reader、源稿、公共对象和媒体到系统临时 `.temp/`，安装该精确 tarball，分别经 Node 与 Bun 的公开 `@rezics/narrata/vn/server` 构建相同 pack，再构建实际宿主并跑 Chromium journey。receipt、请求和字节测量、lease 释放证据与截图都留在独立消费者目录；不会覆盖旧 label。此本地包消费不表示 npm registry 已发布，也不替代 REZICS 真实联合验收。
+
+需要作者入口时，历史作者 API 切片为 `0.1.0-alpha.1`、[源码 c0d3ddfdd8e46f15a68c4296fb954e2a2def3408](https://github.com/rezics/narrata/tree/c0d3ddfdd8e46f15a68c4296fb954e2a2def3408)、tarball SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`；它与前述播放器历史切片身份分别保留。浏览器 `@rezics/narrata/vn/authoring` 和 Node/Bun `@rezics/narrata/vn/server` 提供同候选校验、编译和不可变对象导出，具体调用见[包说明](../../packages/narrata/web/README.md)。G-050 已接入真实宿主正文编辑和隔离即时预览，预览不写正式发布指针或读者存档；固定最终包的独立安装与联合旅程仍按上文区分。七项 Gamebook 请求仍为“提出”，npm registry 尚未发布，真实 REZICS 联合验收尚未执行。
 
 ### 地图与关系接入
 

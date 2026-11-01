@@ -25,6 +25,25 @@ async function toChoice(page: Page) {
   await expect(page.getByRole("button", { name: "Cross the courtyard.", exact: true })).toBeVisible();
 }
 
+async function toChoiceWithAudioBaseline(page: Page) {
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
+  const playsBeforePreparation = (await metrics(page)).audioEvents.filter(event => event.event === "play").length;
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
+  return playsBeforePreparation;
+}
+
+async function waitForCandidatePreparation(page: Page) {
+  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("complete");
+}
+
+async function clearPreparedCaches(page: Page) {
+  await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
+}
+
 async function unlockSound(page: Page) {
   await page.getByRole("button", { name: "Turn sound on" }).click();
   await expect(page.getByRole("button", { name: "Turn sound off" })).toBeVisible();
@@ -112,6 +131,8 @@ test("desktop first screen is a real host-resolved scene and loads only the entr
   const chunks = evidence.logicalRequests.filter(item => item.kind === "chunk");
   expect(view.view.depth).toBe(0);
   expect(chunks).toHaveLength(1);
+  expect(chunks[0]?.phase).toBe("required");
+  expect(evidence.candidateQueries).toBe(0);
   expect(evidence.logicalRequests.find(item => item.kind === "manifest")?.bytes).toBeGreaterThan(0);
   expect(evidence.mediaRequests.map(item => item.key)).toEqual(expect.arrayContaining([
     "background/river-night", "character/mira", "character/tomas", "music/river-road", "voice/mira-opening",
@@ -237,7 +258,15 @@ test("resize swaps only the host image variant and leaves the pending save curso
 test("choice branches change complete scene layers, converge, and history can select an earlier point", async ({ page }) => {
   await openPlayer(page);
   await unlockSound(page);
-  await toChoice(page);
+  const playsBeforePreparation = await toChoiceWithAudioBaseline(page);
+  await waitForCandidatePreparation(page);
+  const preparedMetrics = await metrics(page);
+  expect(preparedMetrics.candidateQueries).toBe(1);
+  expect(preparedMetrics.logicalRequests.some(item => item.phase === "candidate" && item.kind === "chunk")).toBe(true);
+  expect(preparedMetrics.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(1);
+  expect(preparedMetrics.mediaDecodes.some(item => item.phase === "candidate" && item.kind === "image" && item.key === "background/old-hall")).toBe(true);
+  expect(preparedMetrics.mediaDecodes.some(item => item.phase === "screen" && item.kind === "audio")).toBe(true);
+  expect(preparedMetrics.audioEvents.filter(event => event.event === "play")).toHaveLength(playsBeforePreparation);
   await expect(page.locator(".speaker-name")).toHaveCount(0);
   await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
   const choiceTypography = await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).evaluate(button => {
@@ -267,6 +296,8 @@ test("choice branches change complete scene layers, converge, and history can se
   await expect(page.locator("[data-layer='tomas']")).toHaveCount(0);
   const narrow = await currentView(page);
   expect(narrow.view.scene.layers.map(layer => layer.id)).toEqual(["mira"]);
+  expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(1);
+  await expect(page.locator("[data-background='background/old-hall']")).toHaveJSProperty("naturalWidth", 1586);
 
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByText("We found the same door from different sides.", { exact: true })).toBeVisible();
@@ -282,6 +313,49 @@ test("choice branches change complete scene layers, converge, and history can se
   const evidence = await metrics(page);
   expect(evidence.readerCalls.checkout).toBeGreaterThan(0);
   expect(evidence.logicalRequests.filter(item => item.kind === "chunk").length).toBeGreaterThan(1);
+});
+
+test("same-revision candidate media is reused only inside its authorization context", async ({ page }) => {
+  await openPlayer(page);
+  await toChoice(page);
+  await waitForCandidatePreparation(page);
+  const firstScope = await metrics(page);
+  expect(firstScope.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.contextScope])).toEqual([["1", "demo-public"]]);
+  const releasedBeforeSwitch = firstScope.releases;
+
+  await page.evaluate(async () => { await window.__vnTestHooks?.switchContext("reader-two"); });
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeEnabled();
+  await waitForCandidatePreparation(page);
+  const secondScope = await metrics(page);
+  expect(secondScope.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.contextScope])).toEqual([
+    ["1", "demo-public"],
+    ["1", "reader-two"],
+  ]);
+  expect(secondScope.releases).toBeGreaterThan(releasedBeforeSwitch);
+
+  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(2);
+});
+
+test("an optional candidate resource failure leaves an available branch playable", async ({ page }) => {
+  await openPlayer(page);
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    if (window.__vnTestHooks) window.__vnTestHooks.controls.failNext = { key: "background/old-hall", delayMs: 20 };
+  });
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("partial");
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeEnabled();
+  expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.status)).toEqual(["unavailable"]);
+
+  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.status)).toEqual(["unavailable", "available"]);
 });
 
 test("a choice reopens cold with the same prompt and no retained speaker", async ({ page }) => {
@@ -361,6 +435,8 @@ test("delayed visual failure retains the old complete screen and resource retry 
   await openPlayer(page);
   await unlockSound(page);
   await toChoice(page);
+  await waitForCandidatePreparation(page);
+  await clearPreparedCaches(page);
   const choiceView = await currentView(page);
   const beforeCalls = await metrics(page);
   await page.evaluate(() => {
@@ -386,7 +462,7 @@ test("delayed visual failure retains the old complete screen and resource retry 
   let evidence = await metrics(page);
   expect(evidence.readerCalls.advance).toBe(beforeCalls.readerCalls.advance);
   expect(evidence.readerCalls.choose).toBe(beforeCalls.readerCalls.choose + 1);
-  expect(evidence.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(1);
+  expect(evidence.mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.status)).toEqual(["available", "unavailable"]);
 
   await capture(page, "desktop-retry.png");
   await page.getByRole("button", { name: "Retry", exact: true }).click();
@@ -400,14 +476,16 @@ test("delayed visual failure retains the old complete screen and resource retry 
   expect(evidence.readerCalls.advance).toBe(beforeCalls.readerCalls.advance);
   expect(evidence.readerCalls.choose).toBe(beforeCalls.readerCalls.choose + 1);
   expect(evidence.retries.resource).toBe(1);
-  expect(evidence.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(2);
-  expect(evidence.mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.status)).toEqual(["unavailable", "available"]);
+  expect(evidence.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(3);
+  expect(evidence.mediaRequests.filter(item => item.key === "background/old-hall").slice(-2).map(item => item.status)).toEqual(["unavailable", "available"]);
   expect(evidence.releases).toBeGreaterThan(0);
 });
 
 test("a late resource from a previous host context is discarded and released", async ({ page }) => {
   await openPlayer(page);
   await toChoice(page);
+  await waitForCandidatePreparation(page);
+  await clearPreparedCaches(page);
   const choice = await currentView(page);
   await page.evaluate(() => {
     if (window.__vnTestHooks) window.__vnTestHooks.controls.delayLateNext = { key: "background/old-hall", delayMs: 650 };

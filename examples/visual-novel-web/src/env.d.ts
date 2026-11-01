@@ -2,7 +2,15 @@
 
 import type { VnPlayerController } from "@rezics/narrata/vn/player";
 import type { VnReader, VnViewV1 } from "@rezics/narrata/vn";
-import type { DemoContext, DemoControls, DemoMetrics } from "./player-host.js";
+import type {
+  DemoCandidateInspection,
+  DemoCandidateTransfer,
+  DemoContentDraft,
+  DemoContext,
+  DemoControls,
+  DemoMediaOverride,
+  DemoMetrics,
+} from "./player-host.js";
 
 declare global {
   interface Window {
@@ -15,6 +23,12 @@ declare global {
       switchContext(scope: string): Promise<void>;
       save(): Promise<string>;
       currentView(): Promise<VnViewV1>;
+      clearPreparedCaches(): Promise<void>;
+      inspectCandidate(
+        candidate: DemoCandidateTransfer,
+        contentDrafts: readonly (readonly [string, DemoContentDraft])[],
+        mediaOverrides: readonly DemoMediaOverride[],
+      ): Promise<DemoCandidateInspection>;
       close(): Promise<void>;
     };
     __vnAuthorHooks?: {

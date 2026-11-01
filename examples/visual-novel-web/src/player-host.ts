@@ -11,6 +11,8 @@ import {
   type VnPlayerController,
   type VnPlayerOptions,
   type VnPresentedMedia,
+  type VnPlayerCandidateStatus,
+  type VnResolvedMedia,
 } from "@rezics/narrata/vn/player";
 import type { ResolveItem, ResolveRequest, Resolution } from "@rezics/narrata/reader";
 import { vnDemoArtifactId, vnDemoManifestPath, vnDemoObjectDirectory } from "./generated/publication.js";
@@ -20,11 +22,13 @@ export interface DemoContext {
 }
 
 export interface DemoMetrics {
-  readonly logicalRequests: Array<{ readonly kind: "manifest" | "chunk"; readonly id: string; readonly bytes: number }>;
+  readonly logicalRequests: Array<{ readonly kind: "manifest" | "chunk"; readonly id: string; readonly artifact: string; readonly phase: "required" | "candidate"; readonly bytes: number }>;
+  candidateQueries: number;
   readonly contentRequests: Array<{ provider: string; key: string; revision?: string; bytes: number; status: string }>;
   readonly mediaRequests: Array<{ readonly role: string; readonly kind: string; readonly provider: string; readonly key: string; readonly revision: string; readonly variant: string; readonly contextScope: string; bytes: number; status: string }>;
+  readonly mediaDecodes: Array<{ readonly phase: "screen" | "candidate"; readonly role: string; readonly kind: "image" | "audio"; readonly key: string; readonly revision: string; readonly variant: string; readonly bytes: number }>;
   readonly lateDiscarded: Array<{ readonly role: string; readonly key: string; readonly revision: string; readonly variant: string; readonly artifact: string; readonly commit: string; readonly contextScope: string }>;
-  readonly audioEvents: Array<{ readonly event: string; readonly role: string; readonly key: string; readonly revision: string; readonly commit: string; readonly offsetSeconds?: number; readonly loop?: boolean }>;
+  readonly audioEvents: Array<{ readonly event: string; readonly role: string; readonly key: string; readonly revision: string; readonly commit?: string; readonly offsetSeconds?: number; readonly loop?: boolean }>;
   readonly saveWrites: Array<{ readonly bytes: number; readonly sha256: string }>;
   readonly readerCalls: { advance: number; choose: number; checkout: number; inspect: number };
   aborts: number;
@@ -46,9 +50,36 @@ export interface DemoHost {
   readonly metrics: DemoMetrics;
   readonly controls: DemoControls;
   readonly isClosed: boolean;
+  readonly preparationScope: string;
   switchContext(scope: string): Promise<void>;
+  /** Reopens the same confirmed screen and drops optional candidate leases for cold-resource checks. */
+  clearPreparedCaches(): Promise<void>;
   unlockAudio(): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface DemoContentDraft {
+  readonly text: string;
+  readonly revision: string;
+}
+
+export type DemoMediaOverride =
+  | { readonly kind: "image"; readonly provider: string; readonly key: string; readonly revision: string; readonly path: string; readonly mimeType: "image/png"; readonly width: number; readonly height: number }
+  | { readonly kind: "audio"; readonly provider: string; readonly key: string; readonly revision: string; readonly path: string; readonly mimeType: "audio/wav" };
+
+export interface DemoCandidateTransfer {
+  readonly artifactId: string;
+  readonly manifest: readonly number[];
+  readonly objects: readonly { readonly id: string; readonly bytes: readonly number[] }[];
+  readonly publication: { readonly bytes: number; readonly sha256: string };
+}
+
+export interface DemoCandidateInspection {
+  readonly artifactId: string;
+  readonly firstText?: string;
+  readonly atChoice: boolean;
+  readonly candidateStatus?: VnPlayerCandidateStatus;
+  readonly metrics: DemoMetrics;
 }
 
 export interface VnCandidateSnapshot {
@@ -59,7 +90,8 @@ export interface VnCandidateSnapshot {
 
 export interface DemoHostOptions {
   readonly candidate?: VnCandidateSnapshot;
-  readonly contentDrafts?: ReadonlyMap<string, { readonly text: string; readonly revision: string }>;
+  readonly contentDrafts?: ReadonlyMap<string, DemoContentDraft>;
+  readonly mediaOverrides?: readonly DemoMediaOverride[];
 }
 
 interface ImageAssetDefinition {
@@ -108,8 +140,10 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
   const candidate = options.candidate;
   const metrics: DemoMetrics = {
     logicalRequests: [],
+    candidateQueries: 0,
     contentRequests: [],
     mediaRequests: [],
+    mediaDecodes: [],
     lateDiscarded: [],
     audioEvents: [],
     saveWrites: [],
@@ -121,15 +155,18 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
   };
   const controls: DemoControls = {};
   const manifest = candidate?.manifest ?? await fetchBytes(vnDemoManifestPath);
-  metrics.logicalRequests.push({ kind: "manifest", id: candidate?.artifactId ?? vnDemoArtifactId, bytes: manifest.byteLength });
+  const artifactId = candidate?.artifactId ?? vnDemoArtifactId;
+  metrics.logicalRequests.push({ kind: "manifest", id: artifactId, artifact: artifactId, phase: "required", bytes: manifest.byteLength });
+  const candidateFetch = { depth: 0 };
 
   const contentResolver = {
     resolve: (request: ResolveRequest, signal: AbortSignal) => resolveContent(request, signal, metrics, options.contentDrafts),
   };
-  const mediaResolver: VnMediaResolver<DemoContext> = request => resolveMedia(request, metrics, controls);
+  const mediaResolver: VnMediaResolver<DemoContext> = request => resolveMedia(request, metrics, controls, options.mediaOverrides ?? []);
   let audioContext: AudioContext;
-  const presentMedia: VnMediaPresenter = async (resource, request, view) => present(resource, request, view, metrics, audioContext);
-  const context: VnPlayerContext<DemoContext> = { media: { scope: "demo-public" }, content: { languages: ["en"], realization: "river-road:1", viewer: "demo-reader" } };
+  const presentMedia: VnMediaPresenter = async (resource, request, view) => present(resource, request, metrics, audioContext, "screen", view);
+  const prepareCandidateMedia: NonNullable<VnPlayerOptions<DemoContext>["prepareCandidateMedia"]> = async (resource, request) => present(resource, request, metrics, audioContext, "candidate");
+  let context: VnPlayerContext<DemoContext> = { media: { scope: "demo-public" }, content: { languages: ["en"], realization: "river-road:1", viewer: "demo-reader" } };
   const store = candidate ? undefined : await IndexedDbStore.open("narrata-visual-novel-demo");
   const storage: CacheStore | undefined = store ? {
     load: request => store.load(request),
@@ -151,7 +188,7 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
       if (!/^object:[0-9a-f]{64}$/.test(id)) throw new Error("The requested VN chunk identity is invalid.");
       const bytes = candidate?.objects.get(id) ?? (candidate ? undefined : await fetchBytes(`${vnDemoObjectDirectory}/${id.slice("object:".length)}.cbor`));
       if (!bytes) throw new Error("The checked VN preview omitted a referenced program object.");
-      metrics.logicalRequests.push({ kind: "chunk", id, bytes: bytes.byteLength });
+      metrics.logicalRequests.push({ kind: "chunk", id, artifact: artifactId, phase: candidateFetch.depth > 0 ? "candidate" : "required", bytes: bytes.byteLength });
       return bytes.slice();
     },
   }).catch(error => {
@@ -163,7 +200,7 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
     finally { store?.close(); }
     throw new Error("The loaded VN manifest does not match its checked host candidate.");
   }
-  const countedReader = countReader(reader, metrics);
+  const countedReader = countReader(reader, metrics, candidateFetch);
   try { audioContext = new AudioContext({ latencyHint: "interactive" }); }
   catch (error) {
     try { await reader.close(); }
@@ -176,10 +213,27 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
     resolveMedia: mediaResolver,
     presentMedia,
     context,
+    autoPrepareCandidates: false,
+    dependencyLimits: { locations: 64, graphs: 8, candidates: 64, references: 128, scans: 512 },
+    maxCandidateRequests: 4,
+    limits: {
+      maxRequests: 8,
+      maxConcurrent: 3,
+      maxEncodedBytesPerTarget: 12 * 1024 * 1024,
+      maxEncodedBytesRetained: 24 * 1024 * 1024,
+      maxDecodedBytesRetained: 32 * 1024 * 1024,
+      maxImageDimension: 4096,
+      maxAudioDurationMs: 60_000,
+    },
     selectVariant: slot => {
       if (slot.role === "background") return window.matchMedia("(max-width: 640px)").matches ? "portrait-cover" : "landscape-cover";
       return slot.role === "character" ? "full" : "original";
     },
+    selectCandidateVariant: item => {
+      if (item.role.kind === "background") return window.matchMedia("(max-width: 640px)").matches ? "portrait-cover" : "landscape-cover";
+      return item.role.kind === "character_layer" ? "full" : "original";
+    },
+    prepareCandidateMedia,
     onLateDiscard: request => {
       metrics.lateDiscards++;
       metrics.lateDiscarded.push({ role: request.slot.role, key: request.slot.media.key, revision: request.slot.media.revision, variant: request.variant, artifact: request.artifact, commit: request.commit, contextScope: request.context.scope });
@@ -194,11 +248,16 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
     metrics,
     controls,
     get isClosed() { return closed; },
+    get preparationScope() { return context.media.scope; },
     async switchContext(scope) {
-      await controller.setContext({
+      context = {
         media: { scope },
         content: { languages: ["en"], realization: "river-road:1", viewer: scope },
-      });
+      };
+      await controller.setContext(context);
+    },
+    async clearPreparedCaches() {
+      await controller.setContext(context);
     },
     async unlockAudio() {
       await audioContext.resume();
@@ -257,8 +316,7 @@ async function resolveContent(request: ResolveRequest, signal: AbortSignal, metr
   }));
 }
 
-async function resolveMedia(request: VnMediaRequest<DemoContext>, metrics: DemoMetrics, controls: DemoControls): Promise<VnMediaResolution> {
-  const definition = resolveDefinition(request.slot.media, request.kind, request.variant);
+async function resolveMedia(request: VnMediaRequest<DemoContext>, metrics: DemoMetrics, controls: DemoControls, overrides: readonly DemoMediaOverride[]): Promise<VnMediaResolution> {
   let done = false;
   const onAbort = () => { if (!done) metrics.aborts++; };
   request.signal.addEventListener("abort", onAbort, { once: true });
@@ -275,6 +333,7 @@ async function resolveMedia(request: VnMediaRequest<DemoContext>, metrics: DemoM
   };
   metrics.mediaRequests.push(log);
   try {
+    const definition = resolveDefinition(request.slot.media, request.kind, request.variant, overrides);
     const failed = controls.failNext?.key === request.slot.media.key ? controls.failNext : undefined;
     if (failed) {
       delete controls.failNext;
@@ -362,11 +421,12 @@ function unavailable(request: VnMediaRequest<DemoContext>): VnMediaResolution {
 }
 
 async function present(
-  resource: Parameters<NonNullable<VnPlayerOptions<DemoContext>["presentMedia"]>>[0],
-  request: Parameters<NonNullable<VnPlayerOptions<DemoContext>["presentMedia"]>>[1],
-  view: VnViewV1,
+  resource: VnResolvedMedia,
+  request: Pick<VnMediaRequest<unknown>, "slot" | "variant" | "signal">,
   metrics: DemoMetrics,
   audio: AudioContext,
+  phase: "screen" | "candidate",
+  view?: VnViewV1,
 ): Promise<VnPresentedMedia> {
   const { slot, signal } = request;
   if (resource.kind === "image") {
@@ -376,6 +436,7 @@ async function present(
     image.src = source;
     try {
       await raceAbort(image.decode(), signal);
+      metrics.mediaDecodes.push({ phase, role: slot.role, kind: "image", key: slot.media.key, revision: slot.media.revision, variant: request.variant, bytes: resource.bytes.byteLength });
     } catch (error) {
       URL.revokeObjectURL(source);
       throw error;
@@ -398,9 +459,10 @@ async function present(
     const copy = resource.bytes.slice().buffer;
     buffer = await raceAbort(audio.decodeAudioData(copy), signal);
   } catch (error) {
-    metrics.audioEvents.push({ event: "decode-error", role: slot.role, key: slot.media.key, revision: slot.media.revision, commit: view.view.cursor });
+    metrics.audioEvents.push({ event: "decode-error", role: slot.role, key: slot.media.key, revision: slot.media.revision, ...(view ? { commit: view.view.cursor } : {}) });
     throw error;
   }
+  metrics.mediaDecodes.push({ phase, role: slot.role, kind: "audio", key: slot.media.key, revision: slot.media.revision, variant: request.variant, bytes: resource.bytes.byteLength });
   let source: AudioBufferSourceNode | undefined;
   let released = false;
   return {
@@ -417,7 +479,7 @@ async function present(
       node.connect(audio.destination);
       source = node;
       node.start(0, 0);
-      metrics.audioEvents.push({ event: "play", role: slot.role, key: slot.media.key, revision: slot.media.revision, commit: view.view.cursor, offsetSeconds: 0, loop: node.loop });
+      metrics.audioEvents.push({ event: "play", role: slot.role, key: slot.media.key, revision: slot.media.revision, ...(view ? { commit: view.view.cursor } : {}), offsetSeconds: 0, loop: node.loop });
     },
     stop: stopSource,
     release: () => {
@@ -435,12 +497,13 @@ async function present(
     if (!previous) return;
     try { previous.stop(); } catch { /* A short voice can end before the next line starts. */ }
     previous.disconnect();
-    metrics.audioEvents.push({ event: "stop", role: slot.role, key: slot.media.key, revision: slot.media.revision, commit: view.view.cursor });
+    metrics.audioEvents.push({ event: "stop", role: slot.role, key: slot.media.key, revision: slot.media.revision, ...(view ? { commit: view.view.cursor } : {}) });
   }
 }
 
-function resolveDefinition(media: Readonly<MediaRef>, kind: MediaKind, variant: string): AssetDefinition {
-  const definition = (kind === "image" ? IMAGE_ASSETS : AUDIO_ASSETS).get(mediaKey(media.kind, media.provider, media.key, media.revision));
+function resolveDefinition(media: Readonly<MediaRef>, kind: MediaKind, variant: string, overrides: readonly DemoMediaOverride[] = []): AssetDefinition {
+  const override = overrides.find(item => item.kind === kind && mediaKey(item.kind, item.provider, item.key, item.revision) === mediaKey(media.kind, media.provider, media.key, media.revision));
+  const definition = override ?? (kind === "image" ? IMAGE_ASSETS : AUDIO_ASSETS).get(mediaKey(media.kind, media.provider, media.key, media.revision));
   if (!definition || definition.kind !== kind) throw new Error("The exact VN media version is not in the demo host catalog.");
   if (definition.kind === "image" && media.key === "background/river-night" && variant === "portrait-cover") {
     return { ...definition, path: "/assets/river-night-portrait.png", width: 853, height: 1844 };
@@ -452,13 +515,18 @@ function mediaKey(kind: MediaKind, provider: string, key: string, revision: stri
   return JSON.stringify([kind, provider, key, revision]);
 }
 
-function countReader(reader: VnReader, metrics: DemoMetrics): VnReader {
+function countReader(reader: VnReader, metrics: DemoMetrics, candidateFetch: { depth: number }): VnReader {
   return {
     get artifactId() { return reader.artifactId; },
     inspect: async () => { metrics.readerCalls.inspect++; return reader.inspect(); },
     historyArtifacts: expected => reader.historyArtifacts(expected),
     dependencies: (cursor, limits) => reader.dependencies(cursor, limits),
-    prepareCandidates: (cursor, limits, signal) => reader.prepareCandidates(cursor, limits, signal),
+    prepareCandidates: async (cursor, limits, signal) => {
+      metrics.candidateQueries++;
+      candidateFetch.depth++;
+      try { return await reader.prepareCandidates(cursor, limits, signal); }
+      finally { candidateFetch.depth--; }
+    },
     clearPreparedCandidates: () => reader.clearPreparedCandidates(),
     advance: (expected, dialogue) => { metrics.readerCalls.advance++; return reader.advance(expected, dialogue); },
     choose: (expected, point, options) => { metrics.readerCalls.choose++; return reader.choose(expected, point, options); },

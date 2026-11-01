@@ -1,6 +1,6 @@
-import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { MouseEvent } from "react";
-import { openDemoHost, type DemoHost } from "./player-host.js";
+import { openDemoHost, type DemoCandidateInspection, type DemoCandidateTransfer, type DemoContentDraft, type DemoHost, type DemoMediaOverride } from "./player-host.js";
 import { PlayerStage } from "./PlayerStage.js";
 import { readVnText, type VnPlayerSnapshot } from "@rezics/narrata/vn/player";
 
@@ -50,10 +50,14 @@ function ReaderApp() {
 export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; authorMode?: boolean }) {
   const snapshot = useSyncExternalStore(host.controller.subscribe, host.controller.getSnapshot, host.controller.getSnapshot);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const lastAutoPrepared = useRef<string | undefined>(undefined);
   const screen = snapshot.screen;
   const view = screen?.view;
   const ready = snapshot.status === "ready";
   const interaction = view?.view.interaction;
+  const candidateCursor = interaction?.kind === "choose" ? view?.view.cursor : undefined;
+  const candidateViewport = window.matchMedia("(max-width: 640px)").matches ? "portrait" : "landscape";
+  const candidateScopeKey = `${host.preparationScope}:${candidateViewport}`;
   const hasHistory = Boolean(view && view.view.history.some(item => !item.current && item.depth < view.view.depth));
   const audioUnavailable = Boolean(screen?.audioIssues.length) || snapshot.soundStatus === "unavailable";
 
@@ -68,10 +72,56 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
       async switchContext(scope) { await host.switchContext(scope); },
       async save() { return host.reader.exportSave(); },
       async currentView() { return host.reader.inspect(); },
+      async clearPreparedCaches() { await host.clearPreparedCaches(); },
+      async inspectCandidate(candidate, contentDrafts, mediaOverrides): Promise<DemoCandidateInspection> {
+        const candidateHost = await openDemoHost({
+          candidate: {
+            artifactId: candidate.artifactId,
+            manifest: Uint8Array.from(candidate.manifest),
+            objects: new Map(candidate.objects.map(item => [item.id, Uint8Array.from(item.bytes)])),
+          },
+          contentDrafts: new Map(contentDrafts),
+          mediaOverrides,
+        });
+        try {
+          await candidateHost.controller.start();
+          const firstScreen = candidateHost.controller.getSnapshot().screen;
+          const firstInteraction = firstScreen?.view.view.interaction;
+          const firstText = firstScreen && firstInteraction?.kind === "advance" ? readVnText(firstScreen, firstInteraction.line) : undefined;
+          for (let step = 0; step < 3; step++) {
+            const current = candidateHost.controller.getSnapshot();
+            if (current.screen?.view.view.interaction.kind !== "advance") break;
+            await candidateHost.controller.advance();
+          }
+          if (candidateHost.controller.getSnapshot().screen?.view.view.interaction.kind === "choose") {
+            await candidateHost.controller.retryCandidates();
+          }
+          const state = candidateHost.controller.getSnapshot();
+          const artifactId = state.screen?.view.view.artifact_id ?? candidateHost.reader.artifactId;
+          await candidateHost.close();
+          return {
+            artifactId,
+            ...(firstText ? { firstText } : {}),
+            atChoice: state.screen?.view.view.interaction.kind === "choose",
+            ...(state.candidates ? { candidateStatus: state.candidates } : {}),
+            metrics: structuredClone(candidateHost.metrics),
+          };
+        } finally {
+          if (!candidateHost.isClosed) await candidateHost.close();
+        }
+      },
       async close() { await host.close(); },
     };
     return () => { delete window.__vnTestHooks; };
   }, [host]);
+
+  useEffect(() => {
+    if (!ready || !candidateCursor) return;
+    const preparationKey = `${candidateScopeKey}:${candidateCursor}`;
+    if (lastAutoPrepared.current === preparationKey) return;
+    lastAutoPrepared.current = preparationKey;
+    void host.controller.retryCandidates().catch(() => undefined);
+  }, [host, ready, candidateCursor, candidateScopeKey, snapshot.candidates?.status]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
