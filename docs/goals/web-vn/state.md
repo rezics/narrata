@@ -12,11 +12,15 @@ VN 阅读 API 切片的固定包版本同为 `0.1.0-alpha.1`，SHA-256 为 `11db
 
 ## 下一步与未交付结果
 
+VN3 的原生作者基础 [G-045](tasks/G-045.md) 已在主线 `fd00b31c7c9223fa1dc5908a8c77158b78880995` 通过 R1（28 项浏览器回归）与文档检查；9 项定向原生测试覆盖同候选、方言、语义诊断、修改隔离和删除墓碑。`narrata_authoring::vn` 复用现有受检记录与编译结果，不新增持久或交换格式。验收记录位于 `.temp/goal/runs/G-045/main-acceptance/fd00b31/`；这还不是公共作者 API 或完整 VN3 交付。
+
 当前 [G-043](tasks/G-043.md) 已从 `c701806` 派发给 gpt-6-luna/max，正在实现桌面/手机参考播放器、受检媒体 callback、图层与音轨协调、资源失败恢复和真实浏览器旅程，尚未验收。已审阅概念与独立素材位于 `.temp/vn-player-design/`；立绘以实际 alpha/浏览器合成核对，不能把工具预览中的透明 RGB 当成已渲染背景。VN2 的有界候选预取/按需媒体交付与 VN3 的作者 API、即预览、多场景短篇及完整固定包仍必需；完整范围见 [GOAL.md](GOAL.md)。
 
 并行推进 [G-044](tasks/G-044.md) 的 Rust 原生有界只读依赖投影，使用 sonnet/high；首版 `f6c385d` 的 R1 通过，但评审要求修正当前选项扫描的预算边界、明确增量资源依赖语义，尚未验收。路径仅为 narrata-nodes，与播放器分离；不新增持久格式、Wasm/Web API 或完整预取器，不代表 VN2 已完成。
 
-2026-11-01 接续核实：G-043 第三轮因连接中断退出，工作区保留，已用 gpt-6-luna/max 新会话接续；首轮浏览器 11 项与 Web 153 项通过不等于视觉和资源生命周期验收。下一轮需完成已审阅的画面比例、字体、手机背景与定向生命周期回归。另准备 [G-045](tasks/G-045.md)，以 gpt-6-luna/high 实现仅限 narrata-authoring 的 VN 记录校验和同候选预览基础；完整公共作者入口、浏览器即预览及短篇交付仍待完成。
+2026-11-01 接续核实：G-043 第三轮因连接中断退出，工作区保留，已用 gpt-6-luna/max 新会话接续。补充的 16 项播放器定向测试已通过，独立静态复核未发现新增生命周期缺陷；新截图的手机人物锚点仍在调整，尚未完成视觉与主线验收。完整公共作者入口、浏览器即预览及短篇交付仍待完成。
+
+[G-046](tasks/G-046.md) 已从 `fd00b31` 派发给 gpt-6-luna/high，路径仅为 narrata-authoring-wasm，增加明确的 VN 作者校验与预览桥接，复用现有报告和不可变对象，不暴露 Gamebook 发布器；Web/Node/Bun 公共封装与实际编辑预览仍需后续任务。
 
 manager 为 `codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn`。worker 使用 `engine: codex`、`effort: max`，环境设置 `GOAL_ID=web-vn`、`GOAL_ENGINE=codex`、`GOAL_CODEX_MODEL=gpt-6-luna`；实时派发、认领与进程以 `task goal -- status` 为准。
 
