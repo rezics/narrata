@@ -244,6 +244,33 @@ test.each(["invalid", "throw"])("a synchronous %s target selector releases an ad
   } finally { await player.close(); await reader.close(); }
 });
 
+test("automatic candidate work can be deferred until the host explicitly requests it", async () => {
+  const reader = await openVn({ pack: vnPack, execution });
+  const queries = vi.spyOn(reader, "prepareCandidates");
+  const harness = mediaHarness();
+  const player = createVnPlayer({ ...playerOptions(reader, harness), autoPrepareCandidates: false,
+    selectCandidateVariant: item => item.role.kind === "background" ? "desktop-cover" : "original",
+    prepareCandidateMedia: async (resource, request) => harness.presentMedia(resource, request, await reader.inspect()),
+  });
+  try {
+    await player.start();
+    await vi.waitFor(() => expect(player.getSnapshot().audioLoading).toBe(false));
+    expect(queries).not.toHaveBeenCalled();
+    await player.refreshPresentation();
+    expect(queries).not.toHaveBeenCalled();
+    await player.advance(); await player.advance(); await player.advance();
+    expect(queries).not.toHaveBeenCalled();
+    const required = harness.requests.length;
+    await player.retryCandidates();
+    expect(queries).toHaveBeenCalledTimes(1);
+    expect(harness.requests.length).toBeGreaterThan(required);
+    expect(player.getSnapshot().candidates?.mediaPrepared).toBeGreaterThan(0);
+    await player.refreshPresentation();
+    expect(queries).toHaveBeenCalledTimes(1);
+    expect(player.getSnapshot().candidates).toBeUndefined();
+  } finally { await player.close(); await reader.close(); }
+});
+
 test("changing authorization context removes the earlier candidate projection synchronously", async () => {
   const reader = await openVn({ pack: vnPack, execution });
   const harness = mediaHarness();

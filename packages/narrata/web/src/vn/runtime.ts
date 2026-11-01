@@ -57,10 +57,13 @@ function initializeVn(source?: WasmSource): Promise<void> {
     }
     return initialized.then(() => undefined);
   }
-  initializedSource = sourceToLoad;
+  const boundSource = sourceToLoad instanceof URL ? new URL(sourceToLoad.href)
+    : sourceToLoad instanceof Uint8Array ? new Uint8Array(sourceToLoad)
+    : sourceToLoad instanceof ArrayBuffer ? new Uint8Array(new Uint8Array(sourceToLoad)) : sourceToLoad;
+  initializedSource = boundSource;
   if (!initialized) {
     initialized = (async () => {
-      let input = sourceToLoad;
+      let input = boundSource;
       const url = input instanceof URL ? input : typeof input === "string" ? new URL(input, import.meta.url) : undefined;
       if (url?.protocol === "file:") {
         const module = "node:fs/promises";

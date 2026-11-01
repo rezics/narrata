@@ -85,6 +85,8 @@ export interface VnPlayerOptions<HostContext> {
   readonly selectVariant: (slot: VnMediaSlot, view: VnViewV1) => string;
   /** Candidate variants are selected from typed role/ref hints, without a future View. */
   readonly selectCandidateVariant?: (item: DependencyMediaV1) => string;
+  /** Set false when the host starts optional work explicitly with retryCandidates(). */
+  readonly autoPrepareCandidates?: boolean;
   /** Prepares a candidate for later display without asking the host to invent a future View. */
   readonly prepareCandidateMedia?: (
     resource: VnResolvedMedia,
@@ -247,8 +249,10 @@ export class VnPlayerController<HostContext> {
     const slots = mediaSlots(view);
     if (slots.some(slot => !hasAsset(this.screen?.assets ?? [], slot, this.options.selectVariant(slot, view)))) {
       await this.prepare(view, "refresh");
-    } else if (this.options.selectCandidateVariant && this.options.prepareCandidateMedia) {
+    } else if (this.options.autoPrepareCandidates !== false && this.options.selectCandidateVariant && this.options.prepareCandidateMedia) {
       await this.warmCandidates(view, this.generation);
+    } else if (!this.closed) {
+      this.publish("ready", this.screen, undefined, undefined, this.snapshot.saveStatus);
     }
   }
 
@@ -719,7 +723,7 @@ export class VnPlayerController<HostContext> {
       if (this.soundStatus === "on" && !hasPlayableAudio(next) && !missingAudio && next.audioIssues.length > 0) this.soundStatus = "unavailable";
       this.publish("ready", next, undefined, undefined, "saved");
       if (missingAudio) void this.prepareAudio(next, audioSlots, entry, generation, controller);
-      if (this.options.selectCandidateVariant && this.options.prepareCandidateMedia) void this.warmCandidates(view, generation);
+      if (this.options.autoPrepareCandidates !== false && this.options.selectCandidateVariant && this.options.prepareCandidateMedia) void this.warmCandidates(view, generation);
     } catch (error) {
       this.releasePendingAssets(prior?.assets ?? []);
       if (!this.isOperationCurrent(generation, controller)) return;

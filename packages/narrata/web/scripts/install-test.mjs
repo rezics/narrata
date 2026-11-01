@@ -412,8 +412,21 @@ writeFileSync(join(directory, "vn-module-worker.js"), `
 import { openVn } from "@rezics/narrata/vn";
 self.onmessage = async ({ data }) => {
   const pack = new Uint8Array(await (await fetch(data.packUrl)).arrayBuffer());
-  const incompatible = new Uint8Array(await (await fetch(data.incompatibleWasmUrl)).arrayBuffer());
   const compatibleUrl = new URL(data.compatibleWasmUrl, self.location.href);
+  if (data.mutationMode) {
+    const source = data.mutationMode === "url" ? compatibleUrl
+      : new Uint8Array(await (await fetch(compatibleUrl)).arrayBuffer());
+    const first = await openVn({ pack, execution: data.execution, wasm: source });
+    await first.close();
+    if (data.mutationMode === "url") source.search = "?different-source";
+    else source[source.length - 1] ^= 1;
+    let sourceError = "";
+    try { const second = await openVn({ pack, execution: data.execution, wasm: source }); await second.close(); }
+    catch (error) { sourceError = String(error?.message ?? error); }
+    self.postMessage({ accepted: sourceError.length === 0, sourceError });
+    return;
+  }
+  const incompatible = new Uint8Array(await (await fetch(data.incompatibleWasmUrl)).arrayBuffer());
   let featureError = "";
   try {
     const reader = await openVn({ pack, execution: data.execution, wasm: incompatible });
@@ -605,11 +618,11 @@ window.ready = new URLSearchParams(location.search).has("reference") ? (async ()
         throw error;
       }
     },
-    vnModuleCompatibility: (incompatibleWasmUrl, compatibleWasmUrl) => new Promise((resolve, reject) => {
+    vnModuleCompatibility: (incompatibleWasmUrl, compatibleWasmUrl, mutationMode) => new Promise((resolve, reject) => {
       const worker = new Worker(new URL("./vn-module-worker.js", import.meta.url), { type: "module" });
       worker.onerror = event => { worker.terminate(); reject(new Error(event.message)); };
       worker.onmessage = ({ data }) => { worker.terminate(); resolve(data); };
-      worker.postMessage({ incompatibleWasmUrl, compatibleWasmUrl, packUrl: "/vn-story.narpack", execution: ${JSON.stringify(execution)} });
+      worker.postMessage({ incompatibleWasmUrl, compatibleWasmUrl, mutationMode, packUrl: "/vn-story.narpack", execution: ${JSON.stringify(execution)} });
     }),
     author: () => new Promise((done, fail) => {
       const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
@@ -715,6 +728,14 @@ try {
   assert.equal(vnModuleCompatibility.accepted, false);
   assert.match(vnModuleCompatibility.featureError, /must include the `vn-dependencies` feature/);
   assert.match(vnModuleCompatibility.sourceError, /one Wasm module/);
+  const vnSourceMutations = [];
+  for (const mode of ["bytes", "url"]) {
+    const result = await page.evaluate(({ incompatible, compatible, mode }) => window.installed.vnModuleCompatibility(incompatible, compatible, mode),
+      { incompatible: readerWasmUrl, compatible: vnReaderWasmUrl, mode });
+    assert.equal(result.accepted, false);
+    assert.match(result.sourceError, /one Wasm module/);
+    vnSourceMutations.push({ mode, ...result });
+  }
   assert.deepEqual(requests.filter(path => /sigma|graphology|renderer|graph/i.test(path)), [], "The first screen loads no graph code or tiles");
   assert.deepEqual(await page.evaluate(() => window.installed.native()), { status: "ok", ids: ["arrival", "map"], image: "image", marker: "choice-point:" + "1".repeat(32) });
   const beforePrefetch = await page.evaluate(() => window.installed.save());
@@ -771,7 +792,7 @@ try {
   writeFileSync(join(directory, "provided-history-names.json"), JSON.stringify(historical, null, 2));
   writeFileSync(join(directory,"maintenance-browser.json"),JSON.stringify(maintenance,null,2));
   assert.deepEqual(errors, []);
-  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored, vn: vnEvidence, vnCandidates: vnCandidateEvidence, vnModuleCompatibility }, null, 2));
+  writeFileSync(join(directory, "browser-evidence.json"), JSON.stringify({ served, authored, vn: vnEvidence, vnCandidates: vnCandidateEvidence, vnModuleCompatibility, vnSourceMutations }, null, 2));
   await page.screenshot({ path: join(directory, "desktop-reader.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: join(directory, "mobile-reader.png"), fullPage: true });

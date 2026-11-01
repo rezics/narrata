@@ -98,6 +98,8 @@ queries enabled. The Gamebook root and reader keep their no-default-features Was
 the optional VN module. Wasm initializes once in a JavaScript realm, so every `openVn` call there
 must use the same module source. A custom `wasm` source must be built from the same native stack
 with the `vn-dependencies` feature; the reader checks that module before opening the session.
+Byte inputs and URL values are captured at initialization, so later caller mutation cannot
+silently change the module binding.
 
 The checked `reader.dependencies(cursor, limits)` query returns ADR 0025 version 1 for that exact
 cursor and artifact. Limits are explicit; `complete`, `truncations` and `unknowns` describe what the
@@ -114,12 +116,15 @@ receives an optional `AbortSignal`; pass it to the host request so stale candida
 the transport as well.
 
 The player can prepare direct-candidate media when the host supplies both `selectCandidateVariant`
-(based on the role/ref hint) and `prepareCandidateMedia` (which accepts the actual current View's
-provenance but no future View). Matching immutable media leases are reused if the eventual View
+(based on the role/ref hint) and `prepareCandidateMedia` (which receives the resolved bytes,
+typed slot, variant and cancellation signal). Matching immutable media leases are reused if the eventual View
 selects the same variant. The snapshot exposes partial/complete preparation and the typed
 dependency projection, including future content references without fabricated dynamic arguments.
 If the candidate snapshot is partial, `player.retryCandidates()` retries within the reader's
 cumulative object/request bounds; a resource failure never changes the story cursor.
+Set `autoPrepareCandidates: false` to start optional work explicitly with `retryCandidates()`,
+for example only after reaching a branch choice. This lets the host keep speculative work off
+its first screen while still preparing and reusing later candidates.
 
 ### Visual novel authoring
 
