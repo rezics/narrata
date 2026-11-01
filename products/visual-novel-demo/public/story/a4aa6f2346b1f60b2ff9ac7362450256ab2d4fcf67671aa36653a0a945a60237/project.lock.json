@@ -1,0 +1,18 @@
+{
+  "format_version": 3,
+  "artifact_id": "artifact:a4aa6f2346b1f60b2ff9ac7362450256ab2d4fcf67671aa36653a0a945a60237",
+  "packages": {
+    "main": {
+      "id": "example.the-river-road",
+      "version": "1.0.0",
+      "digest": "09a08d6f2bf0e351fd5b8691a32acd7b0e1afa16c5ea8cae36e14ecb80996ead"
+    }
+  },
+  "node_types": {
+    "narrata.call": "2",
+    "narrata.dialogue": "1",
+    "narrata.passage": "2",
+    "narrata.return": "2",
+    "narrata.scene": "1"
+  }
+}

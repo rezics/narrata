@@ -61,6 +61,7 @@ tasks:
     cmds: [pwsh -NoProfile -File scripts/check-vn.ps1]
   vn:publish:
     desc: Compile the host-owned VN source and write its immutable public objects
+    deps: [web:build]
     cmds: [node products/visual-novel-demo/scripts/publish.mjs]
   bench:g2:
     desc: Persistence and kernel benchmarks
