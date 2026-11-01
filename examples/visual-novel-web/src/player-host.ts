@@ -52,7 +52,7 @@ export interface DemoHost {
   readonly isClosed: boolean;
   readonly preparationScope: string;
   switchContext(scope: string): Promise<void>;
-  /** Reopens the same confirmed screen and drops optional candidate leases for cold-resource checks. */
+  /** Clears optional host resources without changing the reader save request or bytes. */
   clearPreparedCaches(): Promise<void>;
   unlockAudio(): Promise<void>;
   close(): Promise<void>;

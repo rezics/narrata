@@ -362,6 +362,35 @@ test("an optional candidate resource failure leaves an available branch playable
   expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.status)).toEqual(["unavailable", "available"]);
 });
 
+test("a viewport change cancels the old candidate variant and releases its late lease", async ({ page }) => {
+  await openPlayer(page);
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    if (window.__vnTestHooks) window.__vnTestHooks.controls.delayLateNext = { key: "background/old-hall", delayMs: 650 };
+  });
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
+  await expect.poll(async () => (await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall").length).toBe(1);
+  const pendingVariant = (await metrics(page)).mediaRequests.find(item => item.key === "background/old-hall");
+  expect(pendingVariant?.variant).toBe("landscape-cover");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator("[data-background='background/river-night']")).toHaveAttribute("data-variant", "portrait-cover");
+  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toMatch(/^(complete|partial)$/);
+  await expect.poll(async () => (await metrics(page)).lateDiscards).toBeGreaterThan(0);
+  const evidence = await metrics(page);
+  expect(evidence.aborts).toBeGreaterThan(0);
+  expect(evidence.releases).toBeGreaterThan(0);
+  expect(evidence.mediaRequests.some(item => item.key === "background/old-hall" && item.variant === "portrait-cover" && item.status === "available")).toBe(true);
+
+  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall" && item.variant === "portrait-cover")).toHaveLength(1);
+});
+
 test("a choice reopens cold with the same prompt and no retained speaker", async ({ page }) => {
   await openPlayer(page);
   await toChoice(page);
@@ -524,6 +553,11 @@ test("unknown storage acknowledgement retries saved bytes without advancing twic
   await expect(page.getByRole("button", { name: "Retry save", exact: true })).toBeEnabled();
   const calls = (await metrics(page)).readerCalls.advance;
   expect(calls).toBe(1);
+  const pendingWrite = (await metrics(page)).saveWrites.at(-1);
+  if (!pendingWrite) throw new Error("The unknown save request bytes were not recorded.");
+  await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
+  await expect(page.getByRole("heading", { name: "Save status unknown", exact: true })).toBeVisible();
+  expect((await metrics(page)).saveWrites.at(-1)).toEqual(pendingWrite);
   await page.getByRole("button", { name: "Retry save", exact: true }).click();
   await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
   const after = await currentView(page);
