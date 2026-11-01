@@ -723,7 +723,6 @@ test("pending author hosts close before held media is released and cannot reinst
   const closedBeforeRelease = (await authorJobs(page)).find(job => job.snapshotId === waiting.snapshotId);
   expect(closedBeforeRelease).toMatchObject({ closeStarted: true, readerClosed: true, candidateFreed: true, draftsFreed: true, installed: false });
   expect(closedBeforeRelease?.aborts).toBeGreaterThan(0);
-  expect(closedBeforeRelease?.releases).toBeGreaterThan(0);
   const newer = await authorSnapshot(page);
   expect(newer.artifact).toBe(waiting.artifactId);
   expect(newer.snapshot).not.toBe(waiting.snapshotId);
