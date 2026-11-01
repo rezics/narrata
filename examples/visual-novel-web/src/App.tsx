@@ -228,7 +228,7 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
 
       {screen && interaction?.kind === "finished" && (
         <section className="dialogue-panel ending-panel" aria-label="Story ending">
-          {readVnText(screen, interaction.title) && <p className="speaker-name">{readVnText(screen, interaction.title)}</p>}
+          <h2 className="speaker-name">{readVnText(screen, interaction.title) || "The end"}</h2>
           {readVnText(screen, interaction.body) && <p className="dialogue-copy">{readVnText(screen, interaction.body)}</p>}
           {audioUnavailable && <p className="audio-status" role="status">Sound is unavailable. You can continue without it.</p>}
         </section>

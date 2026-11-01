@@ -64,6 +64,7 @@ async function playNarrowBranchToEnding(page: Page) {
   await expect(page.getByText("We found the same door from different sides.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect.poll(async () => (await page.evaluate(async () => await window.__vnTestHooks?.currentView()))?.view.interaction.kind).toBe("finished");
+  await expect(page.getByRole("heading", { name: "The end", exact: true })).toBeVisible();
 }
 
 test("desktop author preview edits host content, plays a branch, recovers, and preserves saved reading", async ({ page }) => {
@@ -178,6 +179,7 @@ test("390px author preview stays usable, discards a late candidate, and recovers
   await expect(page.getByText("We found the same door from different sides.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect.poll(async () => (await page.evaluate(async () => await window.__vnTestHooks?.currentView()))?.view.interaction.kind).toBe("finished");
+  await expect(page.getByRole("heading", { name: "The end", exact: true })).toBeVisible();
   await capture(page, "phone-ending.png");
 });
 
