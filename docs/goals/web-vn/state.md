@@ -1,6 +1,6 @@
 # State
 
-2026-11-01：VN0 与 VN1 的阅读 API、可恢复参考播放器和类型化媒体呈现已通过本地主线验收。原生作者基础、依赖投影和 Wasm 作者桥接已具备；完整 VN2–VN3 尚未交付。
+2026-11-01：VN0 与 VN1 已验收，播放器修复后的 CI 八项成功。公开 VN 作者 API、Node/Bun 同候选构建和版本化依赖 Wasm 接口也已通过主线验收；完整资源准备、编辑预览和最终 VN2–VN3 交付尚待完成。
 
 ## 已验收基线
 
@@ -20,15 +20,15 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 固定播放器包为 `0.1.0-alpha.1`，tarball SHA-256 `4c77f0511fe1239c22fc6685e08fa8c84e0ca6e4e6b746abad169eda7861c649`，1,796,713 字节；见 `.temp/delivery/vn-player-release.json`。主线验收记录位于 `.temp/goal/runs/G-043/main-acceptance/b5c8457-retry-audit-tls/`。此包和旧 Gamebook、阅读 API 包身份分别保留，不能互换；播放器 CI 待本次推送后核对。
 
-播放器首轮 CI 七项成功，Ubuntu 的音频不可用手机状态因字体度量导致工具栏超界约 3px。`3ae7824` 修正参考 UI 的文字换行，并增加更宽字距的边界覆盖；定向 2 项与完整 VN 13 项本地通过，SDK 固定包未变，等待修复后的 CI。
+播放器首轮 CI 七项成功，Ubuntu 的音频不可用手机状态因字体度量导致工具栏超界约 3px。`3ae7824` 修正参考 UI 的文字换行，并增加更宽字距的边界覆盖；定向 2 项与完整 VN 13 项本地通过，SDK 固定包未变。[修复后的 CI](https://github.com/rezics/narrata/actions/runs/41292011583)八项成功。
+
+[G-048](tasks/G-048.md) 的依赖 Wasm 接口在 `d71fa706d7179341d1d21ef713604a4c43cf8d22` 通过主线 R1、Web、docs，Node/Bun 实际 Wasm 各回放 8 组新语料，结果逐字节一致；旧语料未改。ADR 0025 和 `vn-dependencies-v1` 冻结格式已建立。该接口仍需在 VN reader 构建显式启用功能开关，并接入公开 TS 和资源准备；未宣称完整 VN2。
+
+[G-047](tasks/G-047.md) 在 `c0d3ddfdd8e46f15a68c4296fb954e2a2def3408` 通过 R1、Web、VN、scripts、docs：171 项包测试、25 项独立安装测试、28 项 R1 浏览器和 13 项 VN 旅程。公开 `./vn/authoring`、`./vn/server` 已验证 Node/Bun 与浏览器的同候选编译和打开，参考发布脚本使用公开入口并复现原构件、对象、lock 和 pack。固定作者 API 切片为 `0.1.0-alpha.1`、SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`，1,815,163 字节；见 `.temp/delivery/vn-authoring-release.json` 和对应主线验收目录。编辑控件仍待实现。
 
 ## 下一步与未交付结果
 
 已验收的底层基础仍不等于完整 VN2/VN3：还需公共依赖桥接、有界候选媒体准备与缓存生命周期、A/B 按需分发证据、Web/Node/Bun 作者封装、实际编辑预览、多场景短篇和最终固定包交付。
-
-下一项 [G-047](tasks/G-047.md) 使用 gpt-6-luna/high，交付公开 VN 作者入口、独立安装的 Node/Bun/浏览器同候选预览，以及基于公开 server 入口的参考构建脚本。编辑控件与完整候选预加载仍是后续结果。
-
-并行的 [G-048](tasks/G-048.md) 使用 sonnet/high，限定于版本化依赖 Wasm 接口、ADR 0025、独立 schema 与新兼容语料；其查询需保持普通程序请求和存档状态不变。公开 TS 桥接和完整预加载仍待后续消费者实现。
 
 manager 为 `codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn`。模型与 effort 按任务简报选择，Codex worker 优先使用 gpt-6-luna/high 或 max；实时派发、认领与进程以 `task goal -- status` 为准。
 

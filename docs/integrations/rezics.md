@@ -146,7 +146,9 @@ REZICS 侧需保留每个历史构件的精确清单、程序块，以及随发�
 
 [Gamebook SDK](../../packages/narrata/web/README.md) 的完整固定包已通过本地及主线 CI 验收，源码与包身份见上文；tarball 由维护者提供，安装前核对固定身份。[Web VN Goal](../goals/web-vn/GOAL.md) 的 VN1 阅读与播放器切片已通过本地主线验收：版本 `0.1.0-alpha.1`、[源码 b5c8457630177173ea233a569bb0eb5c7f845e8d](https://github.com/rezics/narrata/tree/b5c8457630177173ea233a569bb0eb5c7f845e8d)、tarball SHA-256 `4c77f0511fe1239c22fc6685e08fa8c84e0ca6e4e6b746abad169eda7861c649`，1,796,713 字节。维护者提供该固定文件；旧阅读 API 切片 `e81a492` / `11db5e10fbe1a6319ae921fb90e1d30bcc00678c5d679bf9886dc078f5a13299` 和完整 Gamebook 包保留各自历史身份，不与本包互换。此切片尚不是完整 VN2/VN3 交付。
 
-播放端从 `@rezics/narrata/vn/player` 创建协调器，宿主提供内容、媒体解析与呈现适配；参考实现位于 `examples/visual-novel-web/`。协调器借用 reader，关闭呈现只释放呈现资源，不代表存档已确认；写入结果未知时先通过原 reader 核实/重试，再结束 reader 生命周期。场景资源重试不重复叙事输入。公开作者入口、编辑预览与完整短篇交付仍待完成。REZICS 专用实现仍只列为本页能力请求；七项 Gamebook 请求仍为“提出”，npm registry 尚未发布，真实联合验收尚未执行。
+播放端从 `@rezics/narrata/vn/player` 创建协调器，宿主提供内容、媒体解析与呈现适配；参考实现位于 `examples/visual-novel-web/`。协调器借用 reader，关闭呈现只释放呈现资源，不代表存档已确认；写入结果未知时先通过原 reader 核实/重试，再结束 reader 生命周期。场景资源重试不重复叙事输入。
+
+需要作者入口时，使用作者 API 切片：`0.1.0-alpha.1`、[源码 c0d3ddfdd8e46f15a68c4296fb954e2a2def3408](https://github.com/rezics/narrata/tree/c0d3ddfdd8e46f15a68c4296fb954e2a2def3408)、tarball SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`。它提供浏览器 `@rezics/narrata/vn/authoring` 和 Node/Bun `@rezics/narrata/vn/server` 的同候选校验、编译和不可变对象导出；具体调用见[包说明](../../packages/narrata/web/README.md)。预览不写正式发布指针或读者存档，媒体和正文仍由宿主解析；该包与上文播放器历史切片身份分别保留。实际编辑预览和完整 VN2/VN3 交付仍待完成。REZICS 专用实现仍只列为本页能力请求；七项 Gamebook 请求仍为“提出”，npm registry 尚未发布，真实联合验收尚未执行。
 
 ### 地图与关系接入
 
