@@ -14,6 +14,7 @@ pub mod publication;
 pub mod records;
 pub mod relations;
 pub mod validate;
+pub mod vn;
 
 pub use compose::{
     ComposeMode, ComposedObjects, ComposedRecords, ComposedSource, compose_records, compose_source,
