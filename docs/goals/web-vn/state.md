@@ -26,6 +26,8 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 下一项 [G-047](tasks/G-047.md) 使用 gpt-6-luna/high，交付公开 VN 作者入口、独立安装的 Node/Bun/浏览器同候选预览，以及基于公开 server 入口的参考构建脚本。编辑控件与完整候选预加载仍是后续结果。
 
+并行的 [G-048](tasks/G-048.md) 使用 sonnet/high，限定于版本化依赖 Wasm 接口、ADR 0025、独立 schema 与新兼容语料；其查询需保持普通程序请求和存档状态不变。公开 TS 桥接和完整预加载仍待后续消费者实现。
+
 manager 为 `codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn`。模型与 effort 按任务简报选择，Codex worker 优先使用 gpt-6-luna/high 或 max；实时派发、认领与进程以 `task goal -- status` 为准。
 
 REZICS 的媒体、授权和上传能力仍只列为[宿主能力请求](../../integrations/rezics.md#web-vn-后续需要的宿主能力)。七项 Gamebook 请求仍为“提出”，npm registry 未发布，真实 REZICS 联合验收尚未执行；单仓库 VN0 验收不代表 VN 产品上线。
