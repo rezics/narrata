@@ -183,6 +183,7 @@ async function verifyInstalledReference({ tarball, receiptLabel }) {
     assertInventoryEqual(afterBun, afterBrowser, "Browser previews");
     receipt.evidence = await summarizeBrowserEvidence(consumerRoot);
     receipt.sourceAfter = await sourceIdentity();
+    receipt.sourceAfter.inputFiles = await hashInputs(listTrackedReferenceFiles());
     assert.deepEqual(receipt.sourceAfter.inputFiles, receipt.source.inputFiles, "Relevant workspace source changed during the independent consumer run.");
     if (receipt.sourceAfter.commit !== receipt.source.commit || receipt.sourceAfter.relevantWorkingTree.length) {
       throw new Error("Relevant source was not committed or changed during the independent consumer run.");
@@ -191,7 +192,10 @@ async function verifyInstalledReference({ tarball, receiptLabel }) {
   } catch (error) {
     receipt.status = "failed";
     receipt.failures.push(sanitize(error instanceof Error ? error.message : error));
-    try { receipt.sourceAfter = await sourceIdentity(); } catch (sourceError) {
+    try {
+      receipt.sourceAfter = await sourceIdentity();
+      receipt.sourceAfter.inputFiles = await hashInputs(listTrackedReferenceFiles());
+    } catch (sourceError) {
       receipt.failures.push(sanitize(`Could not verify source after the run: ${sourceError instanceof Error ? sourceError.message : sourceError}`));
     }
   } finally {
