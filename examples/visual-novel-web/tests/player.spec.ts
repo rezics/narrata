@@ -67,6 +67,13 @@ async function recordMetrics(page: Page, name: string) {
 
 test.afterEach(async ({ page }, testInfo) => {
   await recordMetrics(page, testInfo.title.replace(/[^A-Za-z0-9_-]+/g, "-").toLowerCase());
+  if (testInfo.status !== testInfo.expectedStatus) {
+    const evidence = await page.evaluate(() => ({
+      candidates: window.__vnTestHooks?.controller.getSnapshot().candidates,
+      metrics: window.__vnTestHooks?.metrics,
+    }));
+    console.log(`VN failure evidence: ${JSON.stringify(evidence)}`);
+  }
 });
 
 async function currentView(page: Page) {
@@ -342,19 +349,32 @@ test("choice branches change complete scene layers, converge, and history can se
 test("same-revision candidate media is reused only inside its authorization context", async ({ page }) => {
   await openPlayer(page);
   await toChoice(page);
-  await waitForCandidatePreparation(page);
+  // Optional work may finish partially; this journey requires the named background in both scopes.
+  await waitForCandidatePreparationToSettle(page);
   const firstScope = await metrics(page);
-  expect(firstScope.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.contextScope])).toEqual([["1", "demo-public"]]);
+  const firstRequests = firstScope.mediaRequests.filter(item => item.key === "background/old-hall");
+  expect(firstRequests).toHaveLength(1);
+  const firstRequest = firstRequests[0];
+  if (!firstRequest) throw new Error("The initial scope did not prepare the background.");
+  expect(firstRequest).toMatchObject({ revision: "1", contextScope: "demo-public", status: "available", source: "network" });
+  expect(firstRequest.networkBytes).toBeGreaterThan(0);
+  expect(firstScope.mediaDecodes.filter(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "1")).toHaveLength(1);
   const releasedBeforeSwitch = firstScope.releases;
 
   await page.evaluate(async () => { await window.__vnTestHooks?.switchContext("reader-two"); });
   await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeEnabled();
   await waitForCandidatePreparationToSettle(page);
   const secondScope = await metrics(page);
-  expect(secondScope.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.contextScope])).toEqual([
+  const secondRequests = secondScope.mediaRequests.filter(item => item.key === "background/old-hall");
+  expect(secondRequests.map(item => [item.revision, item.contextScope])).toEqual([
     ["1", "demo-public"],
     ["1", "reader-two"],
   ]);
+  const secondRequest = secondRequests[1];
+  if (!secondRequest) throw new Error("The new scope did not prepare the background.");
+  expect(secondRequest).toMatchObject({ status: "available", source: "network", sha256: firstRequest.sha256, bytes: firstRequest.bytes });
+  expect(secondRequest.networkBytes).toBeGreaterThan(0);
+  expect(secondScope.mediaDecodes.filter(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "1")).toHaveLength(2);
   expect(secondScope.releases).toBeGreaterThan(releasedBeforeSwitch);
 
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
