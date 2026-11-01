@@ -1,0 +1,663 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VnDependenciesV1",
+  "description": "The schema document: both halves of the exchange, so one file describes the whole boundary.",
+  "type": "object",
+  "properties": {
+    "request": {
+      "$ref": "#/$defs/DependencyRequestV1"
+    },
+    "result": {
+      "$ref": "#/$defs/DependencyResultV1"
+    }
+  },
+  "required": [
+    "request",
+    "result"
+  ],
+  "$defs": {
+    "ArtifactId": {
+      "type": "string",
+      "pattern": "^artifact:[0-9a-f]{64}$"
+    },
+    "CommitId": {
+      "type": "string",
+      "pattern": "^commit:[0-9a-f]{64}$"
+    },
+    "ContentKey": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "ContentRef": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/ContentKey"
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "key"
+      ]
+    },
+    "DependencyContentRoleV1": {
+      "description": "What a content reference is for.",
+      "type": "string",
+      "enum": [
+        "dialogue_line",
+        "dialogue_speaker",
+        "passage_title",
+        "passage_body",
+        "choice_label",
+        "choice_reason",
+        "choice_reply",
+        "ending_title",
+        "ending_body"
+      ]
+    },
+    "DependencyContentV1": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/ContentRef"
+        },
+        "role": {
+          "$ref": "#/$defs/DependencyContentRoleV1"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "reference"
+      ]
+    },
+    "DependencyGraphV1": {
+      "description": "A graph a continuation may enter and the program chunk that holds it.",
+      "type": "object",
+      "properties": {
+        "chunk": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphRef"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "graph",
+        "chunk"
+      ]
+    },
+    "DependencyLimitsV1": {
+      "description": "The five native bounds of one projection, as exchanged.",
+      "type": "object",
+      "properties": {
+        "candidates": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 16384,
+          "minimum": 1
+        },
+        "graphs": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 64,
+          "minimum": 0
+        },
+        "locations": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 4096,
+          "minimum": 1
+        },
+        "references": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 4096,
+          "minimum": 1
+        },
+        "scans": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 16384,
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "locations",
+        "graphs",
+        "candidates",
+        "references",
+        "scans"
+      ]
+    },
+    "DependencyMediaRoleV1": {
+      "description": "How a media reference would be used by the scene node it came from.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "background"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "character_layer"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "music_play"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "music_keep"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "voice"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "DependencyMediaV1": {
+      "type": "object",
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/MediaRef"
+        },
+        "role": {
+          "$ref": "#/$defs/DependencyMediaRoleV1"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "reference"
+      ]
+    },
+    "DependencyRequestV1": {
+      "description": "A projection request: the commit the caller believes is current, and the bounds to spend.",
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "limits": {
+          "$ref": "#/$defs/DependencyLimitsV1"
+        },
+        "version": {
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 1,
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "cursor",
+        "limits"
+      ]
+    },
+    "DependencyResultV1": {
+      "description": "Potential additional dependencies of the next safe point, tied to the exact artifact and\ncommit they were computed from. A conservative union, not a prediction: the current View's\nscene resources stay with the caller, and nothing here is bytes, a URL or a credential.",
+      "type": "object",
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/ArtifactId"
+        },
+        "complete": {
+          "description": "The bounded enumeration reached every safe point and ending: `truncations` is empty.",
+          "type": "boolean"
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DependencyContentV1"
+          }
+        },
+        "cursor": {
+          "$ref": "#/$defs/CommitId"
+        },
+        "graphs": {
+          "description": "Graphs of the current frames are not listed. Sorted, without repeats.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DependencyGraphV1"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/DependencyLimitsV1"
+        },
+        "media": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DependencyMediaV1"
+          }
+        },
+        "music_may_stop": {
+          "description": "Some continuation stops the music before its safe point. Stopping has no reference.",
+          "type": "boolean"
+        },
+        "truncations": {
+          "description": "In discovery order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DependencyTruncationV1"
+          }
+        },
+        "unknowns": {
+          "description": "Sorted, without repeats.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DependencyUnknownV1"
+          }
+        },
+        "version": {
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 1,
+          "minimum": 1
+        },
+        "work": {
+          "$ref": "#/$defs/DependencyWorkV1"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "artifact_id",
+        "cursor",
+        "limits",
+        "complete",
+        "graphs",
+        "content",
+        "media",
+        "music_may_stop",
+        "truncations",
+        "unknowns",
+        "work"
+      ]
+    },
+    "DependencyTruncationV1": {
+      "description": "Why the result may be missing references. Each is a fact about this query: an unavailable\nobject may exist and become loadable later.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "locations"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "scans"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "candidates"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "references"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "kind": {
+              "type": "string",
+              "const": "graphs"
+            },
+            "limit": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph",
+            "limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "kind": {
+              "type": "string",
+              "const": "call_depth"
+            },
+            "node": {
+              "$ref": "#/$defs/NodeId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph",
+            "node"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "kind": {
+              "type": "string",
+              "const": "automatic_cycle"
+            },
+            "node": {
+              "$ref": "#/$defs/NodeId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph",
+            "node"
+          ]
+        },
+        {
+          "description": "The chunk could not be loaded or failed its checked decode; `error` is the source's own.",
+          "type": "object",
+          "properties": {
+            "chunk": {
+              "$ref": "#/$defs/ObjectId"
+            },
+            "error": {
+              "$ref": "#/$defs/Diagnostic"
+            },
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "kind": {
+              "type": "string",
+              "const": "unavailable"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph",
+            "chunk",
+            "error"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/Diagnostic"
+            },
+            "graph": {
+              "$ref": "#/$defs/GraphRef"
+            },
+            "kind": {
+              "type": "string",
+              "const": "unresolved"
+            },
+            "node": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/NodeId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "graph",
+            "error"
+          ]
+        }
+      ]
+    },
+    "DependencyUnknownV1": {
+      "description": "What a result still did not evaluate. These never hide references.",
+      "type": "string",
+      "enum": [
+        "conditions",
+        "assignments",
+        "call_arguments",
+        "host_proposals"
+      ]
+    },
+    "DependencyWorkV1": {
+      "description": "The work the query did, for hosts that budget or test it.",
+      "type": "object",
+      "properties": {
+        "candidates": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "graphs": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "locations": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "scans": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "locations",
+        "scans",
+        "graphs",
+        "candidates"
+      ]
+    },
+    "Diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "path",
+        "message"
+      ]
+    },
+    "GraphRef": {
+      "description": "A graph of one package instance. Package aliases and graph names are composition\nstructure, so unlike node aliases they are part of the artifact identity.",
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "graph"
+      ]
+    },
+    "MediaKind": {
+      "type": "string",
+      "enum": [
+        "image",
+        "audio"
+      ]
+    },
+    "MediaRef": {
+      "description": "A content-owned media identity. Narrata stores the provider's immutable key and revision,\nnever a URL, credential, decoded byte buffer or player handle.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MediaKind"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "key",
+        "revision"
+      ]
+    },
+    "NodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "ObjectId": {
+      "type": "string",
+      "pattern": "^object:[0-9a-f]{64}$"
+    },
+    "ProviderId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,32}$"
+    }
+  }
+}

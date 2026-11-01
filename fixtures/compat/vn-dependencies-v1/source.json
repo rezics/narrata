@@ -1,0 +1,554 @@
+{
+  "manifest": {
+    "format_version": 3,
+    "packages": {
+      "main": "main.json"
+    },
+    "product": {
+      "endings": {
+        "done": {
+          "body": {
+            "first": "e1",
+            "last": "e1",
+            "unit": {
+              "key": "ending.body",
+              "provider": "host"
+            }
+          },
+          "title": {
+            "key": "ending.title",
+            "provider": "host"
+          }
+        }
+      },
+      "entry": {
+        "graph": "start",
+        "package": "main"
+      },
+      "id": "vn-deps",
+      "shared": {
+        "met": false
+      }
+    }
+  },
+  "packages": {
+    "main": {
+      "exports": [
+        "start"
+      ],
+      "graphs": {
+        "helper": {
+          "entry": "enter",
+          "nodes": {
+            "enter": {
+              "data": {
+                "background": {
+                  "key": "bg/helper",
+                  "kind": "image",
+                  "provider": "demo",
+                  "revision": "r1"
+                },
+                "layers": [],
+                "music": {
+                  "kind": "play",
+                  "track": {
+                    "key": "music/helper",
+                    "kind": "audio",
+                    "provider": "demo",
+                    "revision": "a9"
+                  }
+                },
+                "next": "leave"
+              },
+              "id": "node:00000000000000000000000000000015",
+              "type_id": "narrata.scene"
+            },
+            "leave": {
+              "data": {
+                "outcome": "back"
+              },
+              "id": "node:00000000000000000000000000000016",
+              "type_id": "narrata.return"
+            }
+          },
+          "outcomes": [
+            "back"
+          ]
+        },
+        "start": {
+          "entry": "open",
+          "nodes": {
+            "after": {
+              "data": {
+                "condition": {
+                  "kind": "read",
+                  "name": "met",
+                  "scope": "shared"
+                },
+                "when_false": "alone",
+                "when_true": "met"
+              },
+              "id": "node:0000000000000000000000000000000b",
+              "type_id": "narrata.branch"
+            },
+            "alone": {
+              "data": {
+                "line": {
+                  "first": "line-start",
+                  "last": "line-end",
+                  "unit": {
+                    "key": "line.alone",
+                    "provider": "host"
+                  }
+                },
+                "next": "pack"
+              },
+              "id": "node:0000000000000000000000000000000d",
+              "type_id": "narrata.dialogue"
+            },
+            "ask": {
+              "data": {
+                "body": {
+                  "unit": {
+                    "key": "ask.body",
+                    "provider": "host"
+                  }
+                },
+                "choice_points": [
+                  {
+                    "id": "choice-point:00000000000000000000000000000001",
+                    "key": "route",
+                    "options": [
+                      {
+                        "id": "option:00000000000000000000000000000001",
+                        "key": "left",
+                        "label": {
+                          "key": "label.left",
+                          "provider": "host"
+                        },
+                        "outcome": {
+                          "kind": "branch",
+                          "target": "left_fx"
+                        }
+                      },
+                      {
+                        "id": "option:00000000000000000000000000000002",
+                        "key": "right",
+                        "label": {
+                          "key": "label.right",
+                          "provider": "host"
+                        },
+                        "outcome": {
+                          "kind": "branch",
+                          "target": "right_call"
+                        }
+                      },
+                      {
+                        "id": "option:00000000000000000000000000000003",
+                        "key": "secret",
+                        "label": {
+                          "key": "label.secret",
+                          "provider": "host"
+                        },
+                        "outcome": {
+                          "kind": "branch",
+                          "target": "secret"
+                        },
+                        "visible_if": {
+                          "kind": "literal",
+                          "value": false
+                        }
+                      },
+                      {
+                        "enabled_if": {
+                          "kind": "literal",
+                          "value": false
+                        },
+                        "id": "option:00000000000000000000000000000004",
+                        "key": "locked",
+                        "label": {
+                          "key": "label.locked",
+                          "provider": "host"
+                        },
+                        "outcome": {
+                          "kind": "branch",
+                          "target": "vault"
+                        },
+                        "reason": {
+                          "key": "reason.locked",
+                          "provider": "host"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "title": {
+                  "key": "ask.title",
+                  "provider": "host"
+                }
+              },
+              "id": "node:00000000000000000000000000000005",
+              "type_id": "narrata.passage"
+            },
+            "finale": {
+              "data": {
+                "background": {
+                  "key": "bg/end",
+                  "kind": "image",
+                  "provider": "demo",
+                  "revision": "r3"
+                },
+                "layers": [],
+                "music": {
+                  "kind": "stop"
+                },
+                "next": "last"
+              },
+              "id": "node:0000000000000000000000000000000f",
+              "type_id": "narrata.scene"
+            },
+            "finish": {
+              "data": {
+                "outcome": "done"
+              },
+              "id": "node:00000000000000000000000000000011",
+              "type_id": "narrata.return"
+            },
+            "last": {
+              "data": {
+                "line": {
+                  "first": "line-start",
+                  "last": "line-end",
+                  "unit": {
+                    "key": "line.last",
+                    "provider": "host"
+                  }
+                },
+                "next": "finish"
+              },
+              "id": "node:00000000000000000000000000000010",
+              "type_id": "narrata.dialogue"
+            },
+            "left_fx": {
+              "data": {
+                "assignments": [
+                  {
+                    "target": {
+                      "name": "met",
+                      "scope": "shared"
+                    },
+                    "value": {
+                      "kind": "literal",
+                      "value": true
+                    }
+                  }
+                ],
+                "next": "merge"
+              },
+              "id": "node:00000000000000000000000000000006",
+              "type_id": "narrata.mutate"
+            },
+            "merge": {
+              "data": {
+                "background": {
+                  "key": "bg/hall",
+                  "kind": "image",
+                  "provider": "demo",
+                  "revision": "r2"
+                },
+                "layers": [
+                  {
+                    "asset": {
+                      "key": "portrait/hero-alert",
+                      "kind": "image",
+                      "provider": "demo",
+                      "revision": "v2"
+                    },
+                    "id": "hero",
+                    "order": 10
+                  },
+                  {
+                    "asset": {
+                      "key": "portrait/friend",
+                      "kind": "image",
+                      "provider": "demo",
+                      "revision": "v3"
+                    },
+                    "id": "friend",
+                    "order": 20
+                  }
+                ],
+                "music": {
+                  "kind": "keep"
+                },
+                "next": "after"
+              },
+              "id": "node:0000000000000000000000000000000a",
+              "type_id": "narrata.scene"
+            },
+            "met": {
+              "data": {
+                "line": {
+                  "first": "line-start",
+                  "last": "line-end",
+                  "unit": {
+                    "key": "line.met",
+                    "provider": "host"
+                  }
+                },
+                "next": "pack",
+                "voice": {
+                  "key": "voice/met",
+                  "kind": "audio",
+                  "provider": "demo",
+                  "revision": "a2"
+                }
+              },
+              "id": "node:0000000000000000000000000000000c",
+              "type_id": "narrata.dialogue"
+            },
+            "mid": {
+              "data": {
+                "background": {
+                  "key": "bg/mid",
+                  "kind": "image",
+                  "provider": "demo",
+                  "revision": "r1"
+                },
+                "layers": [
+                  {
+                    "asset": {
+                      "key": "portrait/hero",
+                      "kind": "image",
+                      "provider": "demo",
+                      "revision": "v1"
+                    },
+                    "id": "hero",
+                    "order": 10
+                  }
+                ],
+                "music": {
+                  "kind": "keep"
+                },
+                "next": "ask"
+              },
+              "id": "node:00000000000000000000000000000004",
+              "type_id": "narrata.scene"
+            },
+            "one": {
+              "data": {
+                "line": {
+                  "first": "line-start",
+                  "last": "line-end",
+                  "unit": {
+                    "key": "line.one",
+                    "provider": "host"
+                  }
+                },
+                "next": "two",
+                "speaker": {
+                  "key": "speaker.hero",
+                  "provider": "host"
+                },
+                "voice": {
+                  "key": "voice/one",
+                  "kind": "audio",
+                  "provider": "demo",
+                  "revision": "a1"
+                }
+              },
+              "id": "node:00000000000000000000000000000002",
+              "type_id": "narrata.dialogue"
+            },
+            "open": {
+              "data": {
+                "background": {
+                  "key": "bg/room",
+                  "kind": "image",
+                  "provider": "demo",
+                  "revision": "r1"
+                },
+                "layers": [
+                  {
+                    "asset": {
+                      "key": "portrait/hero",
+                      "kind": "image",
+                      "provider": "demo",
+                      "revision": "v1"
+                    },
+                    "id": "hero",
+                    "order": 10
+                  }
+                ],
+                "music": {
+                  "kind": "play",
+                  "track": {
+                    "key": "music/theme",
+                    "kind": "audio",
+                    "provider": "demo",
+                    "revision": "a1"
+                  }
+                },
+                "next": "one"
+              },
+              "id": "node:00000000000000000000000000000001",
+              "type_id": "narrata.scene"
+            },
+            "pack": {
+              "data": {
+                "body": {
+                  "unit": {
+                    "key": "pack.body",
+                    "provider": "host"
+                  }
+                },
+                "choice_points": [
+                  {
+                    "id": "choice-point:00000000000000000000000000000002",
+                    "key": "pack",
+                    "max": 2,
+                    "min": 0,
+                    "options": [
+                      {
+                        "id": "option:00000000000000000000000000000005",
+                        "key": "rope",
+                        "label": {
+                          "key": "label.rope",
+                          "provider": "host"
+                        },
+                        "outcome": {
+                          "kind": "local",
+                          "rejoin": "b2",
+                          "reply": {
+                            "first": "r-rope",
+                            "last": "r-rope",
+                            "unit": {
+                              "key": "pack.body",
+                              "provider": "host"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "id": "option:00000000000000000000000000000006",
+                        "key": "lamp",
+                        "label": {
+                          "key": "label.lamp",
+                          "provider": "host"
+                        },
+                        "outcome": {
+                          "kind": "local",
+                          "rejoin": "b2",
+                          "reply": {
+                            "first": "r-lamp",
+                            "last": "r-lamp",
+                            "unit": {
+                              "key": "pack.body",
+                              "provider": "host"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "placement": "b1"
+                  },
+                  {
+                    "id": "choice-point:00000000000000000000000000000003",
+                    "key": "go",
+                    "options": [
+                      {
+                        "id": "option:00000000000000000000000000000007",
+                        "key": "onward",
+                        "label": {
+                          "key": "label.onward",
+                          "provider": "host"
+                        },
+                        "outcome": {
+                          "kind": "branch",
+                          "target": "finale"
+                        }
+                      }
+                    ],
+                    "placement": "b2"
+                  }
+                ]
+              },
+              "id": "node:0000000000000000000000000000000e",
+              "type_id": "narrata.passage"
+            },
+            "right_call": {
+              "data": {
+                "on_return": {
+                  "back": "merge"
+                },
+                "target": {
+                  "graph": "helper",
+                  "kind": "local"
+                }
+              },
+              "id": "node:00000000000000000000000000000007",
+              "type_id": "narrata.call"
+            },
+            "secret": {
+              "data": {
+                "line": {
+                  "first": "line-start",
+                  "last": "line-end",
+                  "unit": {
+                    "key": "line.secret",
+                    "provider": "host"
+                  }
+                },
+                "next": "finish"
+              },
+              "id": "node:00000000000000000000000000000008",
+              "type_id": "narrata.dialogue"
+            },
+            "two": {
+              "data": {
+                "line": {
+                  "first": "line-start",
+                  "last": "line-end",
+                  "unit": {
+                    "key": "line.two",
+                    "provider": "host"
+                  }
+                },
+                "next": "mid",
+                "speaker": {
+                  "key": "speaker.friend",
+                  "provider": "host"
+                }
+              },
+              "id": "node:00000000000000000000000000000003",
+              "type_id": "narrata.dialogue"
+            },
+            "vault": {
+              "data": {
+                "line": {
+                  "first": "line-start",
+                  "last": "line-end",
+                  "unit": {
+                    "key": "line.vault",
+                    "provider": "host"
+                  }
+                },
+                "next": "finish"
+              },
+              "id": "node:00000000000000000000000000000009",
+              "type_id": "narrata.dialogue"
+            }
+          },
+          "outcomes": [
+            "done"
+          ],
+          "shared": {
+            "met": "bool"
+          }
+        }
+      },
+      "id": "vn-deps.main",
+      "version": "1.0.0"
+    }
+  }
+}

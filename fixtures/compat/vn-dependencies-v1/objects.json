@@ -1,0 +1,10 @@
+{
+  "main.helper": {
+    "file": "object.main.helper.bin",
+    "id": "object:5a8e3e0a2b3377447335ce2b58a07f0949038259dd57e43e18c28d2aa14bb477"
+  },
+  "main.start": {
+    "file": "object.main.start.bin",
+    "id": "object:b8f622046e5b6b3abdd1b79464d57b1908522a21264b052a7c5bdde070494a3d"
+  }
+}

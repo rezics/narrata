@@ -11,10 +11,14 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [features]
+default = ["legacy-publish", "vn-dependencies"]
 # The raw module's publishGraph. The reader build disables it so the first screen carries no
 # compiler, layout or publication code; authoring hosts use narrata-authoring-wasm instead.
-default = ["legacy-publish"]
 legacy-publish = ["dep:narrata-node-tools", "dep:hex"]
+# VnBook.dependencies (ADR 0025): the walk and its exchange add about 62 KB to the reader's
+# Wasm, so a reader build chooses it explicitly (`--no-default-features --features
+# vn-dependencies`) together with the size budget that pays for it.
+vn-dependencies = []
 
 [dependencies]
 narrata-node-tools = { path = "../../../tooling/crates/narrata-node-tools", version = "=0.1.0-alpha.1", optional = true }
@@ -26,6 +30,10 @@ hex = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 wasm-bindgen.workspace = true
+
+[dev-dependencies]
+# Only the schema tests and the corpus generator derive and print the exchange schema.
+schemars.workspace = true
 
 [lints]
 workspace = true

@@ -3,7 +3,15 @@
 //! The default `legacy-publish` feature adds the raw module's `publishGraph`; the reader
 //! build omits it.
 
+// The test story is one large `json!` document.
+#![cfg_attr(test, recursion_limit = "512")]
 #![forbid(unsafe_code)]
+
+#[cfg(feature = "vn-dependencies")]
+pub mod dependencies;
+
+#[cfg(all(test, feature = "vn-dependencies"))]
+mod dependency_tests;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -1195,6 +1203,14 @@ impl VnBook {
         self.inner.choose(expected, choice_point, options)
     }
 
+    #[cfg(feature = "vn-dependencies")]
+    /// Read-only dependency projection (ADR 0025): a version 1 request as JSON in, a version 1
+    /// result as JSON out. It changes neither the session nor the storage requests, and leaves
+    /// no program request behind for the host to treat as mandatory.
+    pub fn dependencies(&self, request: &str) -> Result<String, JsError> {
+        self.dependency_result(request).map_err(js_error)
+    }
+
     pub fn checkout(&mut self, commit: &str) -> Result<(), JsError> {
         self.inner.checkout(commit)
     }
@@ -1205,6 +1221,49 @@ impl VnBook {
 
     pub fn restore(&mut self, export: &str) -> Result<(), JsError> {
         self.inner.restore(export)
+    }
+}
+
+#[cfg(feature = "vn-dependencies")]
+impl VnBook {
+    /// The checked query behind [`VnBook::dependencies`], with native errors.
+    pub fn dependency_result(&self, request: &str) -> narrata_nodes::Result<String> {
+        use dependencies::{DependencyRequestV1, DependencyResultV1};
+        let (cursor, limits) = DependencyRequestV1::decode(request)?;
+        let session = self
+            .inner
+            .session
+            .as_ref()
+            .ok_or_else(|| Error::new("state", "session", "open the session first"))?;
+        if session.cursor()? != cursor {
+            return Err(Error::new(
+                "stale_input",
+                "cursor",
+                "cursor changed before the dependency query",
+            ));
+        }
+        // A cold graph makes HostChunks record a request that the projection then reports as a
+        // truncation. That request is the query's own, not the host's: put back whatever an
+        // ordinary operation had pending and nothing else. Only the current artifact's loader
+        // is touched, and supplied bytes stay for the operation that supplied them.
+        let chunks = self.inner.active().chunks.as_ref();
+        let pending = chunks.map(|chunks| {
+            chunks
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .request
+        });
+        let projection = session.dependency_projection(limits);
+        if let (Some(chunks), Some(request)) = (chunks, pending) {
+            chunks
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .request = request;
+        }
+        serde_json::to_string(&DependencyResultV1::new(projection?, limits))
+            .map_err(|error| Error::new("json", "$", error.to_string()))
     }
 }
 

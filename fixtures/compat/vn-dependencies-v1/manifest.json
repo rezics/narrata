@@ -1,0 +1,90 @@
+{
+  "artifact_id": "artifact:78036edf83916e7a8864bbd43cee7bbda4c012dd2efc5e1a6370254801f65850",
+  "artifacts": {
+    "advance.default.request.json": {
+      "sha256": "7f5510e3973b129d1c6db93ef7bd598039759e7844c9e34bb3701f1e3b80fb2e"
+    },
+    "advance.default.result.json": {
+      "sha256": "8204bbde82a88a00cb14df9409c1e64b7241f417067a72baf74daa00fbf4af11"
+    },
+    "choice.default.request.json": {
+      "sha256": "b7a8fbab7683df54897a4992dfa41ef60387b732ff13ee2cc030fef77356e681"
+    },
+    "choice.default.result.json": {
+      "sha256": "66549499b72c9116191e727f235650de14d9e1ae64688e12db797d99964c2d9f"
+    },
+    "choice.few-locations.request.json": {
+      "sha256": "92262f02864bb04d4277212e5a2f70da80156be4fb9d8d53615bc11fca36def2"
+    },
+    "choice.few-locations.result.json": {
+      "sha256": "873de0bebf40206b96e849772adb1114f1eb1805bfafefef8591eae4dd252001"
+    },
+    "choice.no-extra-graphs.request.json": {
+      "sha256": "061a75f200d0d9753867715effb0615a87b33bf9f0df7129e13eba38543095f1"
+    },
+    "choice.no-extra-graphs.result.json": {
+      "sha256": "6af66c1c359c3dcd426600830836c361bf3698fdf5d2aec6fa99336071ab6275"
+    },
+    "cold-chunk.recovered.request.json": {
+      "sha256": "b7a8fbab7683df54897a4992dfa41ef60387b732ff13ee2cc030fef77356e681"
+    },
+    "cold-chunk.recovered.result.json": {
+      "sha256": "66549499b72c9116191e727f235650de14d9e1ae64688e12db797d99964c2d9f"
+    },
+    "cold-chunk.unavailable.request.json": {
+      "sha256": "b7a8fbab7683df54897a4992dfa41ef60387b732ff13ee2cc030fef77356e681"
+    },
+    "cold-chunk.unavailable.result.json": {
+      "sha256": "a57ee08917db63fb5e5d1e1750a41c12fc0251a0fa6b158f140bd150ab4954af"
+    },
+    "multiselect.default.request.json": {
+      "sha256": "71068c8a24de9a1d2c06f81e5d52dfebe17d4bd1fcbce0d2a46b149ca27e1be8"
+    },
+    "multiselect.default.result.json": {
+      "sha256": "5065b9f5228ce80e393c7ee2ea767b498f94953c16919b4b8277529b8af78d71"
+    },
+    "object.main.helper.bin": {
+      "sha256": "298bdb578a515c45accb16bf0704066043cc3ed4dbde5fc298a36f502bed296f"
+    },
+    "object.main.start.bin": {
+      "sha256": "f8b0de9b606775ac3f57ca22e8e16bf87cad412234e026fd4e7cb79b73d58ff7"
+    },
+    "objects.json": {
+      "sha256": "41ef930efd3735f10c66339a389b5216f07e8af58846bf5f697c980807c6ef8e"
+    },
+    "rejected-requests.json": {
+      "sha256": "8b8600acf5e4a06ff37dd79eac11e4ea9411cfdfad32797759c2d9af172913eb"
+    },
+    "rejected-results.json": {
+      "sha256": "0f32cdd3d55d9bedcfb12b40f4e35c046178aa7356faa2cba1b8a99844650611"
+    },
+    "scenarios.json": {
+      "sha256": "dfb63725c5c794b2ce7b35a1310c27a01fa87c8a2e0a7ddb69963625e97c5930"
+    },
+    "scene-stop.default.request.json": {
+      "sha256": "23e32291cd8913b7229ec007614cfb8f838a7fdecbe9f28a2cccb8705b14c3d1"
+    },
+    "scene-stop.default.result.json": {
+      "sha256": "a1e282ac611564c5004dc9c980b03b3d67a65c96d225f40f4bd71fb469cb0bf3"
+    },
+    "source.json": {
+      "sha256": "171d951fc916fbde8a34be6200ae2dec53877489e6196d465c2a7f47a12ec4a0"
+    },
+    "story.manifest": {
+      "sha256": "27b6d0efd1b2c084e98002104caf1820c3df47cfc24eedb09aeebc5b0c4f30cd"
+    },
+    "story.narpack": {
+      "sha256": "aa91e19b55dcc4b109d4045397af086fc5d8e832ad16288f5839a769dbe2a5ad"
+    }
+  },
+  "corpus_version": 1,
+  "derived_objects": "story.manifest, objects.json and object.<graph>.bin are the pack's manifest and chunks, for hosts that replay the cold scenario without reading a pack",
+  "execution": "execution:0190f2a0000070008000000000000001",
+  "format": "ADR 0025 VN dependency exchange version 1: VnBook.dependencies request and result JSON",
+  "generation": "cargo test -p narrata-nodes-wasm --lib -- --ignored write_dependency_corpus, with NARRATA_CORPUS_OUT naming a new directory under .temp; story.narpack compiles from source.json and every other file is produced by running scenarios.json through VnBook",
+  "inputs": [
+    "source.json",
+    "scenarios.json",
+    "story.narpack"
+  ]
+}
