@@ -8,7 +8,7 @@ areas:
 
 # Web VN 与按需分发
 
-状态：VN0 与 VN1 的可安装阅读 API、参考播放器及媒体呈现已通过本地主线验收；原生依赖投影和作者基础已具备。完整 VN2、公开作者入口、编辑预览和最终短篇交付尚待完成。固定源码、包与检查记录见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 保持为已验收基线。
+状态：VN0 与 VN1 的可安装阅读 API、参考播放器及媒体呈现已通过本地主线验收；公开作者入口、编辑与隔离即时预览也已验收。完整 VN2 候选准备、参考宿主接线与最终独立安装包交付尚待完成。固定源码、包与检查记录见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 保持为已验收基线。
 
 ## 结果
 
