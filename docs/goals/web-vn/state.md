@@ -14,7 +14,7 @@ VN 阅读 API 切片的固定包版本同为 `0.1.0-alpha.1`，SHA-256 为 `11db
 
 VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks/G-045.md) 已在主线 `fd00b31c7c9223fa1dc5908a8c77158b78880995` 通过 R1（28 项浏览器回归）与文档检查，等价代码的[主线 CI](https://github.com/rezics/narrata/actions/runs/41276885118)八项成功。9 项定向原生测试覆盖同候选、方言、语义诊断、修改隔离和删除墓碑。验收记录位于 `.temp/goal/runs/G-045/manager-acceptance/`。
 
-[G-044](tasks/G-044.md) 的有界只读增量依赖投影与 [G-046](tasks/G-046.md) 的原始 Wasm 作者桥接，已在同一主线 `2ab426777130512e6fe35f81d10567c612b5a7fa` 通过 R1、Web 和文档检查：R1 浏览器 28 项，Web 单元 147 项，独立安装消费者 25 项及 Node/Bun/Chromium 旅程通过，包体积限制未放宽。原生投影有 17 项定向测试；Wasm 桥接的实际 Node/Bun 调用生成与冻结语料逐字节相同的包，修改后候选有效且旧候选保持不变。既有兼容语料和交换格式未改。固定源码与失败/重试记录见 `.temp/goal/runs/G-046/main-acceptance/2ab4267-retry-cached-registry/` 及两项任务的 `manager-acceptance/`。
+[G-044](../../../archive/goals/web-vn-2026-10-31/tasks/G-044.md) 的有界只读增量依赖投影与 [G-046](../../../archive/goals/web-vn-2026-10-31/tasks/G-046.md) 的原始 Wasm 作者桥接，已在同一主线 `2ab426777130512e6fe35f81d10567c612b5a7fa` 通过 R1、Web 和文档检查：R1 浏览器 28 项，Web 单元 147 项，独立安装消费者 25 项及 Node/Bun/Chromium 旅程通过，包体积限制未放宽。原生投影有 17 项定向测试；Wasm 桥接的实际 Node/Bun 调用生成与冻结语料逐字节相同的包，修改后候选有效且旧候选保持不变。既有兼容语料和交换格式未改。固定源码与失败/重试记录见 `.temp/goal/runs/G-046/main-acceptance/2ab4267-retry-cached-registry/` 及两项任务的 `manager-acceptance/`。
 
 ## 下一步与未交付结果
 
