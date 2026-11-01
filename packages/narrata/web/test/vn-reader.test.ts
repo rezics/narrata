@@ -297,6 +297,30 @@ test("corrupt optional graph bytes remain partial and retry cleanly without a na
   }
 });
 
+test("a graph-work truncation does not mark an unread manifest object checked", async () => {
+  const parts = splitPack(vnDependencyPack);
+  const requested: string[] = [];
+  const reader = await openVn({ manifest: parts.manifest, execution, fetchChunk: async id => {
+    requested.push(id);
+    const bytes = parts.objects.get(id);
+    if (!bytes) throw new Error(`Missing fixture object ${id}`);
+    return bytes;
+  } });
+  try {
+    let current = await reader.inspect();
+    for (let step = 0; current.view.interaction.kind === "advance" && step < 16; step++) {
+      await reader.advance(current.view.cursor, advance(current).dialogue);
+      current = await reader.inspect();
+    }
+    const prepared = await reader.prepareCandidates(current.view.cursor,
+      { locations: 256, graphs: 0, candidates: 2048, references: 512, scans: 1024 }, new AbortController().signal);
+    expect(prepared.status).toBe("partial");
+    expect(prepared.dependencies.truncations.some(item => item.kind === "graphs")).toBe(true);
+    expect(prepared.objects).toEqual([]);
+    expect(requested).toHaveLength(1);
+  } finally { await reader.close(); }
+});
+
 test("dependency queries reject after close without calling freed Wasm", async () => {
   const reader = await openVn({ pack: vnPack, execution });
   const current = await reader.inspect();
@@ -435,6 +459,10 @@ test("VN save retry resends the same bytes and durable progress contains one tra
     const pendingBytes = writes.at(-1)?.slice();
     if (!pendingBytes) throw new Error("Expected a failed storage request");
     await expect(reader.inspect()).rejects.toThrow("unknown outcome");
+    const limits = { locations: 1, graphs: 0, candidates: 1, references: 1, scans: 1 };
+    await expect(reader.dependencies(before.view.cursor, limits)).rejects.toThrow("unknown outcome");
+    await expect(reader.prepareCandidates(before.view.cursor, limits, new AbortController().signal)).rejects.toThrow("unknown outcome");
+    expect(writes.at(-1)).toEqual(pendingBytes);
     expect(await reader.retrySave()).toBe(true);
     expect(writes.at(-1)).toEqual(pendingBytes);
     const confirmed = await reader.inspect();

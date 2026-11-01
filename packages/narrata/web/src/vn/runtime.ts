@@ -242,12 +242,8 @@ export class RuntimeVn implements VnReader {
     for (let round = 0; round < 16 && !signal.aborted; round++) {
       const graphIds = dependencyObjectIds(dependencies);
       const coldIds = dependencies.truncations.flatMap(item => item.kind === "unavailable" ? [item.chunk] : []);
-      const coldObjects = new Set(coldIds);
-      // A graph already inspected by the owning Wasm reader has checked bytes. Only a
-      // reported cold object needs host I/O; do not fetch the current entry graph again.
-      for (const graph of dependencies.graphs) if (!coldObjects.has(graph.chunk) && !states.has(graph.chunk)) {
-        states.set(graph.chunk, "checked");
-      }
+      // Manifest graph listings are not proof that a bounded query read their bytes.
+      // Report checked objects only after supplying those exact bytes to Wasm.
       const pending = coldIds.filter(id => !states.has(id));
       if (pending.length > 0) {
         const loaded = await this.candidates.prepareObjects(artifact, pending.slice(0, 16), signal);
@@ -301,7 +297,7 @@ export class RuntimeVn implements VnReader {
         }
       }
       dependencies = queried;
-      const newlyDiscovered = dependencyObjectIds(dependencies).some(id => !states.has(id));
+      const newlyDiscovered = dependencies.truncations.some(item => item.kind === "unavailable" && !states.has(item.chunk));
       if (!newlyDiscovered) break;
     }
 
