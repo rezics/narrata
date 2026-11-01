@@ -127,6 +127,7 @@ async function verifyInstalledReference({ tarball, receiptLabel }) {
     await copyFile(inputPath, copiedTarball);
 
     const exampleRoot = join(consumerRoot, "examples/visual-novel-web");
+    await removeWorkspaceSdkResolutionAllowance(exampleRoot);
     const packagePath = join(exampleRoot, "package.json");
     const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
     packageJson.dependencies ??= {};
@@ -342,6 +343,18 @@ async function copyTrackedFiles(paths, consumerRoot) {
     await mkdir(dirname(target), { recursive: true });
     await copyFile(source, target);
   }
+}
+
+async function removeWorkspaceSdkResolutionAllowance(exampleRoot) {
+  const configPath = join(exampleRoot, "vite.config.ts");
+  const source = await readFile(configPath, "utf8");
+  const installedConsumerConfig = source
+    .replace(/^const packageRoot = resolve\(here, "\.\.\/\.\.\/packages\/narrata\/web"\);\r?\n/m, "")
+    .replace("fs: { allow: [here, product, packageRoot] }", "fs: { allow: [here, product] }");
+  if (installedConsumerConfig === source || /packageRoot|packages\/narrata\/web/.test(installedConsumerConfig)) {
+    throw new Error("Could not remove the copied Vite workspace SDK resolution allowance.");
+  }
+  await writeFile(configPath, installedConsumerConfig, "utf8");
 }
 
 async function publicationInventory(root) {
