@@ -7,11 +7,13 @@ use std::{
 
 use narrata_authoring::{PublicationStatus, publication::ObjectReference};
 use narrata_authoring_wasm::{
+    VnDrafts,
     core::{DraftSet, Loader, Occupancy, SourceBuilder, digest, object_id},
     interface,
 };
 use narrata_nodes::{
-    AuthoredId, ContentOutline, Error, NodeRegistry, Program, ProjectSource, compile,
+    AuthoredId, ContentOutline, Error, NodeRegistry, Program, ProjectSource,
+    VISUAL_NOVEL_FORMAT_VERSION, compile,
 };
 
 fn repository() -> PathBuf {
@@ -48,6 +50,270 @@ fn drafts(records: &[Vec<u8>]) -> DraftSet {
         drafts.add(record);
     }
     drafts
+}
+
+fn vn_records() -> Vec<Vec<u8>> {
+    let mut value: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(repository().join("fixtures/compat/nodes-vn-v1/source.json")).unwrap(),
+    )
+    .unwrap();
+    let source = ProjectSource {
+        manifest: serde_json::from_value(value["manifest"].take()).unwrap(),
+        packages: BTreeMap::from([(
+            "main".into(),
+            serde_json::from_value(value["package"].take()).unwrap(),
+        )]),
+    };
+    narrata_authoring::split_source(&source)
+        .into_result()
+        .unwrap()
+        .into_iter()
+        .map(|record| record.bytes().to_vec())
+        .collect()
+}
+
+#[test]
+fn vn_wasm_entry_checks_and_previews_only_vn_snapshots() {
+    let records = vn_records();
+    let input = records.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let native = narrata_authoring::vn::preview_records(
+        &input,
+        None,
+        narrata_authoring::ComposeMode::Update,
+    )
+    .value
+    .unwrap();
+    let native_pack = &native.composed.compilation.objects;
+    let mut drafts = VnDrafts::new();
+    for record in &records {
+        drafts.add(record);
+    }
+    let checked = drafts.check();
+    assert!(serde_json::from_str::<serde_json::Value>(&checked.report().unwrap()).unwrap()
+        ["diagnostics"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let preview = drafts.compose(None).unwrap();
+    let report: serde_json::Value = serde_json::from_str(&preview.report().unwrap()).unwrap();
+    let old_report = report.clone();
+    let old_manifest = preview.manifest().unwrap();
+    let old_pack = preview.pack().unwrap();
+    assert_eq!(
+        report["artifact_id"],
+        native
+            .composed
+            .compilation
+            .program
+            .artifact_id()
+            .to_string()
+    );
+    assert_eq!(
+        report["lock"],
+        serde_json::to_value(&native.composed.compilation.lock).unwrap()
+    );
+    assert_eq!(old_manifest, native_pack.manifest);
+    assert_eq!(VISUAL_NOVEL_FORMAT_VERSION, 3);
+
+    let objects = report["objects"].as_array().unwrap();
+    let old_objects = objects
+        .iter()
+        .map(|id| preview.object(id.as_str().unwrap()).unwrap().unwrap())
+        .collect::<Vec<_>>();
+    for (id, expected) in objects.iter().zip(
+        native_pack
+            .chunks
+            .iter()
+            .chain(std::iter::once(&native_pack.tombstones)),
+    ) {
+        let id = id.as_str().unwrap();
+        assert_eq!(preview.object(id).unwrap().unwrap(), *expected);
+    }
+    assert_eq!(
+        preview
+            .object(&format!("object:{}", "00".repeat(32)))
+            .unwrap(),
+        None
+    );
+    assert!(preview.pack().is_ok());
+    let repeated = drafts.compose(None).unwrap();
+    assert_eq!(repeated.pack().unwrap(), old_pack);
+    assert_eq!(repeated.manifest().unwrap(), old_manifest);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&repeated.report().unwrap()).unwrap(),
+        old_report
+    );
+
+    let mut changed = vn_records();
+    let dialogue = changed
+        .iter_mut()
+        .find(|bytes| {
+            serde_json::from_slice::<serde_json::Value>(bytes).unwrap()["payload"]["type_id"]
+                == "narrata.dialogue"
+        })
+        .unwrap();
+    let mut record: serde_json::Value = serde_json::from_slice(dialogue).unwrap();
+    record["payload"]["data"]["speaker"]["key"] =
+        serde_json::Value::String("speaker.edited".into());
+    *dialogue = narrata_nodes::canonical_json(&record).unwrap();
+    let changed_input = changed.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let changed_native = narrata_authoring::vn::preview_records(
+        &changed_input,
+        None,
+        narrata_authoring::ComposeMode::Update,
+    )
+    .value
+    .unwrap();
+    let mut changed_drafts = VnDrafts::new();
+    for record in &changed {
+        changed_drafts.add(record);
+    }
+    let next = changed_drafts.compose(None).unwrap();
+    let next_report: serde_json::Value = serde_json::from_str(&next.report().unwrap()).unwrap();
+    assert!(next_report["complete"].as_bool().unwrap());
+    assert_eq!(
+        next_report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|d| d["severity"] == "error")
+            .count(),
+        0
+    );
+    assert!(next_report["artifact_id"].is_string());
+    assert_eq!(
+        next_report["artifact_id"],
+        changed_native
+            .composed
+            .compilation
+            .program
+            .artifact_id()
+            .to_string()
+    );
+    assert_eq!(
+        next.pack().unwrap(),
+        changed_native.composed.compilation.objects.encode()
+    );
+    assert_ne!(old_report["artifact_id"], next_report["artifact_id"]);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&preview.report().unwrap()).unwrap(),
+        old_report
+    );
+    assert_eq!(preview.manifest().unwrap(), old_manifest);
+    assert_eq!(preview.pack().unwrap(), old_pack);
+    for (id, expected) in old_report["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(old_objects)
+    {
+        assert_eq!(
+            preview.object(id.as_str().unwrap()).unwrap().unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn gamebook_and_vn_draft_routes_reject_the_other_dialect() {
+    let mut vn = VnDrafts::new();
+    for record in source_records() {
+        vn.add(&record);
+    }
+    let vn_report: serde_json::Value = serde_json::from_str(&vn.check().report().unwrap()).unwrap();
+    assert!(!vn_report["diagnostics"].as_array().unwrap().is_empty());
+
+    let mut gamebook = DraftSet::default();
+    for record in vn_records() {
+        gamebook.add(&record);
+    }
+    assert!(gamebook.check().report.complete);
+    assert!(gamebook.check().records.is_empty());
+}
+
+#[test]
+fn vn_draft_check_returns_located_dialogue_diagnostics() {
+    let mut records = vn_records();
+    let dialogue = records
+        .iter_mut()
+        .find(|bytes| {
+            serde_json::from_slice::<serde_json::Value>(bytes).unwrap()["payload"]["type_id"]
+                == "narrata.dialogue"
+        })
+        .unwrap();
+    let mut record: serde_json::Value = serde_json::from_slice(dialogue).unwrap();
+    record["payload"]["data"]
+        .as_object_mut()
+        .unwrap()
+        .remove("line");
+    *dialogue = narrata_nodes::canonical_json(&record).unwrap();
+    let mut drafts = VnDrafts::new();
+    for record in records {
+        drafts.add(&record);
+    }
+    let report: serde_json::Value =
+        serde_json::from_str(&drafts.check().report().unwrap()).unwrap();
+    let diagnostic = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["severity"] == "error")
+        .unwrap();
+    assert_eq!(
+        diagnostic["source_path"],
+        "packages.main.graphs.start.nodes.line_four"
+    );
+}
+
+#[test]
+fn vn_draft_check_returns_located_scene_diagnostics() {
+    let mut records = vn_records();
+    let scene = records
+        .iter_mut()
+        .find(|bytes| {
+            serde_json::from_slice::<serde_json::Value>(bytes).unwrap()["payload"]["type_id"]
+                == "narrata.scene"
+        })
+        .unwrap();
+    let mut record: serde_json::Value = serde_json::from_slice(scene).unwrap();
+    let duplicate = record["payload"]["data"]["layers"][0].clone();
+    record["payload"]["data"]["layers"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate);
+    *scene = narrata_nodes::canonical_json(&record).unwrap();
+    let mut drafts = VnDrafts::new();
+    for record in records {
+        drafts.add(&record);
+    }
+    let report: serde_json::Value =
+        serde_json::from_str(&drafts.check().report().unwrap()).unwrap();
+    let diagnostic = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["severity"] == "error")
+        .unwrap();
+    assert_eq!(
+        diagnostic["source_path"],
+        "packages.main.graphs.start.nodes.scene_one.layers[1]"
+    );
+}
+
+#[test]
+fn failed_gamebook_preview_keeps_compared_when_a_baseline_was_supplied() {
+    let source = demo();
+    let previous = compile(&source, &NodeRegistry::gamebook()).unwrap().program;
+    let mut invalid = DraftSet::default();
+    invalid.add(b"{}");
+    let failed = invalid.compose(Some(&previous), None).unwrap();
+    assert!(failed.report.artifact_id.is_none());
+    assert!(failed.report.compared);
+
+    let valid = drafts(&source_records());
+    let successful = valid.compose(Some(&previous), None).unwrap();
+    assert!(successful.report.artifact_id.is_some());
+    assert!(successful.report.compared);
 }
 
 #[test]

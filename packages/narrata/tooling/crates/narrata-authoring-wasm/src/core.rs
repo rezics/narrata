@@ -200,46 +200,31 @@ impl DraftSet {
         RecordSet::checked(validate_records(&self.inputs()), Vec::new())
     }
 
+    /// Explicit VN check; ordinary drafts keep their Gamebook dialect.
+    pub fn check_vn(&self) -> RecordSet {
+        RecordSet::checked(
+            narrata_authoring::vn::validate_records(&self.inputs()),
+            Vec::new(),
+        )
+    }
+
     pub fn compose(
         &self,
         previous: Option<&Program>,
         lock: Option<&CompositionLock>,
     ) -> Result<PreviewObjects> {
-        let report = compose_records(&self.inputs(), previous, mode(lock));
-        let mut preview = PreviewObjects {
-            report: PreviewReport {
-                complete: report.complete,
-                diagnostics: report.diagnostics,
-                artifact_id: None,
-                lock: None,
-                compared: previous.is_some(),
-                tombstones: Vec::new(),
-                objects: Vec::new(),
-            },
-            pack: None,
-            positions: BTreeMap::new(),
-        };
-        let Some(composed) = report.value else {
-            return Ok(preview);
-        };
-        let composed = composed.composed;
-        let pack = composed.compilation.objects;
-        for (position, bytes) in pack
-            .chunks
-            .iter()
-            .chain(std::iter::once(&pack.tombstones))
-            .enumerate()
-        {
-            let id = MemorySource::default().insert(bytes.clone())?;
-            preview.positions.insert(id, position);
-            preview.report.objects.push(id);
-        }
-        preview.report.artifact_id = Some(composed.compilation.program.artifact_id());
-        preview.report.lock = Some(composed.compilation.lock);
-        preview.report.compared = composed.compared;
-        preview.report.tombstones = composed.tombstones;
-        preview.pack = Some(pack);
-        Ok(preview)
+        preview_objects(
+            compose_records(&self.inputs(), previous, mode(lock)),
+            previous.is_some(),
+        )
+    }
+
+    /// Compose a VN candidate without publishing it or writing reader state.
+    pub fn compose_vn(&self, lock: Option<&CompositionLock>) -> Result<PreviewObjects> {
+        preview_objects(
+            narrata_authoring::vn::preview_records(&self.inputs(), None, mode(lock)),
+            false,
+        )
     }
 
     pub fn publish(&self, previous: Option<&Program>, lock: Option<&CompositionLock>) -> Published {
@@ -251,6 +236,46 @@ impl DraftSet {
             mode(lock),
         ))
     }
+}
+
+fn preview_objects(
+    report: Report<narrata_authoring::ComposedRecords>,
+    compared: bool,
+) -> Result<PreviewObjects> {
+    let mut preview = PreviewObjects {
+        report: PreviewReport {
+            complete: report.complete,
+            diagnostics: report.diagnostics,
+            artifact_id: None,
+            lock: None,
+            compared,
+            tombstones: Vec::new(),
+            objects: Vec::new(),
+        },
+        pack: None,
+        positions: BTreeMap::new(),
+    };
+    let Some(composed) = report.value else {
+        return Ok(preview);
+    };
+    let composed = composed.composed;
+    let pack = composed.compilation.objects;
+    for (position, bytes) in pack
+        .chunks
+        .iter()
+        .chain(std::iter::once(&pack.tombstones))
+        .enumerate()
+    {
+        let id = MemorySource::default().insert(bytes.clone())?;
+        preview.positions.insert(id, position);
+        preview.report.objects.push(id);
+    }
+    preview.report.artifact_id = Some(composed.compilation.program.artifact_id());
+    preview.report.lock = Some(composed.compilation.lock);
+    preview.report.compared = composed.compared;
+    preview.report.tombstones = composed.tombstones;
+    preview.pack = Some(pack);
+    Ok(preview)
 }
 
 /// A preview's program objects. The manifest and entry chunk suffice for a first screen;

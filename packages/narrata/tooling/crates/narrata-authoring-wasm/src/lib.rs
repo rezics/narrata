@@ -186,6 +186,38 @@ impl Drafts {
     }
 }
 
+/// Explicit VN source-format drafts. This entry exposes checking and same-candidate preview;
+/// publication remains a Gamebook-only operation on [`Drafts`].
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct VnDrafts {
+    inner: core::DraftSet,
+}
+
+#[wasm_bindgen]
+impl VnDrafts {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> VnDrafts {
+        Self::default()
+    }
+    /// Stores record bytes; diagnostics name it `records[<insertion index>]`.
+    pub fn add(&mut self, bytes: &[u8]) {
+        self.inner.add(bytes);
+    }
+    /// Checks records, assembly and VN semantics using source format 3.
+    pub fn check(&self) -> Records {
+        Records {
+            inner: self.inner.check_vn(),
+        }
+    }
+    /// Compiles one VN preview snapshot. A lock JSON selects locked composition.
+    pub fn compose(&self, lock_json: Option<String>) -> Result<Preview, JsError> {
+        let lock = lock(lock_json)?;
+        let inner = self.inner.compose_vn(lock.as_ref()).map_err(js_error)?;
+        Ok(Preview { inner })
+    }
+}
+
 impl Drafts {
     fn preview(
         &self,
