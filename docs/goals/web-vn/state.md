@@ -34,6 +34,8 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 参考宿主源码 `18ea5b3e30f268806bc8cbca18aa7ddd5e6cf8df` 已复制到仓库外，安装上述固定作者 API tarball；检查确认 SDK 实际路径位于独立消费者内。Node/Bun 经公开 `./vn/server` 重新生成相同短篇 pack，实际宿主构建与全部 16 项桌面/手机编辑、播放、保存恢复及失败重试旅程通过。该记录证明当前作者/播放器切片可独立消费，最终候选预加载仍需用最终固定包重跑；见 `.temp/goal/runs/vn-reference-installed/author-preview-baseline-esm/receipt.json`。
 
+编辑预览首轮 [CI](https://github.com/rezics/narrata/actions/runs/41299837049) 的 Ubuntu VN 旅程有 14 项通过、2 项手机工具栏内容溢出失败，作者三项均通过。`27274c1619fc747dcfb280888fcbbad19c0b6c4f` 保留 44px 触控目标，在手机使用带无障碍名称的历史图标，并覆盖 17px 大字号；完整 VN 16 项和仓库外固定包旅程 16 项均再次通过。独立验收还核对 Node/Bun 发布元数据及预览前后全部发布文件哈希一致；见 `.temp/goal/runs/vn-reference-installed/author-preview-mobile-fix/receipt.json`。[修复 CI](https://github.com/rezics/narrata/actions/runs/41301346061) 正在运行。
+
 当前 [G-049](tasks/G-049.md) 正在修正完整有界候选资源准备：冷图块媒体发现、候选资源取消/接管时的释放、加载中资源的预算及完整性状态。最终参考宿主接线、独立安装的编辑/播放/预加载联合旅程和固定包交付仍待完成。
 
 manager 为 `codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn`。模型与 effort 按任务简报选择，Codex worker 优先使用 gpt-6-luna/high 或 max；实时派发、认领与进程以 `task goal -- status` 为准。
