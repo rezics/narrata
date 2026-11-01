@@ -152,7 +152,7 @@ REZICS 侧需保留每个历史构件的精确清单、程序块，以及随发�
 
 最终 VN reference-host 消费包固定为版本 `0.1.0-alpha.1`、源码 `2745b876a66d079ff8ecd573239c27e8fb3a1d3e`、SHA-256 `2fae09fba6fffcbfefb395c524a030ed6d0c320634035586e99167574307344e`、2,275,288 字节；SHA-512、源输入哈希和每次运行证据保存在新 receipt。`examples/visual-novel-web/scripts/verify-installed-reference.mjs` 与 `task vn:verify-installed` 需要显式 tarball 和新 label：它复制已跟踪的 reader、源稿、公共对象和媒体到系统临时 `.temp/`，安装该精确 tarball，分别经 Node 与 Bun 的公开 `@rezics/narrata/vn/server` 构建相同 pack，再构建实际宿主并跑 Chromium journey。receipt、请求和字节测量、lease 释放证据与截图都留在独立消费者目录；不会覆盖旧 label。此本地包消费不表示 npm registry 已发布，也不替代 REZICS 真实联合验收。
 
-需要作者入口时，历史作者 API 切片为 `0.1.0-alpha.1`、[源码 c0d3ddfdd8e46f15a68c4296fb954e2a2def3408](https://github.com/rezics/narrata/tree/c0d3ddfdd8e46f15a68c4296fb954e2a2def3408)、tarball SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`；它与前述播放器历史切片身份分别保留。浏览器 `@rezics/narrata/vn/authoring` 和 Node/Bun `@rezics/narrata/vn/server` 提供同候选校验、编译和不可变对象导出，具体调用见[包说明](../../packages/narrata/web/README.md)。G-050 已接入真实宿主正文编辑和隔离即时预览，预览不写正式发布指针或读者存档；固定最终包的独立安装与联合旅程仍按上文区分。七项 Gamebook 请求仍为“提出”，npm registry 尚未发布，真实 REZICS 联合验收尚未执行。
+需要作者入口时，历史作者 API 切片为 `0.1.0-alpha.1`、[源码 c0d3ddfdd8e46f15a68c4296fb954e2a2def3408](https://github.com/rezics/narrata/tree/c0d3ddfdd8e46f15a68c4296fb954e2a2def3408)、tarball SHA-256 `672601eec2733cece12c5aeb62d8c70ebb729688354e80bc7ed453586c33ece7`；它与前述播放器历史切片身份分别保留。浏览器 `@rezics/narrata/vn/authoring` 和 Node/Bun `@rezics/narrata/vn/server` 提供同候选校验、编译和不可变对象导出，具体调用见[包说明](../../packages/narrata/web/README.md)。参考作者流程已接入真实宿主正文编辑和隔离即时预览，预览不写正式发布指针或读者存档；固定最终包的独立安装与联合旅程仍按上文区分。七项 Gamebook 请求仍为“提出”，npm registry 尚未发布，真实 REZICS 联合验收尚未执行。
 
 ### 地图与关系接入
 
