@@ -1,3 +1,4 @@
+import { waitForPreparedBackground } from "./candidate-preparation.js";
 import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -63,10 +64,6 @@ async function formalState(page: Page) {
     save: await window.__vnTestHooks?.save(),
     view: (await window.__vnTestHooks?.currentView())?.view,
   }));
-}
-
-async function waitForCandidatePreparation(page: Page) {
-  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("complete");
 }
 
 async function buildNewPublicationCandidate(withFutureVoice = false): Promise<DemoCandidateTransfer> {
@@ -166,7 +163,7 @@ async function playNarrowBranchToEnding(page: Page) {
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   const prepared = await page.evaluate(() => window.__vnTestHooks?.metrics.mediaRequests.filter(item => item.key === "background/old-hall").length);
   expect(prepared).toBe(1);
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
@@ -209,7 +206,7 @@ test("desktop author preview edits host content, plays a branch, recovers, and p
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   expect((await page.evaluate(() => window.__vnTestHooks?.metrics.candidateQueries))).toBe(1);
   expect((await page.evaluate(() => window.__vnTestHooks?.metrics.mediaRequests.filter(item => item.key === "background/old-hall").length))).toBe(1);
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
@@ -252,7 +249,7 @@ test("a replaced preview host prepares again after a same-breakpoint resize", as
   const firstHostId = await page.evaluate(() => window.__vnTestHooks?.metrics.audioTimelineId);
   if (!firstHostId) throw new Error("The first isolated preview host identity is unavailable.");
   await toChoice(page);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   expect((await page.evaluate(() => window.__vnTestHooks?.metrics.candidateQueries))).toBe(1);
 
   await dialogue.fill("The replacement preview has its own preparation attempt.");
@@ -262,7 +259,7 @@ test("a replaced preview host prepares again after a same-breakpoint resize", as
   if (!replacementHostId) throw new Error("The replacement preview host identity is unavailable.");
 
   await toChoice(page);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   const beforeResize = await page.evaluate(async () => ({
     metrics: window.__vnTestHooks?.metrics,
     view: await window.__vnTestHooks?.currentView(),
@@ -272,7 +269,7 @@ test("a replaced preview host prepares again after a same-breakpoint resize", as
 
   await page.setViewportSize({ width: 1586, height: 820 });
   await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.metrics.candidateQueries)).toBe(2);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   const afterResize = await page.evaluate(async () => ({
     metrics: window.__vnTestHooks?.metrics,
     view: await window.__vnTestHooks?.currentView(),
@@ -371,7 +368,7 @@ test("running publication A stays pinned while public pack B starts under its ow
     expect(publishedB.metrics.mediaDecodes.some(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "2" && item.bytes === bOldHallTwo?.bytes)).toBe(true);
 
     await toChoice(page);
-    await waitForCandidatePreparation(page);
+    await waitForPreparedBackground(page);
     const aAtChoice = await page.evaluate(() => window.__vnTestHooks?.metrics);
     if (!aAtChoice) throw new Error("A did not keep its live reader after B was created.");
     expect(aAtChoice.logicalRequests.filter(item => item.phase === "candidate").length).toBeGreaterThan(0);
@@ -677,7 +674,7 @@ test("390px author preview stays usable, discards a late candidate, and recovers
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
   await page.route("**/assets/old-hall-interior.png", route => route.abort());
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();

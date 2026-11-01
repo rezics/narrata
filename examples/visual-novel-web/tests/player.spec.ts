@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { waitForPreparedBackground } from "./candidate-preparation.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const screenshots = resolve(root, ".temp/goal/runs/vn-player/screenshots");
@@ -34,10 +35,6 @@ async function toChoiceWithAudioBaseline(page: Page) {
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
   return playsBeforePreparation;
-}
-
-async function waitForCandidatePreparation(page: Page) {
-  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("complete");
 }
 
 async function waitForCandidatePreparationToSettle(page: Page) {
@@ -269,7 +266,7 @@ test("resize swaps only the host image variant and leaves the pending save curso
 test("same-breakpoint height refresh rebuilds choice preparation without changing save or cursor", async ({ page }) => {
   await openPlayer(page);
   await toChoice(page);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   const beforeView = await currentView(page);
   const beforeSave = await save(page);
   const beforeMetrics = await metrics(page);
@@ -278,7 +275,7 @@ test("same-breakpoint height refresh rebuilds choice preparation without changin
   await page.setViewportSize({ width: 1586, height: 820 });
   await expect(page.locator("[data-background='background/river-night']")).toHaveAttribute("data-variant", "landscape-cover");
   await expect.poll(async () => (await metrics(page)).candidateQueries).toBe(2);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page, 2);
   const afterView = await currentView(page);
   expect(afterView.view.cursor).toBe(beforeView.view.cursor);
   expect(await save(page)).toBe(beforeSave);
@@ -290,7 +287,7 @@ test("choice branches change complete scene layers, converge, and history can se
   await openPlayer(page);
   await unlockSound(page);
   const playsBeforePreparation = await toChoiceWithAudioBaseline(page);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   const preparedMetrics = await metrics(page);
   expect(preparedMetrics.candidateQueries).toBe(1);
   expect(preparedMetrics.logicalRequests.some(item => item.phase === "candidate" && item.kind === "chunk")).toBe(true);
@@ -385,7 +382,7 @@ test("same-revision candidate media is reused only inside its authorization cont
 test("revisiting a choice prepares consumed candidate media again and reuses it on entry", async ({ page }) => {
   await openPlayer(page);
   await toChoice(page);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   const firstPrepared = await metrics(page);
   expect(firstPrepared.candidateQueries).toBe(1);
   expect(firstPrepared.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(1);
@@ -400,7 +397,7 @@ test("revisiting a choice prepares consumed candidate media again and reuses it 
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeEnabled();
   await expect.poll(async () => (await metrics(page)).candidateQueries).toBe(2);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   const revisitedChoice = await metrics(page);
   const targetRequests = revisitedChoice.mediaRequests.filter(item => item.key === "background/old-hall");
   expect(targetRequests).toHaveLength(2);
@@ -665,7 +662,7 @@ test("delayed visual failure retains the old complete screen and resource retry 
   await openPlayer(page);
   await unlockSound(page);
   await toChoice(page);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   await clearPreparedCaches(page);
   const choiceView = await currentView(page);
   const beforeCalls = await metrics(page);
@@ -714,7 +711,7 @@ test("delayed visual failure retains the old complete screen and resource retry 
 test("a late resource from a previous host context is discarded and released", async ({ page }) => {
   await openPlayer(page);
   await toChoice(page);
-  await waitForCandidatePreparation(page);
+  await waitForPreparedBackground(page);
   await clearPreparedCaches(page);
   const choice = await currentView(page);
   await page.evaluate(() => {

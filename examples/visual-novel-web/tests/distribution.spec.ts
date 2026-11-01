@@ -1,3 +1,4 @@
+import { waitForPreparedBackground } from "./candidate-preparation.js";
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -51,7 +52,7 @@ test("installed VN loads its entry lazily, prepares a later branch and records e
   const playsBeforePreparation = (await page.evaluate(() => window.__vnTestHooks?.metrics.audioEvents.filter(item => item.event === "play").length)) ?? 0;
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
-  await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("complete");
+  await waitForPreparedBackground(page);
   const choiceMetrics = await page.evaluate(() => window.__vnTestHooks?.metrics);
   if (!choiceMetrics) throw new Error("The installed VN candidate-preparation probe is unavailable.");
   const atChoice = await resourceTiming(page);
