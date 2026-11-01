@@ -259,6 +259,26 @@ test("resize swaps only the host image variant and leaves the pending save curso
   expect(afterCalls.mediaRequests.some(item => item.key === "background/river-night" && item.variant === "portrait-cover")).toBe(true);
 });
 
+test("same-breakpoint height refresh rebuilds choice preparation without changing save or cursor", async ({ page }) => {
+  await openPlayer(page);
+  await toChoice(page);
+  await waitForCandidatePreparation(page);
+  const beforeView = await currentView(page);
+  const beforeSave = await save(page);
+  const beforeMetrics = await metrics(page);
+  expect(beforeMetrics.candidateQueries).toBe(1);
+
+  await page.setViewportSize({ width: 1586, height: 820 });
+  await expect(page.locator("[data-background='background/river-night']")).toHaveAttribute("data-variant", "landscape-cover");
+  await expect.poll(async () => (await metrics(page)).candidateQueries).toBe(2);
+  await waitForCandidatePreparation(page);
+  const afterView = await currentView(page);
+  expect(afterView.view.cursor).toBe(beforeView.view.cursor);
+  expect(await save(page)).toBe(beforeSave);
+  expect((await metrics(page)).candidateQueries).toBe(2);
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeEnabled();
+});
+
 test("choice branches change complete scene layers, converge, and history can select an earlier point", async ({ page }) => {
   await openPlayer(page);
   await unlockSound(page);
@@ -360,6 +380,95 @@ test("an optional candidate resource failure leaves an available branch playable
   await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
   await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
   expect((await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.status)).toEqual(["unavailable", "available"]);
+});
+
+test("a chosen route finishes while optional media is held, then ignores and releases its late result", async ({ page }) => {
+  await openPlayer(page);
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    if (window.__vnTestHooks) window.__vnTestHooks.controls.delayLateNext = { key: "background/old-hall", delayMs: 2_000 };
+  });
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
+  await expect.poll(async () => (await metrics(page)).mediaRequests.filter(item => item.key === "background/old-hall").length).toBe(1);
+  const choiceView = await currentView(page);
+  const beforeInput = await metrics(page);
+  expect(beforeInput.mediaRequests.find(item => item.key === "background/old-hall")?.status).toBe("pending");
+
+  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  const committedView = await currentView(page);
+  expect(committedView.view.cursor).not.toBe(choiceView.view.cursor);
+  expect(committedView.view.depth).toBe(choiceView.view.depth + 1);
+  const whileOptionalIsHeld = await metrics(page);
+  expect(whileOptionalIsHeld.mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.status)).toContain("pending");
+  expect(whileOptionalIsHeld.lateDiscards).toBe(0);
+  expect(whileOptionalIsHeld.readerCalls.choose).toBe(beforeInput.readerCalls.choose + 1);
+  expect(whileOptionalIsHeld.readerCalls.advance).toBe(beforeInput.readerCalls.advance);
+  const saveAfterInput = await save(page);
+
+  await expect.poll(async () => (await metrics(page)).lateDiscards).toBeGreaterThan(0);
+  const afterLateResult = await metrics(page);
+  expect(afterLateResult.lateDiscarded.some(item => item.key === "background/old-hall" && item.commit === choiceView.view.cursor)).toBe(true);
+  expect(afterLateResult.releases).toBeGreaterThan(beforeInput.releases);
+  expect(afterLateResult.mediaDecodes.some(item => item.phase === "candidate" && item.key === "background/old-hall")).toBe(false);
+  expect(afterLateResult.readerCalls.choose).toBe(beforeInput.readerCalls.choose + 1);
+  expect(afterLateResult.readerCalls.advance).toBe(beforeInput.readerCalls.advance);
+  expect((await currentView(page)).view.cursor).toBe(committedView.view.cursor);
+  expect(await save(page)).toBe(saveAfterInput);
+  expect(await page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates)).toBeUndefined();
+});
+
+test("a choice completes on another branch while an optional graph object arrives late", async ({ page }) => {
+  await openPlayer(page);
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    if (window.__vnTestHooks) window.__vnTestHooks.controls.delayCandidateChunkNext = { delayMs: 2_000 };
+  });
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
+  await expect.poll(async () => (await metrics(page)).candidateChunkRequests.filter(item => item.status === "pending").length).toBeGreaterThan(0);
+  const choice = await currentView(page);
+  const pendingChunk = (await metrics(page)).candidateChunkRequests.find(item => item.status === "pending");
+  if (!pendingChunk) throw new Error("The optional graph request was not held.");
+  const projection = await page.evaluate(async cursor => {
+    const reader = window.__vnTestHooks?.reader;
+    if (!reader) throw new Error("The VN reader probe is unavailable.");
+    return reader.dependencies(cursor, { locations: 64, graphs: 8, candidates: 64, references: 128, scans: 512 });
+  }, choice.view.cursor);
+  const heldGraph = projection.graphs.find(item => item.chunk === pendingChunk.id);
+  if (!heldGraph) throw new Error("The held object was not part of a candidate graph.");
+  const availableGraph = projection.graphs.find(item => item.chunk !== pendingChunk.id);
+  if (!availableGraph) throw new Error("The choice has no unheld candidate graph to select.");
+  const chooseName = heldGraph.graph.graph === "narrow" ? "Cross the courtyard." : "Take the narrow passage.";
+  const expectedDialogue = heldGraph.graph.graph === "narrow" ? "The courtyard door is unlocked." : "The side door is open.";
+  const beforeInput = await metrics(page);
+
+  await page.getByRole("button", { name: chooseName, exact: true }).click();
+  await expect(page.getByText(expectedDialogue, { exact: true })).toBeVisible();
+  const committed = await currentView(page);
+  expect(committed.view.cursor).not.toBe(choice.view.cursor);
+  expect(committed.view.depth).toBe(choice.view.depth + 1);
+  const whileHeld = await metrics(page);
+  expect(whileHeld.candidateChunkRequests.some(item => item.id === pendingChunk.id && item.status === "pending")).toBe(true);
+  expect(whileHeld.readerCalls.choose).toBe(beforeInput.readerCalls.choose + 1);
+  expect(whileHeld.readerCalls.advance).toBe(beforeInput.readerCalls.advance);
+  const savedAfterInput = await save(page);
+
+  await expect.poll(async () => (await metrics(page)).candidateChunkRequests.find(item => item.id === pendingChunk.id)?.status).toBe("late");
+  const afterLateChunk = await metrics(page);
+  expect(afterLateChunk.candidateChunkRequests.find(item => item.id === pendingChunk.id)?.bytes).toBeGreaterThan(0);
+  expect(afterLateChunk.readerCalls.choose).toBe(beforeInput.readerCalls.choose + 1);
+  expect(afterLateChunk.readerCalls.advance).toBe(beforeInput.readerCalls.advance);
+  expect(await currentView(page)).toMatchObject({ view: { cursor: committed.view.cursor, depth: committed.view.depth } });
+  expect(await save(page)).toBe(savedAfterInput);
+  expect(await page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates)).toBeUndefined();
 });
 
 test("a viewport change cancels the old candidate variant and releases its late lease", async ({ page }) => {

@@ -190,6 +190,27 @@ test("desktop author preview edits host content, plays a branch, recovers, and p
   await dialogue.fill("A second draft changes the first line again.");
   await expect(page.locator(".dialogue-copy")).toHaveText("A second draft changes the first line again.");
   await expect.poll(async () => authorSnapshot(page)).not.toEqual(beforeTextEdit);
+  const sameArtifactReplacement = await authorSnapshot(page);
+  expect(sameArtifactReplacement.artifact).toBe(editedCandidate.artifact);
+  expect(sameArtifactReplacement.snapshot).not.toBe(editedCandidate.snapshot);
+
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue dialogue" }).click();
+  await waitForCandidatePreparation(page);
+  expect((await page.evaluate(() => window.__vnTestHooks?.metrics.candidateQueries))).toBe(1);
+  expect((await page.evaluate(() => window.__vnTestHooks?.metrics.mediaRequests.filter(item => item.key === "background/old-hall").length))).toBe(1);
+  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+  expect((await page.evaluate(() => window.__vnTestHooks?.metrics.mediaRequests.filter(item => item.key === "background/old-hall").length))).toBe(1);
+  await page.evaluate(async () => {
+    const controller = window.__vnTestHooks?.controller;
+    if (!controller) throw new Error("The VN preview controller is unavailable.");
+    for (let step = 0; step < 4; step++) await controller.back();
+  });
+  await expect(page.locator(".dialogue-copy")).toHaveText("A second draft changes the first line again.");
 
   await dialogue.fill("");
   await expect(page.locator(".author-status")).toContainText("Add dialogue text");
@@ -231,42 +252,218 @@ test("running publication A stays pinned while public pack B starts under its ow
     provider: "demo",
     key: "background/old-hall",
     revision: "2",
-    path: "/assets/old-hall-interior.png",
+    path: "/assets/river-night-portrait.png",
     mimeType: "image/png",
-    width: 1586,
-    height: 992,
+    width: 853,
+    height: 1844,
   }];
-  const publishedB = await page.evaluate(async input => {
+  const candidateHostId = await page.evaluate(async input => {
     const hooks = window.__vnTestHooks;
     if (!hooks) throw new Error("The VN publication probe is unavailable.");
-    return hooks.inspectCandidate(input.candidate, input.contentDrafts, input.mediaOverrides);
+    return hooks.openCandidate(input.candidate, input.contentDrafts, input.mediaOverrides);
   }, { candidate, contentDrafts, mediaOverrides });
-  expect(publishedB.artifactId).toBe(candidate.artifactId);
-  expect(publishedB.artifactId).not.toBe(originalArtifact);
-  expect(publishedB.firstText).toBe("The new published version starts at the river.");
-  expect(publishedB.atChoice).toBe(true);
-  expect(publishedB.metrics.logicalRequests.every(item => item.artifact === candidate.artifactId)).toBe(true);
-  expect(publishedB.metrics.mediaRequests.filter(item => item.key === "background/old-hall").map(item => [item.revision, item.status])).toEqual([
-    ["1", "available"],
-    ["2", "available"],
-  ]);
-  expect(publishedB.metrics.mediaDecodes.some(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "2")).toBe(true);
-  await mkdir(evidenceDirectory, { recursive: true });
-  await writeFile(join(evidenceDirectory, "publication-b-metrics.json"), `${JSON.stringify({
-    artifactId: publishedB.artifactId,
-    firstText: publishedB.firstText,
-    candidateStatus: publishedB.candidateStatus,
-    metrics: publishedB.metrics,
-  }, null, 2)}\n`);
+  try {
+    const publishedB = await page.evaluate(id => window.__vnTestHooks?.candidateState(id), candidateHostId);
+    if (!publishedB) throw new Error("The live B reader probe is unavailable.");
+    await mkdir(evidenceDirectory, { recursive: true });
+    await writeFile(join(evidenceDirectory, "publication-b-start-state.json"), `${JSON.stringify({
+      artifactId: publishedB.artifactId,
+      candidateStatus: publishedB.candidateStatus,
+      playerStatus: publishedB.playerStatus,
+      metrics: publishedB.metrics,
+    }, null, 2)}\n`);
+    expect(publishedB.artifactId).toBe(candidate.artifactId);
+    expect(publishedB.artifactId).not.toBe(originalArtifact);
+    expect(publishedB.firstText).toBe("The new published version starts at the river.");
+    expect(publishedB.atChoice).toBe(true);
+    expect(publishedB.playerStatus).toBe("ready");
+    expect(publishedB.candidateStatus?.status, JSON.stringify(publishedB.candidateStatus)).toBe("partial");
+    expect(publishedB.candidateStatus?.completeProjection).toBe(true);
+    expect(publishedB.candidateStatus?.mediaPrepared).toBe(1);
+    expect(publishedB.candidateStatus?.mediaUnavailable).toBeGreaterThan(0);
+    expect(publishedB.metrics.logicalRequests.every(item => item.artifact === candidate.artifactId)).toBe(true);
 
-  await toChoice(page);
-  await waitForCandidatePreparation(page);
-  await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
-  await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
-  const originalMetrics = await page.evaluate(() => window.__vnTestHooks?.metrics);
-  expect(originalMetrics?.logicalRequests.length).toBeGreaterThan(1);
-  expect(originalMetrics?.logicalRequests.every(item => item.artifact === originalArtifact)).toBe(true);
-  expect(originalMetrics?.mediaRequests.filter(item => item.key === "background/old-hall").map(item => item.revision)).toEqual(["1"]);
+    const originalMetrics = await page.evaluate(() => window.__vnTestHooks?.metrics);
+    if (!originalMetrics) throw new Error("The running A reader metrics are unavailable.");
+    expect(publishedB.metrics.audioTimelineId).not.toBe(originalMetrics.audioTimelineId);
+    for (const key of ["background/river-night", "character/mira", "music/river-road", "voice/mira-opening"]) {
+      const fromA = originalMetrics.mediaRequests.find(item => item.contextScope === "demo-public" && item.key === key && item.source === "network");
+      const fromB = publishedB.metrics.mediaRequests.find(item => item.contextScope === "demo-public" && item.key === key && item.source === "shared");
+      expect(fromA, `A must fetch ${key} once`).toBeDefined();
+      expect(fromB, `B should share only immutable bytes for ${key}`).toBeDefined();
+      expect(fromB?.sha256).toBe(fromA?.sha256);
+      expect(fromB?.bytes).toBe(fromA?.bytes);
+      expect(fromB?.networkBytes).toBe(0);
+    }
+
+    const bOldHall = publishedB.metrics.mediaRequests.filter(item => item.key === "background/old-hall" && item.contextScope === "demo-public");
+    const bOldHallOne = bOldHall.find(item => item.revision === "1");
+    const bOldHallTwo = bOldHall.find(item => item.revision === "2");
+    expect(bOldHallOne?.source).toBe("network");
+    expect(bOldHallTwo?.source).toBe("network");
+    expect(bOldHallTwo?.bytes).toBeGreaterThan(0);
+    expect(bOldHallTwo?.sha256).not.toBe(bOldHallOne?.sha256);
+    expect(publishedB.metrics.mediaDecodes.some(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "1" && item.bytes === bOldHallOne?.bytes)).toBe(true);
+    expect(publishedB.metrics.mediaDecodes.some(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "2" && item.bytes === bOldHallTwo?.bytes)).toBe(true);
+
+    await toChoice(page);
+    await waitForCandidatePreparation(page);
+    const aAtChoice = await page.evaluate(() => window.__vnTestHooks?.metrics);
+    if (!aAtChoice) throw new Error("A did not keep its live reader after B was created.");
+    expect(aAtChoice.logicalRequests.filter(item => item.phase === "candidate").length).toBeGreaterThan(0);
+    expect(aAtChoice.logicalRequests.every(item => item.artifact === originalArtifact)).toBe(true);
+    const aSharedOldHall = aAtChoice.mediaRequests.find(item => item.key === "background/old-hall" && item.revision === "1" && item.contextScope === "demo-public");
+    expect(aSharedOldHall?.source).toBe("shared");
+    expect(aSharedOldHall?.sha256).toBe(bOldHallOne?.sha256);
+    expect(aAtChoice.mediaRequests.some(item => item.key === "background/old-hall" && item.revision === "2")).toBe(false);
+
+    await page.evaluate(async id => { await window.__vnTestHooks?.switchCandidateContext(id, "reader-two"); }, candidateHostId);
+    const bSecondScope = await page.evaluate(id => window.__vnTestHooks?.candidateState(id), candidateHostId);
+    if (!bSecondScope) throw new Error("The B reader context update was not observable.");
+    expect(bSecondScope.playerStatus).toBe("ready");
+    const aBackground = originalMetrics.mediaRequests.find(item => item.key === "background/river-night" && item.contextScope === "demo-public");
+    const bBackgroundInSecondScope = bSecondScope.metrics.mediaRequests.find(item => item.key === "background/river-night" && item.revision === "1" && item.contextScope === "reader-two");
+    expect(bBackgroundInSecondScope?.source).toBe("network");
+    expect(bBackgroundInSecondScope?.networkBytes).toBeGreaterThan(0);
+    expect(bBackgroundInSecondScope?.sha256).toBe(aBackground?.sha256);
+    expect(bSecondScope.metrics.mediaRequests.some(item => item.contextScope === "reader-two" && item.source === "shared")).toBe(false);
+
+    await page.getByRole("button", { name: "Take the narrow passage.", exact: true }).click();
+    await expect(page.getByText("The side door is open.", { exact: true })).toBeVisible();
+    const aAfterB = await currentView(page);
+    expect(aAfterB.view.artifact_id).toBe(originalArtifact);
+    const finalAMetrics = await page.evaluate(() => window.__vnTestHooks?.metrics);
+    expect(finalAMetrics?.logicalRequests.every(item => item.artifact === originalArtifact)).toBe(true);
+
+    const sharedMediaProof = ["background/river-night", "character/mira", "music/river-road", "voice/mira-opening"].map(key => {
+      const a = originalMetrics.mediaRequests.find(item => item.contextScope === "demo-public" && item.key === key && item.source === "network");
+      const b = publishedB.metrics.mediaRequests.find(item => item.contextScope === "demo-public" && item.key === key && item.source === "shared");
+      if (!a || !b) throw new Error(`The immutable A/B byte-sharing evidence is missing ${key}.`);
+      return { key, revision: a.revision, variant: a.variant, bytes: a.bytes, sha256: a.sha256, aSource: a.source, bSource: b.source, bNetworkBytes: b.networkBytes };
+    });
+    const changedRevisionProof = {
+      key: "background/old-hall",
+      aRevision: bOldHallOne?.revision,
+      aBytes: bOldHallOne?.bytes,
+      aSha256: bOldHallOne?.sha256,
+      bRevision: bOldHallTwo?.revision,
+      bBytes: bOldHallTwo?.bytes,
+      bSha256: bOldHallTwo?.sha256,
+      bSource: bOldHallTwo?.source,
+      bDecoded: publishedB.metrics.mediaDecodes.some(item => item.phase === "candidate" && item.key === "background/old-hall" && item.revision === "2"),
+    };
+    const authorizationScopeProof = {
+      key: "background/river-night",
+      aScope: aBackground?.contextScope,
+      bOriginalScopeSource: publishedB.metrics.mediaRequests.find(item => item.key === "background/river-night" && item.contextScope === "demo-public")?.source,
+      bChangedScope: bBackgroundInSecondScope?.contextScope,
+      bChangedScopeSource: bBackgroundInSecondScope?.source,
+      sameBytesSha256: bBackgroundInSecondScope?.sha256,
+      originalBytesSha256: aBackground?.sha256,
+      changedScopeUsedSeparateBytes: bSecondScope.metrics.mediaRequests.every(item => item.contextScope !== "reader-two" || item.source === "network"),
+    };
+    await mkdir(evidenceDirectory, { recursive: true });
+    await writeFile(join(evidenceDirectory, "publication-b-metrics.json"), `${JSON.stringify({
+      aArtifactId: originalArtifact,
+      artifactId: bSecondScope.artifactId,
+      firstText: bSecondScope.firstText,
+      candidateStatus: bSecondScope.candidateStatus,
+      audioTimelineIds: { a: originalMetrics.audioTimelineId, b: bSecondScope.metrics.audioTimelineId, distinct: originalMetrics.audioTimelineId !== bSecondScope.metrics.audioTimelineId },
+      sharedMediaProof,
+      changedRevisionProof,
+      authorizationScopeProof,
+      aPinnedAfterB: finalAMetrics?.logicalRequests.every(item => item.artifact === originalArtifact),
+      metrics: bSecondScope.metrics,
+    }, null, 2)}\n`);
+  } finally {
+    await page.evaluate(async id => { await window.__vnTestHooks?.closeCandidate(id); }, candidateHostId);
+  }
+});
+
+test("a candidate request bound reports budget partial while the current B choice stays playable", async ({ page }) => {
+  await openPlayer(page);
+  const candidate = await buildNewPublicationCandidate();
+  const contentDrafts: readonly (readonly [string, DemoContentDraft])[] = [["dialogue.mira.opening.b", {
+    text: "The new published version starts at the river.",
+    revision: "revision-b",
+  }]];
+  const mediaOverrides: readonly DemoMediaOverride[] = [{
+    kind: "image",
+    provider: "demo",
+    key: "background/old-hall",
+    revision: "2",
+    path: "/assets/river-night-portrait.png",
+    mimeType: "image/png",
+    width: 853,
+    height: 1844,
+  }];
+  const candidateHostId = await page.evaluate(async input => {
+    const hooks = window.__vnTestHooks;
+    if (!hooks) throw new Error("The VN budget probe is unavailable.");
+    return hooks.openCandidate(input.candidate, input.contentDrafts, input.mediaOverrides, 1);
+  }, { candidate, contentDrafts, mediaOverrides });
+  try {
+    const state = await page.evaluate(id => window.__vnTestHooks?.candidateState(id), candidateHostId);
+    if (!state?.candidateStatus) throw new Error("The bounded B candidate did not expose preparation status.");
+    expect(state.playerStatus).toBe("ready");
+    expect(state.atChoice).toBe(true);
+    expect(state.metrics.candidateBounds).toEqual({
+      maxCandidateRequests: 1,
+      maxRequests: 8,
+      maxConcurrent: 3,
+      maxEncodedBytesPerTarget: 12 * 1024 * 1024,
+      maxEncodedBytesRetained: 24 * 1024 * 1024,
+      maxDecodedBytesRetained: 32 * 1024 * 1024,
+      maxImageDimension: 4096,
+      maxAudioDurationMs: 60_000,
+    });
+    expect(state.candidateStatus.status).toBe("partial");
+    expect(state.candidateStatus.completeProjection).toBe(true);
+    expect(state.candidateStatus.projection?.complete).toBe(true);
+    expect(state.candidateStatus.mediaPrepared).toBe(1);
+    expect(state.candidateStatus.mediaUnavailable).toBeGreaterThan(0);
+    const projectedVersions = state.candidateStatus.projection?.media
+      .filter(item => item.reference.key === "background/old-hall")
+      .map(item => item.reference.revision).sort() ?? [];
+    expect(projectedVersions).toEqual(["1", "2"]);
+    const attempted = state.metrics.mediaRequests.filter(item => item.key === "background/old-hall");
+    expect(attempted).toHaveLength(1);
+    expect(attempted[0]?.status).toBe("available");
+    expect(attempted.every(item => item.status === "available")).toBe(true);
+    const refusedVersions = projectedVersions.filter(revision => !attempted.some(item => item.revision === revision));
+    expect(refusedVersions).toHaveLength(1);
+    await page.evaluate(async id => {
+      const hooks = window.__vnTestHooks;
+      if (!hooks) throw new Error("The bounded B choice probe is unavailable.");
+      await hooks.chooseCandidate(id);
+    }, candidateHostId);
+    const afterChoice = await page.evaluate(id => window.__vnTestHooks?.candidateState(id), candidateHostId);
+    if (!afterChoice) throw new Error("The bounded B branch result was not observable.");
+    expect(afterChoice.playerStatus).toBe("ready");
+    expect(afterChoice.atChoice).toBe(false);
+    expect(afterChoice.cursor).not.toBe(state.cursor);
+    expect(afterChoice.metrics.readerCalls.choose).toBe(1);
+    expect(afterChoice.metrics.logicalRequests.every(item => item.artifact === state.artifactId)).toBe(true);
+    await mkdir(evidenceDirectory, { recursive: true });
+    await writeFile(join(evidenceDirectory, "candidate-budget-metrics.json"), `${JSON.stringify({
+      artifactId: state.artifactId,
+      candidateBounds: state.metrics.candidateBounds,
+      playerStatus: state.playerStatus,
+      atChoice: state.atChoice,
+      candidateStatus: state.candidateStatus,
+      attempted,
+      refusedVersions,
+      decodes: state.metrics.mediaDecodes,
+      playableChoice: {
+        playerStatus: afterChoice.playerStatus,
+        artifactId: afterChoice.artifactId,
+        cursorAdvanced: afterChoice.cursor !== state.cursor,
+        choiceCalls: afterChoice.metrics.readerCalls.choose,
+      },
+    }, null, 2)}\n`);
+  } finally {
+    await page.evaluate(async id => { await window.__vnTestHooks?.closeCandidate(id); }, candidateHostId);
+  }
 });
 
 test("390px author preview stays usable, discards a late candidate, and recovers from resource failure", async ({ page }) => {
@@ -283,6 +480,7 @@ test("390px author preview stays usable, discards a late candidate, and recovers
     await route.continue();
   });
   await startAuthoring(page, 390, 844);
+  await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
   const dialogue = page.getByRole("textbox", { name: "Dialogue" });
   const firstEdit = "This slower draft must not replace the newer text.";
   const latestEdit = "The latest phone draft is the one on stage.";
@@ -356,6 +554,7 @@ test("pending author hosts close before held media is released and cannot reinst
     try { await route.continue(); } catch { /* Closing a preview may abort the browser request. */ }
   });
   await startAuthoring(page, 1586, 992);
+  await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
   const dialogue = page.getByRole("textbox", { name: "Dialogue" });
   const firstGate = deferredMedia();
   nextGate = firstGate;
@@ -380,6 +579,7 @@ test("pending author hosts close before held media is released and cannot reinst
   await expect(page.locator(".dialogue-copy")).toHaveText("The newer host should become the only preview.");
   expect((await authorSnapshot(page)).snapshot).toBe(newer.snapshot);
 
+  await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
   const blankGate = deferredMedia();
   nextGate = blankGate;
   await dialogue.fill("This pending edit is canceled by empty input.");
@@ -400,6 +600,7 @@ test("pending author hosts close before held media is released and cannot reinst
   await dialogue.fill("A valid edit after empty input can still preview.");
   await expect(page.locator(".dialogue-copy")).toHaveText("A valid edit after empty input can still preview.");
 
+  await page.evaluate(async () => { await window.__vnTestHooks?.clearPreparedCaches(); });
   const closeGate = deferredMedia();
   nextGate = closeGate;
   await dialogue.fill("This host is closed while its image is still pending.");

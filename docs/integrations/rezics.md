@@ -148,7 +148,7 @@ REZICS 侧需保留每个历史构件的精确清单、程序块，以及随发�
 
 播放端从 `@rezics/narrata/vn/player` 创建协调器，宿主提供内容、媒体解析与呈现适配；参考实现位于 `examples/visual-novel-web/`。协调器借用 reader，关闭呈现只释放呈现资源，不代表存档已确认；写入结果未知时先通过原 reader 核实/重试，再结束 reader 生命周期。场景资源重试不重复叙事输入。
 
-参考 reader 关闭自动候选准备，先只取入口所需图块、当前画面和 reader；抵达选择点后才以显式逻辑/媒体上限调用 `retryCandidates()`。宿主从类型化角色提示选择变体，并让当前画面与候选资源走同一个解码辅助函数；候选音轨只解码、不播放。相同授权上下文、角色、不可变媒体修订和变体可复用呈现 lease；上下文、授权或 viewport 改变时取消旧工作并释放候选缓存。部分候选结果不会阻止可用路线继续，资源重试只重做呈现。
+参考 reader 关闭自动候选准备，先只取入口所需图块、当前画面和 reader；抵达选择点后才以显式逻辑/媒体上限调用 `retryCandidates()`。宿主从类型化角色提示选择变体，并让当前画面与候选资源走同一个解码辅助函数；候选音轨只解码、不播放。同授权 scope 下，A/B reader 可以通过有界的宿主缓存复用完全相同的媒体字节（scope、kind、provider、key、revision、variant）；缓存上限为 16 MiB、32 项。解码后的 Image/AudioBuffer、Object URL、audio context 和 playback source 仍属于各自 reader/presentation，绝不跨会话共享。Revision 或 scope 改变会使用独立的字节键；上下文和 viewport 改变会取消旧工作、释放候选 lease 并按新 scope/variant 重新准备。部分候选结果不会阻止可用路线继续，资源重试只重做呈现。
 
 最终 VN reference-host 消费包固定为版本 `0.1.0-alpha.1`、源码 `2745b876a66d079ff8ecd573239c27e8fb3a1d3e`、SHA-256 `2fae09fba6fffcbfefb395c524a030ed6d0c320634035586e99167574307344e`、2,275,288 字节；SHA-512、源输入哈希和每次运行证据保存在新 receipt。`examples/visual-novel-web/scripts/verify-installed-reference.mjs` 与 `task vn:verify-installed` 需要显式 tarball 和新 label：它复制已跟踪的 reader、源稿、公共对象和媒体到系统临时 `.temp/`，安装该精确 tarball，分别经 Node 与 Bun 的公开 `@rezics/narrata/vn/server` 构建相同 pack，再构建实际宿主并跑 Chromium journey。receipt、请求和字节测量、lease 释放证据与截图都留在独立消费者目录；不会覆盖旧 label。此本地包消费不表示 npm registry 已发布，也不替代 REZICS 真实联合验收。
 

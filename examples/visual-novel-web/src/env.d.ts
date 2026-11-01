@@ -24,11 +24,16 @@ declare global {
       save(): Promise<string>;
       currentView(): Promise<VnViewV1>;
       clearPreparedCaches(): Promise<void>;
-      inspectCandidate(
+      openCandidate(
         candidate: DemoCandidateTransfer,
         contentDrafts: readonly (readonly [string, DemoContentDraft])[],
         mediaOverrides: readonly DemoMediaOverride[],
-      ): Promise<DemoCandidateInspection>;
+        maxCandidateRequests?: number,
+      ): Promise<number>;
+      candidateState(id: number): DemoCandidateInspection;
+      chooseCandidate(id: number, optionIndex?: number): Promise<void>;
+      switchCandidateContext(id: number, scope: string): Promise<void>;
+      closeCandidate(id: number): Promise<void>;
       close(): Promise<void>;
     };
     __vnAuthorHooks?: {

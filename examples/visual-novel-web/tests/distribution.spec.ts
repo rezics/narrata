@@ -30,18 +30,25 @@ test("installed VN loads its entry lazily, prepares a later branch and records e
   const firstMetrics = await page.evaluate(() => window.__vnTestHooks?.metrics);
   if (!firstMetrics) throw new Error("The installed VN first-screen probe is unavailable.");
   const firstScreen = await resourceTiming(page);
+  const firstWasm = firstScreen.filter(item => /\.wasm(?:[?#]|$)/i.test(item.name));
   expect(firstMetrics.logicalRequests.filter(item => item.kind === "chunk")).toHaveLength(1);
   expect(firstMetrics.logicalRequests.filter(item => item.kind === "chunk").every(item => item.phase === "required")).toBe(true);
   expect(firstMetrics.candidateQueries).toBe(0);
   expect(firstMetrics.mediaRequests.some(item => item.key === "background/old-hall")).toBe(false);
+  expect(firstWasm).toHaveLength(1);
+  expect(firstWasm[0]?.name).toContain("vn-reader-wasm");
+  expect(firstWasm[0]?.encodedBytes).toBeGreaterThan(0);
   expect(authorRequests).toEqual([]);
   await expect.poll(() => page.evaluate(() => window.__vnTestHooks?.metrics.logicalRequests.find(item => item.kind === "manifest")?.bytes)).toBeGreaterThan(0);
   await page.screenshot({ path: join(screenshots, "installed-first-screen.png"), fullPage: true });
 
+  await page.getByRole("button", { name: "Turn sound on" }).click();
+  await expect(page.getByRole("button", { name: "Turn sound off" })).toBeVisible();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByText("Then we will take the river road.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByText("It ends at the old hall.", { exact: true })).toBeVisible();
+  const playsBeforePreparation = (await page.evaluate(() => window.__vnTestHooks?.metrics.audioEvents.filter(item => item.event === "play").length)) ?? 0;
   await page.getByRole("button", { name: "Continue dialogue" }).click();
   await expect(page.getByRole("button", { name: "Take the narrow passage.", exact: true })).toBeVisible();
   await expect.poll(async () => page.evaluate(() => window.__vnTestHooks?.controller.getSnapshot().candidates?.status)).toBe("complete");
@@ -49,10 +56,13 @@ test("installed VN loads its entry lazily, prepares a later branch and records e
   if (!choiceMetrics) throw new Error("The installed VN candidate-preparation probe is unavailable.");
   const atChoice = await resourceTiming(page);
   const preparedBackground = choiceMetrics.mediaRequests.filter(item => item.key === "background/old-hall");
+  const preparedBackgroundDecodes = choiceMetrics.mediaDecodes.filter(item => item.phase === "candidate" && item.kind === "image" && item.key === "background/old-hall");
+  const candidateAudioDecodes = choiceMetrics.mediaDecodes.filter(item => item.phase === "candidate" && item.kind === "audio");
   expect(choiceMetrics.logicalRequests.some(item => item.phase === "candidate" && item.kind === "chunk")).toBe(true);
   expect(preparedBackground).toHaveLength(1);
   expect(preparedBackground[0]?.bytes).toBeGreaterThan(0);
-  expect(choiceMetrics.mediaDecodes.some(item => item.phase === "candidate" && item.kind === "image" && item.key === "background/old-hall")).toBe(true);
+  expect(preparedBackgroundDecodes).toHaveLength(1);
+  expect(choiceMetrics.audioEvents.filter(item => item.event === "play")).toHaveLength(playsBeforePreparation);
   expect(authorRequests).toEqual([]);
   await page.screenshot({ path: join(screenshots, "installed-choice-prepared.png"), fullPage: true });
 
@@ -62,6 +72,7 @@ test("installed VN loads its entry lazily, prepares a later branch and records e
   const afterEntry = await page.evaluate(() => window.__vnTestHooks?.metrics);
   if (!afterEntry) throw new Error("The installed VN branch-entry probe is unavailable.");
   expect(afterEntry.mediaRequests.filter(item => item.key === "background/old-hall")).toHaveLength(1);
+  expect(afterEntry.mediaDecodes.filter(item => item.key === "background/old-hall")).toEqual(preparedBackgroundDecodes);
   expect(afterEntry.logicalRequests.every(item => item.artifact === firstMetrics.logicalRequests[0]?.artifact)).toBe(true);
   expect(authorRequests).toEqual([]);
   await page.screenshot({ path: join(screenshots, "installed-branch-reused.png"), fullPage: true });
@@ -75,6 +86,11 @@ test("installed VN loads its entry lazily, prepares a later branch and records e
   const evidence = {
     interpretation: "The previous installed-host baseline is a comparison for lazy loading, not a new VN reader size ceiling.",
     wasmResponses,
+    wasm: {
+      firstScreen: firstWasm,
+      firstScreenReaderModuleCount: firstWasm.length,
+      firstScreenAuthoringModuleRequested: firstWasm.some(item => /authoring/i.test(item.name)),
+    },
     phases: {
       firstScreen: firstScreen.map(timing => ({ ...timing })),
       choicePreparation: diffTiming(firstScreen, atChoice),
@@ -86,7 +102,12 @@ test("installed VN loads its entry lazily, prepares a later branch and records e
       candidateGraphs: choiceMetrics.logicalRequests.filter(item => item.phase === "candidate"),
     },
     media: {
+      firstScreenRequests: firstMetrics.mediaRequests.map(({ role, kind, key, revision, variant, bytes, networkBytes, status }) => ({ role, kind, key, revision, variant, bytes, networkBytes, status })),
       preparedBackground: preparedBackground.map(({ role, kind, key, revision, variant, bytes, status }) => ({ role, kind, key, revision, variant, bytes, status })),
+      preparedBackgroundDecodes,
+      candidateAudioDecodes,
+      audioPlayCountBeforePreparation: playsBeforePreparation,
+      audioPlayCountAfterPreparation: choiceMetrics.audioEvents.filter(item => item.event === "play").length,
       decodeCount: afterEntry.mediaDecodes.length,
       releases: afterEntry.releases,
     },

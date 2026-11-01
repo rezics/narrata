@@ -12,6 +12,7 @@ import {
   type VnPlayerOptions,
   type VnPresentedMedia,
   type VnPlayerCandidateStatus,
+  type VnPlayerStatus,
   type VnResolvedMedia,
 } from "@rezics/narrata/vn/player";
 import type { ResolveItem, ResolveRequest, Resolution } from "@rezics/narrata/reader";
@@ -21,11 +22,24 @@ export interface DemoContext {
   readonly scope: string;
 }
 
+const PLAYER_RESOURCE_LIMITS = {
+  maxRequests: 8,
+  maxConcurrent: 3,
+  maxEncodedBytesPerTarget: 12 * 1024 * 1024,
+  maxEncodedBytesRetained: 24 * 1024 * 1024,
+  maxDecodedBytesRetained: 32 * 1024 * 1024,
+  maxImageDimension: 4096,
+  maxAudioDurationMs: 60_000,
+} satisfies NonNullable<VnPlayerOptions<DemoContext>["limits"]>;
+
 export interface DemoMetrics {
+  readonly audioTimelineId: string;
+  readonly candidateBounds: { readonly maxCandidateRequests: number } & typeof PLAYER_RESOURCE_LIMITS;
   readonly logicalRequests: Array<{ readonly kind: "manifest" | "chunk"; readonly id: string; readonly artifact: string; readonly phase: "required" | "candidate"; readonly bytes: number }>;
+  readonly candidateChunkRequests: Array<{ readonly id: string; readonly artifact: string; bytes: number; status: "pending" | "available" | "late" | "unavailable" }>;
   candidateQueries: number;
   readonly contentRequests: Array<{ provider: string; key: string; revision?: string; bytes: number; status: string }>;
-  readonly mediaRequests: Array<{ readonly role: string; readonly kind: string; readonly provider: string; readonly key: string; readonly revision: string; readonly variant: string; readonly contextScope: string; bytes: number; status: string }>;
+  readonly mediaRequests: Array<{ readonly role: string; readonly kind: string; readonly provider: string; readonly key: string; readonly revision: string; readonly variant: string; readonly contextScope: string; source: "network" | "shared"; networkBytes: number; sha256: string; bytes: number; status: string }>;
   readonly mediaDecodes: Array<{ readonly phase: "screen" | "candidate"; readonly role: string; readonly kind: "image" | "audio"; readonly key: string; readonly revision: string; readonly variant: string; readonly bytes: number }>;
   readonly lateDiscarded: Array<{ readonly role: string; readonly key: string; readonly revision: string; readonly variant: string; readonly artifact: string; readonly commit: string; readonly contextScope: string }>;
   readonly audioEvents: Array<{ readonly event: string; readonly role: string; readonly key: string; readonly revision: string; readonly commit?: string; readonly offsetSeconds?: number; readonly loop?: boolean }>;
@@ -40,6 +54,7 @@ export interface DemoMetrics {
 export interface DemoControls {
   failNext?: { key: string; delayMs: number };
   delayLateNext?: { key: string; delayMs: number };
+  delayCandidateChunkNext?: { id?: string; delayMs: number };
   corruptAudioKey?: string;
   failNextSave?: boolean;
 }
@@ -77,7 +92,9 @@ export interface DemoCandidateTransfer {
 export interface DemoCandidateInspection {
   readonly artifactId: string;
   readonly firstText?: string;
+  readonly cursor?: string;
   readonly atChoice: boolean;
+  readonly playerStatus: VnPlayerStatus;
   readonly candidateStatus?: VnPlayerCandidateStatus;
   readonly metrics: DemoMetrics;
 }
@@ -92,6 +109,7 @@ export interface DemoHostOptions {
   readonly candidate?: VnCandidateSnapshot;
   readonly contentDrafts?: ReadonlyMap<string, DemoContentDraft>;
   readonly mediaOverrides?: readonly DemoMediaOverride[];
+  readonly maxCandidateRequests?: number;
 }
 
 interface ImageAssetDefinition {
@@ -111,6 +129,10 @@ interface AudioAssetDefinition {
 type AssetDefinition = ImageAssetDefinition | AudioAssetDefinition;
 
 const EXECUTION = "execution:0190f2a0000070008000000000000001";
+const MAX_SHARED_MEDIA_BYTES = 16 * 1024 * 1024;
+const MAX_SHARED_MEDIA_ENTRIES = 32;
+// Share only bounded, scope-keyed immutable bytes; each player creates its own decoded handles and audio timeline.
+const sharedMediaBytes = new Map<string, { readonly scope: string; readonly bytes: Uint8Array }>();
 const IMAGE_ASSETS: ReadonlyMap<string, ImageAssetDefinition> = new Map([
   [mediaKey("image", "demo", "background/river-night", "1"), { kind: "image", path: "/assets/river-night-wide.png", mimeType: "image/png", width: 1586, height: 992 }],
   [mediaKey("image", "demo", "background/old-hall", "1"), { kind: "image", path: "/assets/old-hall-interior.png", mimeType: "image/png", width: 1586, height: 992 }],
@@ -138,8 +160,12 @@ const CONTENT_ASSETS = new Map([
 
 export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoHost> {
   const candidate = options.candidate;
+  const maxCandidateRequests = options.maxCandidateRequests ?? 4;
   const metrics: DemoMetrics = {
+    audioTimelineId: crypto.randomUUID(),
+    candidateBounds: { maxCandidateRequests, ...PLAYER_RESOURCE_LIMITS },
     logicalRequests: [],
+    candidateChunkRequests: [],
     candidateQueries: 0,
     contentRequests: [],
     mediaRequests: [],
@@ -184,12 +210,35 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
     manifest: candidate?.manifest ?? manifest,
     ...(storage ? { storage } : {}),
     execution: candidate ? `execution:${crypto.randomUUID().replaceAll("-", "")}` : EXECUTION,
-    fetchChunk: async id => {
+    fetchChunk: async (id, signal) => {
       if (!/^object:[0-9a-f]{64}$/.test(id)) throw new Error("The requested VN chunk identity is invalid.");
-      const bytes = candidate?.objects.get(id) ?? (candidate ? undefined : await fetchBytes(`${vnDemoObjectDirectory}/${id.slice("object:".length)}.cbor`));
-      if (!bytes) throw new Error("The checked VN preview omitted a referenced program object.");
-      metrics.logicalRequests.push({ kind: "chunk", id, artifact: artifactId, phase: candidateFetch.depth > 0 ? "candidate" : "required", bytes: bytes.byteLength });
-      return bytes.slice();
+      const isCandidate = candidateFetch.depth > 0;
+      const chunkRequest: DemoMetrics["candidateChunkRequests"][number] | undefined = isCandidate
+        ? { id, artifact: artifactId, bytes: 0, status: "pending" }
+        : undefined;
+      if (chunkRequest) metrics.candidateChunkRequests.push(chunkRequest);
+      const delayed = isCandidate && controls.delayCandidateChunkNext
+        && (controls.delayCandidateChunkNext.id === undefined || controls.delayCandidateChunkNext.id === id)
+        ? controls.delayCandidateChunkNext
+        : undefined;
+      if (delayed) {
+        delete controls.delayCandidateChunkNext;
+        await delay(delayed.delayMs);
+      }
+      try {
+        const bytes = candidate?.objects.get(id)
+          ?? (candidate ? undefined : await fetchBytes(`${vnDemoObjectDirectory}/${id.slice("object:".length)}.cbor`, delayed ? undefined : signal));
+        if (!bytes) throw new Error("The checked VN preview omitted a referenced program object.");
+        if (chunkRequest) {
+          chunkRequest.bytes = bytes.byteLength;
+          chunkRequest.status = signal?.aborted ? "late" : "available";
+        }
+        metrics.logicalRequests.push({ kind: "chunk", id, artifact: artifactId, phase: isCandidate ? "candidate" : "required", bytes: bytes.byteLength });
+        return bytes.slice();
+      } catch (error) {
+        if (chunkRequest && chunkRequest.status === "pending") chunkRequest.status = "unavailable";
+        throw error;
+      }
     },
   }).catch(error => {
     store?.close();
@@ -215,16 +264,8 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
     context,
     autoPrepareCandidates: false,
     dependencyLimits: { locations: 64, graphs: 8, candidates: 64, references: 128, scans: 512 },
-    maxCandidateRequests: 4,
-    limits: {
-      maxRequests: 8,
-      maxConcurrent: 3,
-      maxEncodedBytesPerTarget: 12 * 1024 * 1024,
-      maxEncodedBytesRetained: 24 * 1024 * 1024,
-      maxDecodedBytesRetained: 32 * 1024 * 1024,
-      maxImageDimension: 4096,
-      maxAudioDurationMs: 60_000,
-    },
+    maxCandidateRequests,
+    limits: PLAYER_RESOURCE_LIMITS,
     selectVariant: slot => {
       if (slot.role === "background") return window.matchMedia("(max-width: 640px)").matches ? "portrait-cover" : "landscape-cover";
       return slot.role === "character" ? "full" : "original";
@@ -258,6 +299,7 @@ export async function openDemoHost(options: DemoHostOptions = {}): Promise<DemoH
     },
     async clearPreparedCaches() {
       await controller.setContext(context);
+      clearSharedMediaBytes(context.media.scope);
     },
     async unlockAudio() {
       await audioContext.resume();
@@ -328,6 +370,9 @@ async function resolveMedia(request: VnMediaRequest<DemoContext>, metrics: DemoM
     revision: request.slot.media.revision,
     variant: request.variant,
     contextScope: request.context.scope,
+    source: "network",
+    networkBytes: 0,
+    sha256: "",
     bytes: 0,
     status: "pending",
   };
@@ -347,13 +392,28 @@ async function resolveMedia(request: VnMediaRequest<DemoContext>, metrics: DemoM
       await delay(late.delayMs);
       const bytes = await fetchBytes(definition.path);
       log.bytes = bytes.byteLength;
+      log.networkBytes = bytes.byteLength;
+      log.sha256 = await sha256(bytes);
       log.status = "available";
+      if (!request.signal.aborted) rememberSharedMediaBytes(immutableMediaCacheKey(request.context.scope, request.slot.media, request.variant), request.context.scope, bytes);
       return available(request, definition, bytes, metrics, controls);
+    }
+    const cacheKey = immutableMediaCacheKey(request.context.scope, request.slot.media, request.variant);
+    const cached = sharedMediaBytesFor(cacheKey);
+    if (cached) {
+      log.source = "shared";
+      log.bytes = cached.byteLength;
+      log.sha256 = await sha256(cached);
+      log.status = "available";
+      return available(request, definition, cached, metrics, controls);
     }
     const bytes = await fetchBytes(definition.path, request.signal);
     if (request.signal.aborted) throw abortError();
     log.bytes = bytes.byteLength;
+    log.networkBytes = bytes.byteLength;
+    log.sha256 = await sha256(bytes);
     log.status = "available";
+    rememberSharedMediaBytes(cacheKey, request.context.scope, bytes);
     return available(request, definition, bytes, metrics, controls);
   } catch (error) {
     if (request.signal.aborted) throw error;
@@ -513,6 +573,28 @@ function resolveDefinition(media: Readonly<MediaRef>, kind: MediaKind, variant: 
 
 function mediaKey(kind: MediaKind, provider: string, key: string, revision: string): string {
   return JSON.stringify([kind, provider, key, revision]);
+}
+
+function immutableMediaCacheKey(scope: string, media: Readonly<MediaRef>, variant: string): string {
+  return JSON.stringify([scope, media.kind, media.provider, media.key, media.revision, variant]);
+}
+
+function sharedMediaBytesFor(key: string): Uint8Array | undefined {
+  return sharedMediaBytes.get(key)?.bytes.slice();
+}
+
+function rememberSharedMediaBytes(key: string, scope: string, bytes: Uint8Array): void {
+  if (sharedMediaBytes.has(key) || bytes.byteLength > MAX_SHARED_MEDIA_BYTES || sharedMediaBytes.size >= MAX_SHARED_MEDIA_ENTRIES) return;
+  let retained = 0;
+  for (const entry of sharedMediaBytes.values()) retained += entry.bytes.byteLength;
+  if (retained + bytes.byteLength > MAX_SHARED_MEDIA_BYTES) return;
+  sharedMediaBytes.set(key, { scope, bytes: bytes.slice() });
+}
+
+function clearSharedMediaBytes(scope: string): void {
+  for (const [key, entry] of sharedMediaBytes) {
+    if (entry.scope === scope) sharedMediaBytes.delete(key);
+  }
 }
 
 function countReader(reader: VnReader, metrics: DemoMetrics, candidateFetch: { depth: number }): VnReader {

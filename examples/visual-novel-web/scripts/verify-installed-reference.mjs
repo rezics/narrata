@@ -127,7 +127,7 @@ async function verifyInstalledReference({ tarball, receiptLabel }) {
     await copyFile(inputPath, copiedTarball);
 
     const exampleRoot = join(consumerRoot, "examples/visual-novel-web");
-    await removeWorkspaceSdkResolutionAllowance(exampleRoot);
+    const workspaceResolutionGuard = await removeWorkspaceSdkResolutionAllowance(exampleRoot);
     const packagePath = join(exampleRoot, "package.json");
     const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
     packageJson.dependencies ??= {};
@@ -151,7 +151,7 @@ async function verifyInstalledReference({ tarball, receiptLabel }) {
       outsideCheckout: true,
       sdk: installedSdk,
       sdkSourceCommit: EXPECTED.sourceCommit,
-      workspaceResolutionAllowances: "removed from the copied Vite config; package import resolves from consumer node_modules",
+      workspaceResolutionAllowances: workspaceResolutionGuard,
     };
 
     receipt.runtimeVersions.node = await runVersion("node", process.execPath, ["--version"], exampleRoot, receipt, save, sanitize, environment);
@@ -176,12 +176,13 @@ async function verifyInstalledReference({ tarball, receiptLabel }) {
 
     await runRecorded("build-host", npm, ["run", "build"], exampleRoot, receipt, save, sanitize, environment);
     await runRecorded("install-chromium", npx, ["playwright", "install", "chromium"], exampleRoot, receipt, save, sanitize, environment);
-    await runRecorded("installed-browser-journeys", npm, ["run", "test:e2e"], exampleRoot, receipt, save, sanitize, environment);
+    const browserRun = await runRecorded("installed-browser-journeys", npm, ["run", "test:e2e"], exampleRoot, receipt, save, sanitize, environment);
+    receipt.evidence.browserTests = parseBrowserTestSummary(`${browserRun.stdout}\n${browserRun.stderr}`);
 
     const afterBrowser = await publicationInventory(consumerRoot);
     receipt.publicationInventories.push({ phase: "after-browser-previews", ...afterBrowser });
     assertInventoryEqual(afterBun, afterBrowser, "Browser previews");
-    receipt.evidence = await summarizeBrowserEvidence(consumerRoot);
+    receipt.evidence = { ...receipt.evidence, ...(await summarizeBrowserEvidence(consumerRoot)) };
     receipt.sourceAfter = await sourceIdentity();
     receipt.sourceAfter.inputFiles = await hashInputs(listTrackedReferenceFiles());
     assert.deepEqual(receipt.sourceAfter.inputFiles, receipt.source.inputFiles, "Relevant workspace source changed during the independent consumer run.");
@@ -359,6 +360,23 @@ async function removeWorkspaceSdkResolutionAllowance(exampleRoot) {
     throw new Error("Could not remove the copied Vite workspace SDK resolution allowance.");
   }
   await writeFile(configPath, installedConsumerConfig, "utf8");
+  const verifiedConfig = await readFile(configPath, "utf8");
+  if (/packageRoot|packages\/narrata\/web/.test(verifiedConfig) || !verifiedConfig.includes("fs: { allow: [here, product] }")) {
+    throw new Error("The copied Vite config still permits workspace SDK resolution.");
+  }
+  return { verified: true, allowlist: ["here", "product"], workspaceSdkPathAbsent: true };
+}
+
+function parseBrowserTestSummary(output) {
+  const totalMatch = /Running\s+(\d+)\s+tests?\s+using/.exec(output);
+  const passedMatch = /(\d+)\s+passed(?:\s+\([^)]+\))?/.exec(output);
+  if (!totalMatch || !passedMatch) throw new Error("The installed Playwright run did not report a structured test count.");
+  const total = Number(totalMatch[1]);
+  const passed = Number(passedMatch[1]);
+  if (!Number.isSafeInteger(total) || !Number.isSafeInteger(passed) || total < 1 || passed !== total) {
+    throw new Error(`The installed Playwright run reported ${passed}/${total} passing tests.`);
+  }
+  return { total, passed };
 }
 
 async function publicationInventory(root) {
@@ -417,6 +435,17 @@ async function summarizeBrowserEvidence(consumerRoot) {
   const distribution = JSON.parse(await readFile(distributionPath, "utf8"));
   const authoringPath = join(root, "vn-authoring/publication-b-metrics.json");
   const authoring = JSON.parse(await readFile(authoringPath, "utf8"));
+  const candidateBudgetPath = join(root, "vn-authoring/candidate-budget-metrics.json");
+  const candidateBudget = JSON.parse(await readFile(candidateBudgetPath, "utf8"));
+  const candidateAudioPlayCount = distribution.media.audioPlayCountAfterPreparation - distribution.media.audioPlayCountBeforePreparation;
+  if (distribution.wasm.firstScreenReaderModuleCount !== 1 || distribution.wasm.firstScreenAuthoringModuleRequested
+    || candidateAudioPlayCount !== 0) {
+    throw new Error("The installed first-screen or candidate audio evidence does not prove lazy reader loading and silent preparation.");
+  }
+  if (candidateBudget.playableChoice?.playerStatus !== "ready" || !candidateBudget.playableChoice.cursorAdvanced
+    || candidateBudget.playableChoice.choiceCalls !== 1) {
+    throw new Error("The installed bounded candidate did not prove a playable branch after partial preparation.");
+  }
   const logicalRequests = parsed.flatMap(item => item.logicalRequests ?? []);
   const mediaRequests = parsed.flatMap(item => item.mediaRequests ?? []);
   const retries = parsed.reduce((total, item) => ({
@@ -432,6 +461,10 @@ async function summarizeBrowserEvidence(consumerRoot) {
     measurements: measurements.map(path => relative(consumerRoot, path).split(sep).join("/")),
     candidateMediaDecodeObserved: candidateDecode,
     actualImageAndAudioDecodeObserved: actualDecode,
+    firstScreenReaderModuleCount: distribution.wasm.firstScreenReaderModuleCount,
+    firstScreenAuthoringModuleRequested: distribution.wasm.firstScreenAuthoringModuleRequested,
+    candidateAudioDecodeCount: distribution.media.candidateAudioDecodes.length,
+    candidateAudioPlayCount: candidateAudioPlayCount,
     releasedResourceLeaseObserved: releaseObserved,
     logicalRequests,
     mediaRequests,
@@ -448,6 +481,19 @@ async function summarizeBrowserEvidence(consumerRoot) {
       audioPlayCount: authoring.metrics.audioEvents.filter(item => item.event === "play").length,
       releases: authoring.metrics.releases,
       aborts: authoring.metrics.aborts,
+    },
+    candidateBudget: {
+      artifactId: candidateBudget.artifactId,
+      bounds: candidateBudget.candidateBounds,
+      playerStatus: candidateBudget.playerStatus,
+      atChoice: candidateBudget.atChoice,
+      status: candidateBudget.candidateStatus?.status,
+      completeProjection: candidateBudget.candidateStatus?.completeProjection,
+      mediaPrepared: candidateBudget.candidateStatus?.mediaPrepared,
+      mediaUnavailable: candidateBudget.candidateStatus?.mediaUnavailable,
+      attempted: candidateBudget.attempted,
+      refusedVersions: candidateBudget.refusedVersions,
+      playableChoice: candidateBudget.playableChoice,
     },
   };
 }

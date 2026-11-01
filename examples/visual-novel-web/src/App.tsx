@@ -50,7 +50,8 @@ function ReaderApp() {
 export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; authorMode?: boolean }) {
   const snapshot = useSyncExternalStore(host.controller.subscribe, host.controller.getSnapshot, host.controller.getSnapshot);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const lastAutoPrepared = useRef<string | undefined>(undefined);
+  const [presentationRefresh, setPresentationRefresh] = useState(0);
+  const lastAutoPrepared = useRef<{ readonly host: DemoHost; readonly key: string } | undefined>(undefined);
   const screen = snapshot.screen;
   const view = screen?.view;
   const ready = snapshot.status === "ready";
@@ -63,6 +64,28 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
+    const candidateHosts = new Map<number, { readonly host: DemoHost; readonly firstText?: string }>();
+    let candidateSequence = 0;
+    const requireCandidateHost = (id: number) => {
+      const candidate = candidateHosts.get(id);
+      if (!candidate) throw new Error("The temporary VN candidate host is unavailable.");
+      return candidate;
+    };
+    const candidateState = (id: number): DemoCandidateInspection => {
+      const candidate = requireCandidateHost(id);
+      const state = candidate.host.controller.getSnapshot();
+      const view = state.screen?.view.view;
+      const artifactId = view?.artifact_id ?? candidate.host.reader.artifactId;
+      return {
+        artifactId,
+        ...(candidate.firstText ? { firstText: candidate.firstText } : {}),
+        ...(view ? { cursor: view.cursor } : {}),
+        atChoice: view?.interaction.kind === "choose",
+        playerStatus: state.status,
+        ...(state.candidates ? { candidateStatus: state.candidates } : {}),
+        metrics: structuredClone(candidate.host.metrics),
+      };
+    };
     window.__vnTestHooks = {
       metrics: host.metrics,
       controls: host.controls,
@@ -73,7 +96,7 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
       async save() { return host.reader.exportSave(); },
       async currentView() { return host.reader.inspect(); },
       async clearPreparedCaches() { await host.clearPreparedCaches(); },
-      async inspectCandidate(candidate, contentDrafts, mediaOverrides): Promise<DemoCandidateInspection> {
+      async openCandidate(candidate, contentDrafts, mediaOverrides, maxCandidateRequests): Promise<number> {
         const candidateHost = await openDemoHost({
           candidate: {
             artifactId: candidate.artifactId,
@@ -82,7 +105,9 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
           },
           contentDrafts: new Map(contentDrafts),
           mediaOverrides,
+          ...(maxCandidateRequests === undefined ? {} : { maxCandidateRequests }),
         });
+        let retained = false;
         try {
           await candidateHost.controller.start();
           const firstScreen = candidateHost.controller.getSnapshot().screen;
@@ -97,31 +122,57 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
             await candidateHost.controller.retryCandidates();
           }
           const state = candidateHost.controller.getSnapshot();
-          const artifactId = state.screen?.view.view.artifact_id ?? candidateHost.reader.artifactId;
-          await candidateHost.close();
-          return {
-            artifactId,
-            ...(firstText ? { firstText } : {}),
-            atChoice: state.screen?.view.view.interaction.kind === "choose",
-            ...(state.candidates ? { candidateStatus: state.candidates } : {}),
-            metrics: structuredClone(candidateHost.metrics),
-          };
+          if (state.status !== "ready" || state.screen?.view.view.interaction.kind !== "choose") {
+            throw new Error("The temporary publication candidate did not reach a playable choice.");
+          }
+          const id = ++candidateSequence;
+          candidateHosts.set(id, { host: candidateHost, ...(firstText ? { firstText } : {}) });
+          retained = true;
+          return id;
         } finally {
-          if (!candidateHost.isClosed) await candidateHost.close();
+          if (!retained && !candidateHost.isClosed) await candidateHost.close();
         }
+      },
+      candidateState,
+      async chooseCandidate(id, optionIndex = 0) {
+        const candidate = requireCandidateHost(id);
+        const state = candidate.host.controller.getSnapshot();
+        const interaction = state.screen?.view.view.interaction;
+        const option = interaction?.kind === "choose" ? interaction.options[optionIndex] : undefined;
+        if (state.status !== "ready" || !option?.enabled) {
+          throw new Error("The temporary publication candidate is not at an enabled choice.");
+        }
+        await candidate.host.controller.choose(option.id);
+      },
+      async switchCandidateContext(id, scope) {
+        const candidate = requireCandidateHost(id);
+        await candidate.host.switchContext(scope);
+        if (candidate.host.controller.getSnapshot().screen?.view.view.interaction.kind === "choose") {
+          await candidate.host.controller.retryCandidates();
+        }
+      },
+      async closeCandidate(id) {
+        const candidate = candidateHosts.get(id);
+        if (!candidate) return;
+        candidateHosts.delete(id);
+        await candidate.host.close();
       },
       async close() { await host.close(); },
     };
-    return () => { delete window.__vnTestHooks; };
+    return () => {
+      delete window.__vnTestHooks;
+      for (const candidate of candidateHosts.values()) void candidate.host.close();
+      candidateHosts.clear();
+    };
   }, [host]);
 
   useEffect(() => {
     if (!ready || !candidateCursor) return;
-    const preparationKey = `${candidateScopeKey}:${candidateCursor}`;
-    if (lastAutoPrepared.current === preparationKey) return;
-    lastAutoPrepared.current = preparationKey;
+    const preparationKey = `${candidateScopeKey}:${candidateCursor}:${presentationRefresh}`;
+    if (lastAutoPrepared.current?.host === host && lastAutoPrepared.current.key === preparationKey) return;
+    lastAutoPrepared.current = { host, key: preparationKey };
     void host.controller.retryCandidates().catch(() => undefined);
-  }, [host, ready, candidateCursor, candidateScopeKey, snapshot.candidates?.status]);
+  }, [host, ready, candidateCursor, candidateScopeKey, presentationRefresh, snapshot.candidates?.status]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -137,11 +188,15 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    const viewportAtRender = candidateViewport;
     const onResize = () => {
       if (timeout !== undefined) clearTimeout(timeout);
       timeout = setTimeout(() => {
         timeout = undefined;
-        void host.controller.refreshPresentation().catch(() => undefined);
+        void host.controller.refreshPresentation().then(() => {
+          const viewportAfterRefresh = window.matchMedia("(max-width: 640px)").matches ? "portrait" : "landscape";
+          if (viewportAfterRefresh === viewportAtRender) setPresentationRefresh(value => value + 1);
+        }).catch(() => undefined);
       }, 120);
     };
     window.addEventListener("resize", onResize);
@@ -149,7 +204,7 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
       window.removeEventListener("resize", onResize);
       if (timeout !== undefined) clearTimeout(timeout);
     };
-  }, [host]);
+  }, [host, candidateViewport]);
 
   const activateStage = (event: MouseEvent<HTMLDivElement>) => {
     if (!ready || historyOpen || interaction?.kind !== "advance") return;
