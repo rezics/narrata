@@ -8,6 +8,18 @@
 //! never reaches. It never advances the session, never mutates state, refs or history, and loads
 //! program chunks only through the checked [`Program`] cache.
 //!
+//! # Additional dependencies only
+//!
+//! The projection is a *delta* over what the current View already shows. The current scene's
+//! background, character layers and music, and the current line or choice, belong to the caller
+//! and are never repeated here; a caller that wants the whole next screen keeps the current
+//! View's scene resources and adds this result. A `Scene` node a continuation passes through
+//! replaces the whole visual target, so that node's background and every layer are listed even
+//! when some equal the current ones, and its music `Keep` lists the track it keeps. So
+//! [`DependencyProjection::is_complete`] means that the bounded conservative enumeration of
+//! additional dependencies finished, not that the future screen is fully described and not that
+//! its state is predicted.
+//!
 //! # Scope of the walk
 //!
 //! * At a dialogue the walk starts at its `next` node. At a choice it starts from every option
@@ -24,10 +36,12 @@
 //!
 //! # Bounds and completeness
 //!
-//! [`DependencyLimits`] bounds the visited locations, the graphs loaded beyond those already
-//! held by the current frames, the candidate references considered and the distinct references
-//! returned. The walk is breadth-first so the nearest candidates survive a small bound, and it
-//! stops *before* work beyond a bound. Whatever stopped it, or whatever could not be loaded,
+//! [`DependencyLimits`] bounds the places discovered, the graphs loaded beyond those already
+//! held by the current frames, the options and choice points examined (hidden and disabled ones
+//! included, at the current choice and at later ones), the candidate references considered and
+//! the distinct references returned. The walk is breadth-first so the nearest candidates survive
+//! a small bound, and each bound is checked *before* the work it limits: an option's conditions
+//! are not evaluated, a place is not queued and a graph is not loaded once its bound is spent. Whatever stopped it, or whatever could not be loaded,
 //! is listed in [`DependencyProjection::truncations`]; the result is complete only when that
 //! list is empty. A load failure keeps the source's own [`Error`] and the exact chunk object
 //! identity, and says only that the object was unavailable, never that it does not exist. The
@@ -43,11 +57,10 @@ use std::{
 use narrata_kernel::content::ContentRef;
 
 use crate::{
-    ArtifactId, CommitId, Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, ObjectId, OptionId, Program,
-    Result, State,
+    ArtifactId, CommitId, Error, MAX_CALL_DEPTH, MAX_STEPS, NodeId, ObjectId, Program, Result,
+    State,
+    expr::Values,
     plan::{ChoicePoint, Graph, GraphRef, MediaRef, MusicAction, Outcome, Passage, Plan},
-    runtime::Machine,
-    view::Interaction,
 };
 
 /// Checked bounds of one projection. Every limit is at least one, except `graphs`, where zero
@@ -58,6 +71,7 @@ pub struct DependencyLimits {
     graphs: u32,
     candidates: u32,
     references: u32,
+    scans: u32,
 }
 
 impl DependencyLimits {
@@ -66,12 +80,22 @@ impl DependencyLimits {
     pub const MAX_GRAPHS: u32 = 64;
     pub const MAX_CANDIDATES: u32 = 16 * 1024;
     pub const MAX_REFERENCES: u32 = 4 * 1024;
+    pub const MAX_SCANS: u32 = 16 * 1024;
 
-    /// * `locations`: distinct (call stack, node, music) places visited by the walk.
+    /// * `locations`: distinct (call stack, node, music) places discovered by the walk; none is
+    ///   queued beyond this.
     /// * `graphs`: graphs loaded beyond those the current frames already hold.
     /// * `candidates`: references considered, counting repeats.
     /// * `references`: distinct graph, content and media references returned.
-    pub fn new(locations: u32, graphs: u32, candidates: u32, references: u32) -> Result<Self> {
+    /// * `scans`: options and choice points examined, whatever their visibility, before their
+    ///   conditions are evaluated or their targets queued.
+    pub fn new(
+        locations: u32,
+        graphs: u32,
+        candidates: u32,
+        references: u32,
+        scans: u32,
+    ) -> Result<Self> {
         let check = |name: &str, value: u32, min: u32, max: u32| {
             if (min..=max).contains(&value) {
                 Ok(())
@@ -87,11 +111,13 @@ impl DependencyLimits {
         check("graphs", graphs, 0, Self::MAX_GRAPHS)?;
         check("candidates", candidates, 1, Self::MAX_CANDIDATES)?;
         check("references", references, 1, Self::MAX_REFERENCES)?;
+        check("scans", scans, 1, Self::MAX_SCANS)?;
         Ok(Self {
             locations,
             graphs,
             candidates,
             references,
+            scans,
         })
     }
 
@@ -110,6 +136,10 @@ impl DependencyLimits {
     pub fn references(&self) -> u32 {
         self.references
     }
+
+    pub fn scans(&self) -> u32 {
+        self.scans
+    }
 }
 
 impl Default for DependencyLimits {
@@ -119,6 +149,7 @@ impl Default for DependencyLimits {
             graphs: 8,
             candidates: 2048,
             references: 512,
+            scans: 1024,
         }
     }
 }
@@ -183,8 +214,11 @@ pub struct GraphDependency {
 /// about the work: an unavailable object may exist and become loadable later.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Truncation {
-    /// The walk stopped before visiting more than this many locations.
+    /// The walk refused to discover more than this many places, so some successors were never
+    /// queued.
     Locations { limit: u32 },
+    /// The walk stopped examining options and choice points after this many.
+    Scans { limit: u32 },
     /// The walk stopped before considering more than this many candidate references.
     Candidates { limit: u32 },
     /// The walk stopped before returning more than this many distinct references.
@@ -229,14 +263,20 @@ pub enum Unknown {
 /// The work a projection did, for hosts that budget or test it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DependencyWork {
+    /// Places discovered and queued; they are visited unless a reference bound stops the walk.
     pub locations: u32,
+    /// Options and choice points examined, hidden and disabled ones included.
+    pub scans: u32,
     /// Graphs loaded beyond the current frames' graphs, counting failed attempts.
     pub graphs: u32,
     pub candidates: u32,
 }
 
-/// Potential dependencies of the next safe point, tied to the exact commit they were computed
-/// from. They are host-owned identities: no bytes, URLs, authorization or decoded handles.
+/// Potential *additional* dependencies of the next safe point, tied to the exact commit they
+/// were computed from. They come on top of what the current View already shows: the current
+/// scene's background, layers and music are never repeated, and a scene node on the way lists its
+/// full replacement target (see the module docs). They are host-owned identities: no bytes, URLs,
+/// authorization or decoded handles.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DependencyProjection {
     pub artifact_id: ArtifactId,
@@ -254,9 +294,11 @@ pub struct DependencyProjection {
 }
 
 impl DependencyProjection {
-    /// Whether the walk reached every safe point and ending of the conservative union. A
-    /// complete projection with no references means no continuation presents anything more,
-    /// for example because the story ends.
+    /// Whether the bounded enumeration of additional dependencies reached every safe point and
+    /// ending of the conservative union. It does not describe the whole future screen (the
+    /// current scene resources stay with the caller) and predicts no state. A complete
+    /// projection with no references means no continuation needs anything beyond the current
+    /// View, for example because the story ends.
     pub fn is_complete(&self) -> bool {
         self.truncations.is_empty()
     }
@@ -332,6 +374,7 @@ pub(crate) fn project(
         unknowns: BTreeSet::new(),
         work: DependencyWork::default(),
         halted: false,
+        places_full: false,
     };
     let result = walker.run();
     let Walker {
@@ -391,6 +434,8 @@ struct Walker<'a> {
     work: DependencyWork,
     /// Set when a reference bound was hit: nothing more can be recorded.
     halted: bool,
+    /// Set when no further place can be discovered.
+    places_full: bool,
 }
 
 impl Walker<'_> {
@@ -400,13 +445,6 @@ impl Walker<'_> {
             if self.halted {
                 break;
             }
-            if self.work.locations >= self.limits.locations {
-                self.truncate(Truncation::Locations {
-                    limit: self.limits.locations,
-                });
-                break;
-            }
-            self.work.locations += 1;
             self.visit(index);
         }
         Ok(())
@@ -418,21 +456,19 @@ impl Walker<'_> {
         }
     }
 
-    /// Starts the walk at the successors of the current safe point.
+    /// Starts the walk at the successors of the current safe point. The current interaction is
+    /// read from the plan under the checked state's own rules, not materialized as a View, so
+    /// the options are examined one by one under the `scans` bound.
     fn seed(&mut self) -> Result<()> {
-        let interaction = (Machine {
-            program: self.program,
-        })
-        .interaction(self.state, None)?;
         let state = self.state;
-        let Some(frame) = state.frames.last() else {
-            // A finished story has no successor. Anything else without a frame is not a state
-            // the session can hold.
-            return match interaction {
-                Interaction::Finished { .. } => Ok(()),
-                _ => Err(Error::new("state", "dependencies", "no active frame")),
-            };
-        };
+        if state.finished.is_some() {
+            // A finished story has no successor.
+            return Ok(());
+        }
+        let frame = state
+            .frames
+            .last()
+            .ok_or_else(|| Error::new("state", "dependencies", "no active frame"))?;
         let base: Vec<Place> = state
             .frames
             .iter()
@@ -446,34 +482,30 @@ impl Walker<'_> {
         let music = state.scene.as_ref().and_then(|scene| scene.music.clone());
         let graph = self.program.graph(&frame.graph)?;
         self.graphs.insert(frame.graph.clone(), Some(graph.clone()));
-        match interaction {
-            Interaction::Finished { .. } => Ok(()),
-            Interaction::Advance { .. } => {
-                let Some(Plan::Dialogue { next, .. }) = graph.nodes.get(&frame.node) else {
-                    return Err(Error::new("state", "dependencies", "dialogue is missing"));
-                };
+        let plan = frame
+            .overlay
+            .plan(&graph, &frame.node)
+            .ok_or_else(|| Error::new("state", "dependencies", "unknown current node"))?;
+        match &*plan {
+            Plan::Dialogue { next, .. } => {
                 self.continue_at(None, &base, &music, *next);
                 Ok(())
             }
-            Interaction::Choose { options, .. } => {
-                let enabled: BTreeSet<OptionId> = options
-                    .iter()
-                    .filter(|option| option.enabled)
-                    .map(|option| option.id)
-                    .collect();
-                let passage = frame
-                    .overlay
-                    .passage(&graph, &frame.node)
-                    .ok_or_else(|| Error::new("state", "dependencies", "not a passage"))?;
+            Plan::Passage(passage) => {
                 let (index, point) = passage
                     .choice_points
                     .iter()
                     .enumerate()
                     .find(|(_, point)| Some(point.id) == frame.at)
                     .ok_or_else(|| Error::new("state", "dependencies", "no choice point"))?;
-                self.seed_choice(&base, &music, &passage, index, point, &enabled);
-                Ok(())
+                let values = Values {
+                    parameters: &frame.parameters,
+                    locals: &frame.locals,
+                    shared: &state.shared,
+                };
+                self.seed_choice(&base, &music, passage, index, point, &values)
             }
+            _ => Err(Error::new("state", "dependencies", "not at an interaction")),
         }
     }
 
@@ -484,8 +516,8 @@ impl Walker<'_> {
         passage: &Passage,
         index: usize,
         point: &ChoicePoint,
-        enabled: &BTreeSet<OptionId>,
-    ) {
+        values: &Values<'_>,
+    ) -> Result<()> {
         let rejoins = |point: &ChoicePoint| {
             point.options.first().is_some_and(|option| {
                 matches!(
@@ -503,11 +535,17 @@ impl Walker<'_> {
         // Choosing nothing is possible when `min` is zero; it follows the first option's rejoin.
         let mut local = point.min == 0;
         let mut rejoin = point.min == 0 && rejoins(point);
-        for option in point
-            .options
-            .iter()
-            .filter(|option| enabled.contains(&option.id))
-        {
+        for option in &point.options {
+            // Charged before the option's conditions are evaluated, hidden or not.
+            if !self.scan() {
+                return Ok(());
+            }
+            // Only options the reader can choose now: visible and enabled, as the runtime checks.
+            if !values.condition(option.visible_if.as_ref())?
+                || !values.condition(option.enabled_if.as_ref())?
+            {
+                continue;
+            }
             if !option.effects.is_empty() {
                 self.unknowns.insert(Unknown::Assignments);
             }
@@ -522,19 +560,58 @@ impl Walker<'_> {
                         self.note_content(ContentRole::ChoiceReply, &reply.unit);
                     }
                 }
-                Outcome::Branch { target } => self.continue_at(None, base, music, *target),
+                Outcome::Branch { target } => {
+                    self.continue_at(None, base, music, *target);
+                    if self.places_full {
+                        // Every further successor would be refused as well.
+                        return Ok(());
+                    }
+                }
             }
         }
         if local {
-            rejoin |= passage.choice_points[index + 1..]
+            for later in passage.choice_points[index + 1..]
                 .iter()
                 .take_while(|point| point.min == 0 && !point.proposals)
-                .any(rejoins);
+            {
+                if rejoin {
+                    break;
+                }
+                if !self.scan() {
+                    return Ok(());
+                }
+                rejoin = rejoins(later);
+            }
             if rejoin && let Some(body) = &passage.body {
                 self.note_content(ContentRole::PassageBody, &body.unit);
             }
             self.arrive(None, base, music, passage, false, index + 1);
         }
+        Ok(())
+    }
+
+    /// Charges one examined option or choice point; false once the bound is spent.
+    fn scan(&mut self) -> bool {
+        if self.work.scans >= self.limits.scans {
+            self.truncate(Truncation::Scans {
+                limit: self.limits.scans,
+            });
+            return false;
+        }
+        self.work.scans += 1;
+        true
+    }
+
+    /// Whether one more place may be discovered; records the truncation when not.
+    fn can_discover(&mut self) -> bool {
+        if self.visits.len() >= self.limits.locations as usize {
+            self.places_full = true;
+            self.truncate(Truncation::Locations {
+                limit: self.limits.locations,
+            });
+            return false;
+        }
+        true
     }
 
     /// Queues the place that continues `stack` at `node` of its top frame.
@@ -572,6 +649,10 @@ impl Walker<'_> {
             }
             return;
         }
+        if !self.can_discover() {
+            return;
+        }
+        self.work.locations += 1;
         let index = self.visits.len();
         self.seen.insert(key.clone(), index);
         self.visits.push(Visit { parent, key });
@@ -678,6 +759,10 @@ impl Walker<'_> {
                     });
                     return;
                 }
+                // Loading the callee is pointless when its entry could not be queued.
+                if !self.can_discover() {
+                    return;
+                }
                 let callee = match self.program.resolve_call(&top.graph, target) {
                     Ok(callee) => callee,
                     Err(error) => {
@@ -761,10 +846,16 @@ impl Walker<'_> {
             }
         }
         for point in passage.choice_points.iter().skip(first_point) {
+            if !self.scan() {
+                return;
+            }
             if point.proposals {
                 self.unknowns.insert(Unknown::HostProposals);
             }
             for option in &point.options {
+                if !self.scan() {
+                    return;
+                }
                 if option.visible_if.is_some() || option.enabled_if.is_some() {
                     self.unknowns.insert(Unknown::Conditions);
                 }

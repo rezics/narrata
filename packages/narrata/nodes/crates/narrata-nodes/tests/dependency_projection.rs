@@ -484,7 +484,7 @@ fn small_limits_stop_before_the_bound_and_say_what_was_cut() {
     let (mut session, names) = start(&compilation);
     at_ask(&mut session, &names);
     let limits = |locations, graphs, candidates, references| {
-        DependencyLimits::new(locations, graphs, candidates, references).unwrap()
+        DependencyLimits::new(locations, graphs, candidates, references, 1000).unwrap()
     };
 
     let few_places = session
@@ -550,18 +550,21 @@ fn small_limits_stop_before_the_bound_and_say_what_was_cut() {
 #[test]
 fn limits_are_checked() {
     let new = DependencyLimits::new;
-    assert!(new(1, 0, 1, 1).is_ok());
-    assert!(new(0, 0, 1, 1).is_err());
-    assert!(new(1, 0, 0, 1).is_err());
-    assert!(new(1, 0, 1, 0).is_err());
-    assert!(new(DependencyLimits::MAX_LOCATIONS + 1, 0, 1, 1).is_err());
-    assert!(new(1, DependencyLimits::MAX_GRAPHS + 1, 1, 1).is_err());
-    assert!(new(1, 0, DependencyLimits::MAX_CANDIDATES + 1, 1).is_err());
-    assert!(new(1, 0, 1, DependencyLimits::MAX_REFERENCES + 1).is_err());
-    assert_eq!(new(1, 0, 1, 1).unwrap().locations(), 1);
-    assert_eq!(new(1, 0, 1, 1).unwrap().graphs(), 0);
-    assert_eq!(new(1, 0, 1, 1).unwrap().candidates(), 1);
-    assert_eq!(new(1, 0, 1, 1).unwrap().references(), 1);
+    assert!(new(1, 0, 1, 1, 1).is_ok());
+    assert!(new(0, 0, 1, 1, 1).is_err());
+    assert!(new(1, 0, 0, 1, 1).is_err());
+    assert!(new(1, 0, 1, 0, 1).is_err());
+    assert!(new(DependencyLimits::MAX_LOCATIONS + 1, 0, 1, 1, 1).is_err());
+    assert!(new(1, DependencyLimits::MAX_GRAPHS + 1, 1, 1, 1).is_err());
+    assert!(new(1, 0, DependencyLimits::MAX_CANDIDATES + 1, 1, 1).is_err());
+    assert!(new(1, 0, 1, DependencyLimits::MAX_REFERENCES + 1, 1).is_err());
+    assert!(new(1, 0, 1, 1, 0).is_err());
+    assert!(new(1, 0, 1, 1, DependencyLimits::MAX_SCANS + 1).is_err());
+    assert_eq!(new(1, 0, 1, 1, 1).unwrap().locations(), 1);
+    assert_eq!(new(1, 0, 1, 1, 1).unwrap().graphs(), 0);
+    assert_eq!(new(1, 0, 1, 1, 1).unwrap().candidates(), 1);
+    assert_eq!(new(1, 0, 1, 1, 1).unwrap().references(), 1);
+    assert_eq!(new(1, 0, 1, 1, 7).unwrap().scans(), 7);
 }
 
 #[test]
@@ -921,7 +924,7 @@ fn queries_change_no_commit_state_history_export_or_storage_even_when_they_fail(
     let failed = project(&session);
     assert!(!failed.is_complete());
     let truncated = session
-        .dependency_projection(DependencyLimits::new(2, 1, 4, 4).unwrap())
+        .dependency_projection(DependencyLimits::new(2, 1, 4, 4, 100).unwrap())
         .unwrap();
     assert!(!truncated.is_complete());
     assert_eq!(snapshot(&session), before);
@@ -930,4 +933,157 @@ fn queries_change_no_commit_state_history_export_or_storage_even_when_they_fail(
     chunks.0.lock().unwrap().withheld.clear();
     choose(&mut session, &names, &["right"]);
     assert!(applied.get() > before.4);
+}
+
+/// `ask` with 120 options: 40 hidden, 40 disabled, then 40 enabled routes to their own lines.
+fn wide_choice() -> Compilation {
+    variant(|_, package| {
+        let options: Vec<Value> = (0..120_u32)
+            .map(|index| {
+                let mut option = json!({
+                    "id": option(100 + index), "key": format!("o{index}"),
+                    "label": content(&format!("label.wide{index}")),
+                    "outcome": {"kind": "branch", "target": format!("wide{index}")}
+                });
+                if index < 40 {
+                    option["visible_if"] = json!({"kind": "literal", "value": false});
+                } else if index < 80 {
+                    option["enabled_if"] = json!({"kind": "literal", "value": false});
+                }
+                option
+            })
+            .collect();
+        let nodes = &mut package["graphs"]["start"]["nodes"];
+        nodes["ask"]["data"]["choice_points"][0]["options"] = Value::Array(options);
+        for index in 0..120_u32 {
+            nodes[format!("wide{index}").as_str()] = plan(
+                200 + index,
+                "narrata.dialogue",
+                json!({"line": line(&format!("line.wide{index}")), "next": "finish"}),
+            );
+        }
+    })
+}
+
+fn wide_lines(projection: &DependencyProjection) -> BTreeSet<String> {
+    projection
+        .content
+        .iter()
+        .filter(|dependency| dependency.role == ContentRole::DialogueLine)
+        .map(|dependency| dependency.reference.key.as_str().to_owned())
+        .collect()
+}
+
+#[test]
+fn the_current_choice_scan_and_queue_stop_at_the_caller_limits() {
+    let compilation = wide_choice();
+    let (mut session, names) = start(&compilation);
+    at_ask(&mut session, &names);
+    let limits = |locations, scans| DependencyLimits::new(locations, 8, 1000, 1000, scans).unwrap();
+    let lines = |range: std::ops::Range<u32>| -> BTreeSet<String> {
+        range.map(|index| format!("line.wide{index}")).collect()
+    };
+
+    // Normal use: the 80 hidden or disabled options are scanned and excluded, the 40 enabled
+    // ones all lead to their lines, and every option was examined exactly once.
+    let normal = project(&session);
+    assert!(normal.is_complete());
+    assert_eq!(wide_lines(&normal), lines(80..120));
+    assert_eq!(normal.work.scans, 120);
+    assert_eq!(normal.work.locations, 40);
+
+    // A scan bound inside the hidden run stops before any option could contribute: nothing was
+    // evaluated past the bound, so no successor exists, and the result says it is cut.
+    let hidden_only = session.dependency_projection(limits(256, 30)).unwrap();
+    assert_eq!(
+        hidden_only.truncations,
+        vec![Truncation::Scans { limit: 30 }]
+    );
+    assert_eq!(hidden_only.work.scans, 30);
+    assert_eq!(hidden_only.work.locations, 0);
+    assert!(hidden_only.content.is_empty());
+
+    // 85 scans: the 80 hidden/disabled ones and exactly the first five enabled routes.
+    let five = session.dependency_projection(limits(256, 85)).unwrap();
+    assert_eq!(five.truncations, vec![Truncation::Scans { limit: 85 }]);
+    assert_eq!(five.work.scans, 85);
+    assert_eq!(five.work.locations, 5);
+    assert_eq!(wide_lines(&five), lines(80..85));
+
+    // A place bound of three queues exactly three successors; the fourth refusal ends the scan
+    // instead of walking the remaining 36 enabled options.
+    let three = session.dependency_projection(limits(3, 1000)).unwrap();
+    assert_eq!(three.truncations, vec![Truncation::Locations { limit: 3 }]);
+    assert_eq!(three.work.locations, 3);
+    assert_eq!(three.work.scans, 84);
+    assert_eq!(wide_lines(&three), lines(80..83));
+    assert_eq!(
+        three,
+        session.dependency_projection(limits(3, 1000)).unwrap()
+    );
+}
+
+#[test]
+fn the_scan_bound_also_covers_later_choice_points() {
+    let compilation = compiled();
+    let (mut session, names) = start(&compilation);
+    at_ask(&mut session, &names);
+    choose(&mut session, &names, &["left"]);
+    advance(&mut session, &names); // at `pack`
+    let with = |scans| {
+        session
+            .dependency_projection(DependencyLimits::new(256, 8, 1000, 1000, scans).unwrap())
+            .unwrap()
+    };
+    // Two options now, then the next choice point and its option.
+    let exact = with(4);
+    assert!(exact.is_complete());
+    assert_eq!(exact.work.scans, 4);
+    let short = with(3);
+    assert_eq!(short.truncations, vec![Truncation::Scans { limit: 3 }]);
+    assert!(!content_of(&short).contains(&(ContentRole::ChoiceLabel, "label.onward")));
+}
+
+#[test]
+fn unchanged_scene_resources_stay_with_the_view_and_scene_nodes_replace_them_entirely() {
+    let compilation = compiled();
+    let (mut session, names) = start(&compilation);
+    let scene = session.view(Some(&names)).unwrap().scene.unwrap();
+    assert_eq!(
+        scene.background.as_ref().map(|media| media.key.as_str()),
+        Some("bg/room")
+    );
+    assert_eq!(
+        scene.music.as_ref().map(|media| media.key.as_str()),
+        Some("music/theme")
+    );
+
+    // The next line keeps the whole current scene: base (the View's scene) plus an empty delta.
+    let unchanged = project(&session);
+    assert!(unchanged.is_complete());
+    assert!(
+        unchanged.media.is_empty(),
+        "the current scene's resources are the caller's, not repeated"
+    );
+
+    // A scene node on the way replaces the visual target: its background and *every* layer are
+    // listed (the hero layer again, as the target is complete), the old background is not, and
+    // `Keep` names the track the current View already plays.
+    advance(&mut session, &names);
+    let replaced = project(&session);
+    assert_eq!(
+        media_of(&replaced),
+        expected(&[
+            (MediaRole::Background, "bg/mid"),
+            (layer("hero"), "portrait/hero"),
+            (MediaRole::MusicKeep, "music/theme"),
+        ])
+    );
+    assert!(!media_of(&replaced).contains(&(MediaRole::Background, "bg/room")));
+    let kept = replaced
+        .media
+        .iter()
+        .find(|dependency| dependency.role == MediaRole::MusicKeep)
+        .unwrap();
+    assert_eq!(Some(&kept.reference), scene.music.as_ref());
 }
