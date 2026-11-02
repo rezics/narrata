@@ -1,0 +1,706 @@
+{
+  "goal": {
+    "slug": "web-vn",
+    "manager": "codex-01a187ba-9af7-71c1-b110-0ee55db54795-web-vn",
+    "startedAt": "2026-10-31T09:43:32.643Z",
+    "seenHead": "d85cd805d47c89bbe79214f815ca20d5a701c9cc"
+  },
+  "tasks": [
+    {
+      "id": "G-040",
+      "title": "第一方 VN 语义与兼容决定",
+      "effort": "max",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "docs/adr/0024-first-party-visual-novel.md"
+      ],
+      "shared": [
+        "adr:0024"
+      ],
+      "depends": [],
+      "brief": "docs/goals/web-vn/tasks/G-040.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-040",
+      "branch": "goal/g-040",
+      "base": "11e4aadf96005262dcf2bcd9434689d64e73fa84",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 17344,
+          "pidMark": 1793439901183,
+          "session": "01a19159-29a0-7101-982a-e304fdc6a602",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-040\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-040\\attempt-1.last.md",
+          "startedAt": "2026-10-31T09:45:01.188Z",
+          "endedAt": "2026-10-31T09:52:22.759Z"
+        },
+        {
+          "n": 2,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 30516,
+          "pidMark": 1793441735517,
+          "session": "01a19159-29a0-7101-982a-e304fdc6a602",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-040\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-040\\attempt-2.last.md",
+          "startedAt": "2026-10-31T10:15:35.521Z",
+          "endedAt": "2026-10-31T10:27:59.023Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "3e83f33d478bd2e4c037693c20361235e7411518",
+      "closedAt": "2026-10-31T11:10:22.782Z"
+    },
+    {
+      "id": "G-041",
+      "title": "VN0 受检执行与双格式兼容",
+      "effort": "max",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/crates/narrata-nodes/**",
+        "packages/narrata/nodes/crates/narrata-nodes-wasm/**",
+        "packages/narrata/nodes/schemas/**",
+        "packages/narrata/tooling/crates/narrata-node-tools/**",
+        "fixtures/compat/nodes-vn-v1/**",
+        "docs/development/toolchain.md"
+      ],
+      "shared": [],
+      "depends": [
+        "G-040"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-041.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-041",
+      "branch": "goal/g-041",
+      "base": "ed9cf20ebc2a122ac27e97778588cfc1a4af6a44",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 20376,
+          "pidMark": 1793445066217,
+          "session": "01a191a7-f8b3-71f0-abef-5f79881cfbb7",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-041\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-041\\attempt-1.last.md",
+          "startedAt": "2026-10-31T11:11:06.222Z",
+          "endedAt": "2026-10-31T12:10:49.080Z"
+        },
+        {
+          "n": 2,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 17068,
+          "pidMark": 1793448670563,
+          "session": "01a191a7-f8b3-71f0-abef-5f79881cfbb7",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-041\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-041\\attempt-2.last.md",
+          "startedAt": "2026-10-31T12:11:10.568Z",
+          "endedAt": "2026-10-31T12:11:54.893Z"
+        },
+        {
+          "n": 3,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 52320,
+          "pidMark": 1793448800126,
+          "session": "01a191e0-f1f2-7071-b2f6-173e7341033f",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-041\\attempt-3.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-041\\attempt-3.last.md",
+          "startedAt": "2026-10-31T12:13:20.130Z",
+          "endedAt": "2026-10-31T12:38:37.444Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "f1adb040de40fc2b7b1f973afb64d562475343e5",
+      "closedAt": "2026-10-31T13:08:19.546Z"
+    },
+    {
+      "id": "G-042",
+      "title": "VN1 可安装的类型化 VN 阅读 API",
+      "effort": "max",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/crates/narrata-nodes-wasm/**",
+        "packages/narrata/nodes/crates/narrata-nodes/src/view.rs",
+        "packages/narrata/nodes/schemas/**",
+        "packages/narrata/tooling/crates/narrata-node-tools/**",
+        "packages/narrata/web/**",
+        "docs/development/toolchain.md"
+      ],
+      "shared": [],
+      "depends": [
+        "G-041"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-042.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-042",
+      "branch": "goal/g-042",
+      "base": "6bd5c76c037c4be4dda7695b87290ac61255f62f",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 49308,
+          "pidMark": 1793452195233,
+          "session": "01a19214-c193-7ef2-b597-70871dc56233",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-042\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-042\\attempt-1.last.md",
+          "startedAt": "2026-10-31T13:09:55.238Z",
+          "endedAt": "2026-10-31T13:35:45.577Z"
+        },
+        {
+          "n": 2,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 31240,
+          "pidMark": 1793453778424,
+          "session": "01a19214-c193-7ef2-b597-70871dc56233",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-042\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-042\\attempt-2.last.md",
+          "startedAt": "2026-10-31T13:36:18.429Z",
+          "endedAt": "2026-10-31T14:09:03.552Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "adc9e4ac3c701a833d744ca62212981385412392",
+      "closedAt": "2026-10-31T14:58:38.256Z"
+    },
+    {
+      "id": "G-043",
+      "title": "VN1 可恢复参考播放器与类型化媒体呈现",
+      "effort": "max",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/web/**",
+        "packages/narrata/tooling/crates/narrata-node-tools/**",
+        "examples/visual-novel-web/**",
+        "products/visual-novel-demo/**",
+        "Taskfile.yml",
+        "scripts/check-vn.ps1",
+        ".github/workflows/ci.yml",
+        "docs/development/toolchain.md"
+      ],
+      "shared": [],
+      "depends": [
+        "G-042"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-043.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-043",
+      "branch": "goal/g-043",
+      "base": "c7018065d5c2dbd19578c633ea3a04c046cef7fc",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 31476,
+          "pidMark": 1793459272168,
+          "session": "01a19280-bcc3-7ad0-8536-f959ba760987",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-1.last.md",
+          "startedAt": "2026-10-31T15:07:52.173Z",
+          "endedAt": "2026-10-31T15:54:31.025Z"
+        },
+        {
+          "n": 2,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 46756,
+          "pidMark": 1793462108954,
+          "session": "01a19280-bcc3-7ad0-8536-f959ba760987",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-2.last.md",
+          "startedAt": "2026-10-31T15:55:08.959Z",
+          "endedAt": "2026-10-31T17:15:01.437Z"
+        },
+        {
+          "n": 3,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 19752,
+          "pidMark": 1793467134993,
+          "session": "01a19280-bcc3-7ad0-8536-f959ba760987",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-3.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-3.last.md",
+          "startedAt": "2026-10-31T17:18:54.998Z",
+          "endedAt": "2026-11-01T04:49:57.632Z"
+        },
+        {
+          "n": 4,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 5176,
+          "pidMark": 1793508638597,
+          "session": "",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-4.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-4.last.md",
+          "startedAt": "2026-11-01T04:50:38.602Z",
+          "endedAt": "2026-11-01T05:53:15.447Z"
+        },
+        {
+          "n": 5,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 50316,
+          "pidMark": 1793512396398,
+          "session": "01a19572-0295-79e0-b7c0-c778df4b0bad",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-5.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-043\\attempt-5.last.md",
+          "startedAt": "2026-11-01T05:53:16.403Z",
+          "endedAt": "2026-11-01T06:47:04.293Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "1829f2bb141023364bf846157d8238cd6399f33e",
+      "closedAt": "2026-11-01T08:26:02.251Z"
+    },
+    {
+      "id": "G-044",
+      "title": "VN2 原生有界只读依赖投影",
+      "effort": "high",
+      "engine": "sonnet",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/crates/narrata-nodes/**"
+      ],
+      "shared": [],
+      "depends": [
+        "G-042"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-044.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-044",
+      "branch": "goal/g-044",
+      "base": "86a4e022f30fd910832faf290c0a2d3a8a4a0c38",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "sonnet",
+          "pid": 12900,
+          "pidMark": 1793465207005,
+          "session": "e93757e2-16eb-4931-8182-910ba2dddfe6",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-044\\attempt-1.json",
+          "startedAt": "2026-10-31T16:46:47.010Z",
+          "endedAt": "2026-10-31T16:47:31.720Z"
+        },
+        {
+          "n": 2,
+          "effort": "high",
+          "engine": "sonnet",
+          "pid": 25108,
+          "pidMark": 1793465439017,
+          "session": "69208065-90ed-4e9e-8bf5-cf263d1cd65c",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-044\\attempt-2.json",
+          "startedAt": "2026-10-31T16:50:39.022Z",
+          "endedAt": "2026-10-31T17:15:19.197Z"
+        },
+        {
+          "n": 3,
+          "effort": "high",
+          "engine": "sonnet",
+          "pid": 29148,
+          "pidMark": 1793508637246,
+          "session": "69208065-90ed-4e9e-8bf5-cf263d1cd65c",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-044\\attempt-3.json",
+          "startedAt": "2026-11-01T04:50:37.251Z",
+          "endedAt": "2026-11-01T05:04:20.865Z"
+        },
+        {
+          "n": 4,
+          "effort": "high",
+          "engine": "sonnet",
+          "pid": 50200,
+          "pidMark": 1793509504685,
+          "session": "69208065-90ed-4e9e-8bf5-cf263d1cd65c",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-044\\attempt-4.json",
+          "startedAt": "2026-11-01T05:05:04.694Z",
+          "endedAt": "2026-11-01T05:39:28.394Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "c3516c7ff1e1705ea1b175d1352c3bb74c181942",
+      "closedAt": "2026-11-01T06:37:08.496Z"
+    },
+    {
+      "id": "G-045",
+      "title": "VN3 原生作者记录校验与同候选预览基础",
+      "effort": "high",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/tooling/crates/narrata-authoring/**"
+      ],
+      "shared": [],
+      "depends": [
+        "G-042"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-045.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-045",
+      "branch": "goal/g-045",
+      "base": "4a164bde570f9062fc560a2466b9fe30037bd2d4",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 24244,
+          "pidMark": 1793508720104,
+          "session": "",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-045\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-045\\attempt-1.last.md",
+          "startedAt": "2026-11-01T04:52:00.109Z",
+          "endedAt": "2026-11-01T04:58:11.443Z"
+        },
+        {
+          "n": 2,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 36284,
+          "pidMark": 1793509092388,
+          "session": "01a19573-404e-72b2-9e13-b2abf52a43c8",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-045\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-045\\attempt-2.last.md",
+          "startedAt": "2026-11-01T04:58:12.393Z",
+          "endedAt": "2026-11-01T05:14:22.281Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "fd00b31c7c9223fa1dc5908a8c77158b78880995",
+      "closedAt": "2026-11-01T05:24:22.093Z"
+    },
+    {
+      "id": "G-046",
+      "title": "VN3 Wasm 作者入口与同候选预览桥接",
+      "effort": "high",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/tooling/crates/narrata-authoring-wasm/**"
+      ],
+      "shared": [],
+      "depends": [
+        "G-045"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-046.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-046",
+      "branch": "goal/g-046",
+      "base": "fd00b31c7c9223fa1dc5908a8c77158b78880995",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 47428,
+          "pidMark": 1793510407189,
+          "session": "",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-046\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-046\\attempt-1.last.md",
+          "startedAt": "2026-11-01T05:20:07.193Z",
+          "endedAt": "2026-11-01T05:31:15.486Z"
+        },
+        {
+          "n": 2,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 3564,
+          "pidMark": 1793511076305,
+          "session": "01a1958d-00af-7a80-bfd0-feb88ee14c1c",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-046\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-046\\attempt-2.last.md",
+          "startedAt": "2026-11-01T05:31:16.310Z",
+          "endedAt": "2026-11-01T05:46:13.907Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "2ab426777130512e6fe35f81d10567c612b5a7fa",
+      "closedAt": "2026-11-01T06:37:16.891Z"
+    },
+    {
+      "id": "G-047",
+      "title": "VN3 公开作者入口与 Node/Bun 同候选构建",
+      "effort": "high",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/web/**",
+        "products/visual-novel-demo/**",
+        "examples/visual-novel-web/src/generated/publication.ts",
+        "docs/development/toolchain.md",
+        "Taskfile.yml"
+      ],
+      "shared": [],
+      "depends": [
+        "G-043",
+        "G-046"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-047.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-047",
+      "branch": "goal/g-047",
+      "base": "88fd3bb27cb91dc23e70e665a2d27d973c03acec",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 18516,
+          "pidMark": 1793522000559,
+          "session": "01a1963d-e60b-73f0-a6b5-a322629e4601",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-047\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-047\\attempt-1.last.md",
+          "startedAt": "2026-11-01T08:33:20.570Z",
+          "endedAt": "2026-11-01T09:06:24.765Z"
+        },
+        {
+          "n": 2,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 39404,
+          "pidMark": 1793524082175,
+          "session": "01a1963d-e60b-73f0-a6b5-a322629e4601",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-047\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-047\\attempt-2.last.md",
+          "startedAt": "2026-11-01T09:08:02.180Z",
+          "endedAt": "2026-11-01T09:41:08.769Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "c0d3ddfdd8e46f15a68c4296fb954e2a2def3408",
+      "closedAt": "2026-11-01T10:03:20.106Z"
+    },
+    {
+      "id": "G-048",
+      "title": "VN2 版本化只读依赖 Wasm 接口",
+      "effort": "high",
+      "engine": "sonnet",
+      "cases": [],
+      "paths": [
+        "packages/narrata/nodes/crates/narrata-nodes-wasm/**",
+        "packages/narrata/nodes/schemas/vn-dependencies-v1.schema.json",
+        "docs/adr/0025-vn-dependency-projection.md",
+        "fixtures/compat/vn-dependencies-v1/**"
+      ],
+      "shared": [
+        "adr:0025",
+        "compat:vn-dependencies-v1"
+      ],
+      "depends": [
+        "G-043",
+        "G-044"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-048.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-048",
+      "branch": "goal/g-048",
+      "base": "8bcdc5d92e18ea1aa20a71a9026f61bc1bcbedfa",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "sonnet",
+          "pid": 30708,
+          "pidMark": 1793522986976,
+          "session": "72eec1b8-144d-4347-82bc-dde2fc5cc03e",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-048\\attempt-1.json",
+          "startedAt": "2026-11-01T08:49:46.985Z",
+          "endedAt": "2026-11-01T09:23:11.177Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "d71fa706d7179341d1d21ef713604a4c43cf8d22",
+      "closedAt": "2026-11-01T10:03:29.002Z"
+    },
+    {
+      "id": "G-049",
+      "title": "VN2 公共依赖桥接与有界候选资源准备",
+      "effort": "high",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "packages/narrata/web/**",
+        "packages/narrata/nodes/crates/narrata-nodes/**",
+        "packages/narrata/nodes/crates/narrata-nodes-wasm/**",
+        "docs/adr/0025-vn-dependency-projection.md",
+        "Taskfile.yml",
+        "docs/development/toolchain.md",
+        "examples/visual-novel-web/src/player-host.ts"
+      ],
+      "shared": [],
+      "depends": [
+        "G-047",
+        "G-048"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-049.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-049",
+      "branch": "goal/g-049",
+      "base": "a5f3465f40a013b102289793061e993eb1ff9356",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 21456,
+          "pidMark": 1793528098345,
+          "session": "",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-049\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-049\\attempt-1.last.md",
+          "startedAt": "2026-11-01T10:14:58.350Z",
+          "endedAt": "2026-11-01T10:47:36.358Z"
+        },
+        {
+          "n": 2,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 34748,
+          "pidMark": 1793530057247,
+          "session": "01a1969a-f144-7a91-8de1-414f7a8e7814",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-049\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-049\\attempt-2.last.md",
+          "startedAt": "2026-11-01T10:47:37.253Z",
+          "endedAt": "2026-11-01T11:29:28.179Z"
+        },
+        {
+          "n": 3,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 21860,
+          "pidMark": 1793532629762,
+          "session": "01a1969a-f144-7a91-8de1-414f7a8e7814",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-049\\attempt-3.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-049\\attempt-3.last.md",
+          "startedAt": "2026-11-01T11:30:29.766Z",
+          "endedAt": "2026-11-01T11:58:02.634Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "2745b876a66d079ff8ecd573239c27e8fb3a1d3e",
+      "closedAt": "2026-11-01T14:35:44.624Z"
+    },
+    {
+      "id": "G-050",
+      "title": "VN3 草稿编辑与隔离即时预览",
+      "effort": "high",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "examples/visual-novel-web/**"
+      ],
+      "shared": [],
+      "depends": [
+        "G-047"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-050.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-050",
+      "branch": "goal/g-050",
+      "base": "a5f3465f40a013b102289793061e993eb1ff9356",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 18828,
+          "pidMark": 1793528100138,
+          "session": "",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-050\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-050\\attempt-1.last.md",
+          "startedAt": "2026-11-01T10:15:00.143Z",
+          "endedAt": "2026-11-01T10:33:36.710Z"
+        },
+        {
+          "n": 2,
+          "effort": "high",
+          "engine": "codex",
+          "pid": 26404,
+          "pidMark": 1793529217467,
+          "session": "01a1969a-f7e4-7412-ad43-ca2c8a36691e",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-050\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-050\\attempt-2.last.md",
+          "startedAt": "2026-11-01T10:33:37.472Z",
+          "endedAt": "2026-11-01T10:46:33.898Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "b2f2efd6c08b9d1fe6d6e83d0ca1972c968464e8",
+      "closedAt": "2026-11-01T10:58:13.706Z"
+    },
+    {
+      "id": "G-051",
+      "title": "VN 参考宿主候选准备与最终独立安装旅程",
+      "effort": "max",
+      "engine": "codex",
+      "cases": [],
+      "paths": [
+        "examples/visual-novel-web/**",
+        "products/visual-novel-demo/scripts/**",
+        "Taskfile.yml",
+        "docs/development/toolchain.md",
+        "docs/integrations/rezics.md"
+      ],
+      "shared": [],
+      "depends": [
+        "G-049",
+        "G-050"
+      ],
+      "brief": "docs/goals/web-vn/tasks/G-051.md",
+      "worktree": "D:\\rezics-repos\\narrata\\.temp\\worktrees\\g-051",
+      "branch": "goal/g-051",
+      "base": "d85cd805d47c89bbe79214f815ca20d5a701c9cc",
+      "state": "verified",
+      "attempts": [
+        {
+          "n": 1,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 24828,
+          "pidMark": 1793543847502,
+          "session": "01a1978b-4293-72c1-aa07-990f06cb32b3",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-051\\attempt-1.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-051\\attempt-1.last.md",
+          "startedAt": "2026-11-01T14:37:27.510Z",
+          "endedAt": "2026-11-01T15:20:57.616Z"
+        },
+        {
+          "n": 2,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 29672,
+          "pidMark": 1793546554136,
+          "session": "01a1978b-4293-72c1-aa07-990f06cb32b3",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-051\\attempt-2.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-051\\attempt-2.last.md",
+          "startedAt": "2026-11-01T15:22:34.141Z",
+          "endedAt": "2026-11-01T16:10:12.605Z"
+        },
+        {
+          "n": 3,
+          "effort": "max",
+          "engine": "codex",
+          "pid": 51608,
+          "pidMark": 1793549419212,
+          "session": "01a1978b-4293-72c1-aa07-990f06cb32b3",
+          "output": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-051\\attempt-3.json",
+          "lastMessage": "D:\\rezics-repos\\narrata\\.temp\\goal\\runs\\G-051\\attempt-3.last.md",
+          "startedAt": "2026-11-01T16:10:19.216Z",
+          "endedAt": "2026-11-01T16:37:49.029Z"
+        }
+      ],
+      "goal": "web-vn",
+      "mergedCommit": "2ab588ed3eefabcf5fa2f96541d1d310099058f7",
+      "closedAt": "2026-11-01T16:51:46.887Z"
+    }
+  ]
+}

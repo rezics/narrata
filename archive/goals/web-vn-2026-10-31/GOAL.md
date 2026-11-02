@@ -8,23 +8,23 @@ areas:
 
 # Web VN 与按需分发
 
-状态：VN0 → VN3 已完成单仓库交付。最终参考宿主源码 `ac9bdfb4d65fd47eaf7cab1947bf23db53533579` 的完整 VN 与独立固定包 29 项浏览器旅程通过，主线 CI 八项成功；所有任务已验证归档。固定源码、包与检查记录见 [state.md](state.md)，长期交接见[集成文档](../../integrations/rezics.md#narrata-自己的交付依赖)。真实 REZICS 联合验收与 registry 发布仍为外部结果。
+状态：VN0 → VN3 已完成单仓库交付。最终参考宿主源码 `ac9bdfb4d65fd47eaf7cab1947bf23db53533579` 的完整 VN 与独立固定包 29 项浏览器旅程通过，主线 CI 八项成功；所有任务已验证归档。固定源码、包与检查记录见 [state.md](state.md)，长期交接见[集成文档](../../../docs/integrations/rezics.md#narrata-自己的交付依赖)。真实 REZICS 联合验收与 registry 发布仍为外部结果。
 
 ## 结果
 
 作者用 Narrata 的公开能力描述一部短篇 VN，浏览器能逐句推进、选择分支、切换场景并保存恢复；运行时、剧情块、正文和媒体可分别按需加载。播放端与宿主通过有类型的资源和呈现接口协作，复用 Gamebook 的发布、内容引用和可靠存档基础。
 
-内容、媒体、本地化和授权仍由宿主所有；Narrata 提供执行与可恢复呈现语义、第一方播放器及参考作者流程。REZICS 需要增补的能力只记录在[集成文档](../../integrations/rezics.md#web-vn-后续需要的宿主能力)，本 Goal 不修改任何 REZICS 仓库。
+内容、媒体、本地化和授权仍由宿主所有；Narrata 提供执行与可恢复呈现语义、第一方播放器及参考作者流程。REZICS 需要增补的能力只记录在[集成文档](../../../docs/integrations/rezics.md#web-vn-后续需要的宿主能力)，本 Goal 不修改任何 REZICS 仓库。
 
 ## 当前范围
 
-本 Goal 的完整结果仍为 VN0 → VN1 → VN2 → VN3。VN0 原生执行与兼容实现已通过主线五项 gate 并验收；已交付 Gamebook 基线固定不变，按[集成交接](../../integrations/rezics.md#narrata-自己的交付依赖)与[包说明](../../../packages/narrata/web/README.md)读取。
+本 Goal 的完整结果仍为 VN0 → VN1 → VN2 → VN3。VN0 原生执行与兼容实现已通过主线五项 gate 并验收；已交付 Gamebook 基线固定不变，按[集成交接](../../../docs/integrations/rezics.md#narrata-自己的交付依赖)与[包说明](../../../packages/narrata/web/README.md)读取。
 
 初始范围以本文件 frontmatter 的 `areas` 为准，每项任务仍由实际简报逐路径认领。格式变化继续遵守 ADR 0024：使用真实任务保留共享 ADR 槽位、保留旧读取路径并新增兼容证据；现有 `fixtures/compat/**` 语料只读。
 
 ## VN0：确定第一方 VN 语义（已验收）
 
-节点组合与 kernel 上的第一方 VN 语义已实现。旧 Flow/Scene 只作为行为证据；不向 RuntimeStateV0 增加产品能力，也不以任意运行时插件为前提。对白推进、说话者、选择、场景与可恢复呈现语义见 [ADR 0024](../../adr/0024-first-party-visual-novel.md)。
+节点组合与 kernel 上的第一方 VN 语义已实现。旧 Flow/Scene 只作为行为证据；不向 RuntimeStateV0 增加产品能力，也不以任意运行时插件为前提。对白推进、说话者、选择、场景与可恢复呈现语义见 [ADR 0024](../../../docs/adr/0024-first-party-visual-novel.md)。
 
 ADR 0024 记录已接受的 safe point、呈现恢复、场景/音轨和宿主边界；具体类型与编码由实现、生成 schema 和兼容语料表达。资产只以引用进入程序/状态，DOM、播放器句柄与解码缓冲由播放端管理。未来格式变化仍须先有 ADR、旧格式读取/迁移路径与新冻结语料计划。
 
@@ -52,6 +52,6 @@ ADR 0024 记录已接受的 safe point、呈现恢复、场景/音轨和宿主�
 
 固定 tarball 在浏览器与所需 Node/Bun 构建/发布路径安装验证；运行受影响的 Rust、Wasm、Web、兼容与真实浏览器检查，记录资源请求、体积和恢复证据。新增工具与 gate 更新工具链。宿主接口、示例与联合验收输入齐备后，按 Goal 程序关闭。
 
-模拟宿主通过与安装包交付是 Narrata SDK 的完成证据。真实 VN 产品可用还需[宿主联合旅程](../../integrations/rezics.md#web-vn-真实联合验收)；REZICS 未就绪时记录外部依赖，不阻塞单仓库交付，也不宣称 VN 产品已上线。
+模拟宿主通过与安装包交付是 Narrata SDK 的完成证据。真实 VN 产品可用还需[宿主联合旅程](../../../docs/integrations/rezics.md#web-vn-真实联合验收)；REZICS 未就绪时记录外部依赖，不阻塞单仓库交付，也不宣称 VN 产品已上线。
 
 完整编辑器产品、复杂相机/导演时间轴、通用 NPC/任务系统、AI 生成世界、任意运行时模块与离线整部下载可在具体需求出现后另立结果；不作为上述短篇可玩的前置条件。
