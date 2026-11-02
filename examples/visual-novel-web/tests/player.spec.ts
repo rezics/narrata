@@ -249,6 +249,12 @@ test("resize swaps only the host image variant and leaves the pending save curso
   const beforeSave = await save(page);
   const beforeCalls = await metrics(page);
 
+  // Publish a new player snapshot while the resize debounce is pending.
+  await page.evaluate(() => {
+    window.addEventListener("resize", () => {
+      void window.__vnTestHooks?.controller.setSoundEnabled(false);
+    }, { once: true });
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   const background = page.locator("[data-background='background/river-night']");
   await expect(background).toHaveAttribute("data-variant", "portrait-cover");

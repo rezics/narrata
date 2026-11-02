@@ -51,6 +51,7 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
   const snapshot = useSyncExternalStore(host.controller.subscribe, host.controller.getSnapshot, host.controller.getSnapshot);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [presentationRefresh, setPresentationRefresh] = useState(0);
+  const presentationRefreshPending = useRef(false);
   const lastAutoPrepared = useRef<{ readonly host: DemoHost; readonly key: string } | undefined>(undefined);
   const screen = snapshot.screen;
   const view = screen?.view;
@@ -185,7 +186,7 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
       lastAutoPrepared.current = undefined;
       return;
     }
-    if (!ready) return;
+    if (!ready || presentationRefreshPending.current) return;
     const preparationKey = `${candidateScopeKey}:${candidateCursor}:${presentationRefresh}`;
     if (lastAutoPrepared.current?.host === host && lastAutoPrepared.current.key === preparationKey) return;
     lastAutoPrepared.current = { host, key: preparationKey };
@@ -205,24 +206,31 @@ export function PlayerSurface({ host, authorMode = false }: { host: DemoHost; au
   }, [host, historyOpen, interaction?.kind, ready]);
 
   useEffect(() => {
+    let active = true;
+    let generation = 0;
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const viewportAtRender = candidateViewport;
     const onResize = () => {
+      const currentGeneration = ++generation;
+      presentationRefreshPending.current = true;
       if (timeout !== undefined) clearTimeout(timeout);
       timeout = setTimeout(() => {
         timeout = undefined;
-        void host.controller.refreshPresentation().then(() => {
-          const viewportAfterRefresh = window.matchMedia("(max-width: 640px)").matches ? "portrait" : "landscape";
-          if (viewportAfterRefresh === viewportAtRender) setPresentationRefresh(value => value + 1);
-        }).catch(() => undefined);
+        void host.controller.refreshPresentation().catch(() => undefined).finally(() => {
+          if (!active || generation !== currentGeneration) return;
+          presentationRefreshPending.current = false;
+          setPresentationRefresh(value => value + 1);
+        });
       }, 120);
     };
     window.addEventListener("resize", onResize);
     return () => {
+      active = false;
+      generation++;
+      presentationRefreshPending.current = false;
       window.removeEventListener("resize", onResize);
       if (timeout !== undefined) clearTimeout(timeout);
     };
-  }, [host, candidateViewport]);
+  }, [host]);
 
   const activateStage = (event: MouseEvent<HTMLDivElement>) => {
     if (!ready || historyOpen || interaction?.kind !== "advance") return;
