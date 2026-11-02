@@ -1,6 +1,6 @@
 # State
 
-2026-11-02：VN0 → VN3 的 SDK 与参考宿主本地验收已完成；最终 CI 仍在收尾。固定 SDK 与 Gamebook 基线保持不变。CI 暴露的候选状态断言已改为验证目标媒体就绪；随后发现的窗口缩放监听竞态已用确定性回归复现并修复，修复后的完整 VN 29 项通过。所有任务已验证归档，最新宿主仍需固定包复验及 CI，再关闭 Goal。
+2026-11-02：VN0 → VN3 已完成最终验收。固定 SDK 源码 `2745b876a66d079ff8ecd573239c27e8fb3a1d3e` 与 Gamebook 基线保持不变；最终参考宿主源码 `ac9bdfb4d65fd47eaf7cab1947bf23db53533579` 的完整 VN、文档、仓库外固定包 29 项浏览器旅程及主线 CI 八项成功。所有任务已验证归档，完整结果齐备。
 
 ## 已验收基线
 
@@ -28,7 +28,9 @@ VN3 的原生作者基础 [G-045](../../../archive/goals/web-vn-2026-10-31/tasks
 
 ## 最终交付与收尾
 
-公共依赖桥接、有界候选媒体准备与缓存生命周期、A/B 按需分发，以及参考宿主多场景短篇均已通过最终本地验收。固定 SDK 源码为 `2745b876a66d079ff8ecd573239c27e8fb3a1d3e`，宿主源码为 `2ab588ed3eefabcf5fa2f96541d1d310099058f7`。主线 gate 记录在 `.temp/goal/runs/G-051/main-acceptance/2ab588e/gates.json`，仓库外 receipt 在系统临时目录 `.temp/narrata-vn-reference/main-vn-final-2ab588e/receipt.json`；29/29 浏览器用例通过，Node/Bun 发布和浏览器预览前后的 34 个发布文件哈希一致。最新桌面资源复用与手机结尾截图已审阅。长期交付身份与复现操作见[集成交接](../../integrations/rezics.md#narrata-自己的交付依赖)。首轮 [CI](https://github.com/rezics/narrata/actions/runs/41328283044) 的 Windows/Ubuntu VN 各 28/29，失败均为把合法 partial 候选整体误判为未完成；测试现改为验证目标背景请求、解码和复用，授权 scope 的网络/哈希断言保留。`85a828c` 的 [CI](https://github.com/rezics/narrata/actions/runs/41331036290) 七项成功，Windows VN 28/29 暴露跨断点缩放的 debounce 被音频快照重渲染清掉。manager 在旧实现上确定复现，改为 host 生命周期内稳定监听、最新刷新代次与候选准备 gate；定向三次及完整 VN 29 项通过。源码与固定包重新验收后，以 `.temp/delivery/vn-final-release.json` 为最终交付记录。失败日志、旧截图和 trace 保留在 `.temp/goal/runs/G-051/manager-acceptance/` 与 `manager-preserved/`。
+最终记录以 `.temp/delivery/vn-final-release.json` 和 `.temp/goal/runs/G-051/manager-acceptance/acceptance.json` 为准。最新独立消费者为系统临时目录 `.temp/narrata-vn-reference/main-vn-final-ac9bdfb/receipt.json`，29/29 通过；Node/Bun 构件一致，四阶段 34 个发布文件哈希一致。最新桌面/手机截图已审阅。最终 [CI](https://github.com/rezics/narrata/actions/runs/41391404595) 精确对应 `ac9bdfb`，八项成功；359 个旧冻结文件、Gamebook View 及已验收 SDK 输入未改。完整需求审计与后续修复证据位于 `.temp/vn-final-requirement-audit.md`、`.temp/vn-ci-helper-final-review.md` 和 `.temp/goal/runs/G-051/manager-acceptance/resize-fix.json`。以下保留各阶段与失败历史。
+
+首轮本地联合验收已证明公共依赖桥接、有界候选媒体准备与缓存生命周期、A/B 按需分发，以及参考宿主多场景短篇。固定 SDK 源码为 `2745b876a66d079ff8ecd573239c27e8fb3a1d3e`，宿主源码为 `2ab588ed3eefabcf5fa2f96541d1d310099058f7`。主线 gate 记录在 `.temp/goal/runs/G-051/main-acceptance/2ab588e/gates.json`，仓库外 receipt 在系统临时目录 `.temp/narrata-vn-reference/main-vn-final-2ab588e/receipt.json`；29/29 浏览器用例通过，Node/Bun 发布和浏览器预览前后的 34 个发布文件哈希一致。最新桌面资源复用与手机结尾截图已审阅。长期交付身份与复现操作见[集成交接](../../integrations/rezics.md#narrata-自己的交付依赖)。首轮 [CI](https://github.com/rezics/narrata/actions/runs/41328283044) 的 Windows/Ubuntu VN 各 28/29，失败均为把合法 partial 候选整体误判为未完成；测试现改为验证目标背景请求、解码和复用，授权 scope 的网络/哈希断言保留。`85a828c` 的 [CI](https://github.com/rezics/narrata/actions/runs/41331036290) 七项成功，Windows VN 28/29 暴露跨断点缩放的 debounce 被音频快照重渲染清掉。manager 在旧实现上确定复现，改为 host 生命周期内稳定监听、最新刷新代次与候选准备 gate；定向三次及完整 VN 29 项通过。源码与固定包重新验收后，以 `.temp/delivery/vn-final-release.json` 为最终交付记录。失败日志、旧截图和 trace 保留在 `.temp/goal/runs/G-051/manager-acceptance/` 与 `manager-preserved/`。
 
 [G-050](../../../archive/goals/web-vn-2026-10-31/tasks/G-050.md) 的草稿编辑与隔离即时预览已在 `b2f2efd6c08b9d1fe6d6e83d0ca1972c968464e8` 通过主线 VN 16 项（原阅读 13 项、作者 3 项）及文档检查。桌面/390px 编辑真实宿主正文和说话者、分支结局、资源失败恢复、正式存档不变均有浏览器证据；未完成预览在延迟媒体释放前关闭，晚到结果不能重装。已审阅截图，并补上无宿主结尾标题时的可见结束状态。源码复核与证据见 `.temp/goal/runs/G-050/manager-acceptance/`。
 

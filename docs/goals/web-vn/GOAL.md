@@ -8,7 +8,7 @@ areas:
 
 # Web VN 与按需分发
 
-状态：VN0 → VN3 的可安装 SDK、参考播放器、作者流程与候选准备已通过本地主线验收；最终参考宿主在仓库外使用固定 tarball 的 29 项浏览器旅程通过。最终 CI、需求核对与归档进行中。固定源码、包与检查记录见 [state.md](state.md)。产品优先级见[决定 18](../../product/decisions.md#18-先交付-gamebook再推进-web-vn)。Gamebook 完整 SDK 保持为已验收基线。
+状态：VN0 → VN3 已完成单仓库交付。最终参考宿主源码 `ac9bdfb4d65fd47eaf7cab1947bf23db53533579` 的完整 VN 与独立固定包 29 项浏览器旅程通过，主线 CI 八项成功；所有任务已验证归档。固定源码、包与检查记录见 [state.md](state.md)，长期交接见[集成文档](../../integrations/rezics.md#narrata-自己的交付依赖)。真实 REZICS 联合验收与 registry 发布仍为外部结果。
 
 ## 结果
 
